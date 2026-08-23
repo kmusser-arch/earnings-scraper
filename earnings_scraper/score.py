@@ -553,6 +553,16 @@ def is_gross_margin_row(name):
     return bool(_GM_NAME.search(name or ''))
 
 
+def balance_row(name):
+    """True for any row naming ARR, RPO or cRPO -- INCLUDING the ones the dollar
+    path must refuse (counts, growth rates). The refusal has to be reached, so
+    the predicate is deliberately wider than `classify_row`.
+    """
+    import re as _re
+    return bool(_re.search(r'\bARR\b|\bRPO\b|crpo|annual\s+recurring',
+                           name or '', _re.I))
+
+
 def is_op_income_row(name):
     """True for "Operating Income", "Adj OI", "Op Income", "OI Guide".
 
@@ -821,6 +831,36 @@ def _segment_for(parsed, quals):
                 raw=pr.get('raw'), ambiguous=None)
 
 
+def _balance_for(parsed, name, want_forward=False):
+    """ARR / RPO / cRPO / Net-New / run-rate for ONE row. Never a fallback.
+
+    Returns dict(value_musd, source, note, ...) or dict(refused=...) or None.
+    The metric the ROW asks for is decided by balances.classify_row, and a count
+    row or a growth row never reaches the dollar path at all.
+    """
+    from . import balances
+    text = parsed.get('text') or ''
+    metric = balances.classify_row(name)
+    if metric is None:
+        why = balances.refusal_reason(name)
+        return dict(refused=why) if why else None
+    if not text:
+        return None
+    quals = balances.qualifiers(name, row_qualifiers)
+    res = balances.parse_balance(text, metric, quals,
+                                 want_forward=want_forward, row_name=name)
+    if res is None:
+        return None
+    if res.get('ambiguous'):
+        return res
+    label = '+'.join(sorted(quals)) or 'total'
+    return dict(value_musd=res['value_musd'], source=res['source'],
+                note='parsed %s (%s) from prose ($M, stated in %s)'
+                     % (metric, label, res.get('unit_seen')),
+                stated=res.get('stated'), decimals=res.get('decimals'),
+                raw=res.get('raw'), ambiguous=None)
+
+
 def _segment_ebitda_for(parsed, quals):
     """Resolve a qualified EBITDA row against the release text."""
     text = parsed.get('text') or ''
@@ -910,11 +950,38 @@ def build_kpi_rows(parsed, entry):
         quals = row_qualifiers(name)
 
         if period == 'CURRENT_Q':
+            # ★ ARR / RPO / cRPO FIRST. These rows often also contain the word
+            # "revenue" ("Revenue backlog / RPO ($B)"), so the generic revenue
+            # leg would otherwise claim them and write a total-revenue figure
+            # into an RPO row.
+            _bal = (_balance_for(parsed, name)
+                    if balance_row(name) else None)
+            if _bal is not None:
+                if _bal.get('refused'):
+                    note = '⛔ NOT GRADED — %s' % _bal['refused']
+                    src = 'metric-kind-refused'
+                elif _bal.get('ambiguous'):
+                    note = ('%s matched %d different values — refusing to '
+                            'choose (%s)' % (name[:30], len(_bal['ambiguous']),
+                                             _bal['ambiguous']))
+                    src = 'balance-ambiguous'
+                elif _bal.get('value_musd') is not None:
+                    actual = _bal['value_musd']
+                    note = _bal['note']
+                    src = _bal['source']
+                    seg_precision = _bal
+            elif balance_row(name):
+                note = ('%s not stated in the release — refusing the generic '
+                        'revenue figure, which is a different metric'
+                        % name[:40])
+
             # ★ A QUALIFIED revenue row is filled from a figure parsed FOR that
             # qualifier -- never from the headline total, and never from a
             # broader match. The table is preferred over prose here because the
             # table states 5,775 where the prose rounds to "$5.8 billion".
-            if 'revenue' in low and quals:
+            if balance_row(name):
+                pass                      # already handled above, never fall through
+            elif 'revenue' in low and quals:
                 seg = _segment_for(parsed, quals)
                 if seg and seg.get('value_musd') is not None:
                     actual = seg['value_musd']
@@ -1036,7 +1103,22 @@ def build_kpi_rows(parsed, entry):
         else:
             # A CURRENT_Q parse may ONLY fill a CURRENT_Q slot.
             note = 'forward-period slot (%s) - not filled from reported actuals' % period
-            g = guides.get('fy') if period == 'FY_GUIDE' else guides.get('nextQ')
+            if balance_row(name):
+                _bal = _balance_for(parsed, name, want_forward=True)
+                if _bal and _bal.get('value_musd') is not None:
+                    actual = _bal['value_musd']
+                    note = '%s guide: %s' % (period, _bal['note'])
+                    src = 'prose (guidance)'
+                    seg_precision = _bal
+                elif _bal and _bal.get('refused'):
+                    note = '⛔ NOT GRADED — %s' % _bal['refused']
+                    src = 'metric-kind-refused'
+                else:
+                    note = ('%s guide not stated in the release' % name[:40])
+                g = None
+            else:
+                g = (guides.get('fy') if period == 'FY_GUIDE'
+                     else guides.get('nextQ'))
             # ★ A metrics-only block carries no midpoint. Writing None into a
             # revenue row is correct (not-found); writing 0 or guessing is not.
             if g and 'revenue' in low and g.get('mid') is not None:
