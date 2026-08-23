@@ -31,6 +31,7 @@ trusted silently.
 
 import re
 
+from . import basis as basis_mod
 from . import config, gate, plausibility, units
 from .parse import pct_delta, verdict_for
 
@@ -942,6 +943,9 @@ def build_kpi_rows(parsed, entry):
         # Set only when the figure came from a ROUNDED prose statement, so its
         # precision can be weighed against the clearance margin.
         seg_precision = None
+        # ★ Which basis was actually READ. Recorded on every row so a wrong one
+        # is visible on the card rather than inferred from the number.
+        basis_read = None
 
         # ★ A qualified row (Client / Gaming / Data Center / Embedded ...) can
         # only be filled from a figure parsed for that qualifier. We do not
@@ -999,13 +1003,20 @@ def build_kpi_rows(parsed, entry):
                 actual, note = rev['value_musd'], 'parsed from release ($M)'
                 src = rev.get('source') or 'prose'
             elif ('eps' in low or 'earnings per share' in low) and eps:
-                basis = ('non-GAAP' if 'non-gaap' in low
-                         else 'GAAP' if 'gaap' in low else None)
-                pick = (eps.get(basis) if basis else
-                        eps.get('non-GAAP') or eps.get('GAAP') or eps.get('unknown'))
-                if pick:
-                    actual, note = pick['value'], 'parsed from release'
-                    src = pick.get('source') or 'prose'
+                # ★ ONE selector for every basis-sensitive metric. The old
+                # inline version knew 'non-gaap' and 'gaap' but NOT 'adj' --
+                # which is 61 of the 107 rows that declare a basis, three
+                # fifths of them invisible to it.
+                _pick, _b, _note = basis_mod.select(
+                    name, {k: v['value'] for k, v in eps.items()})
+                basis_read = _b
+                if _pick is not None:
+                    actual = _pick
+                    note = 'parsed from release — %s' % _note
+                    src = 'prose'
+                elif _note:
+                    note = _note
+                    src = 'basis-refused'
             elif 'ebitda' in low:
                 if quals:
                     # ★ A qualified EBITDA row is a different measure from the
@@ -1026,9 +1037,18 @@ def build_kpi_rows(parsed, entry):
                                 'no EBITDA for this qualifier'
                                 % '+'.join(sorted(quals)))
                 elif parsed.get('adjEbitda'):
-                    actual = parsed['adjEbitda']['value_musd']
-                    src = parsed['adjEbitda'].get('source') or 'prose'
-                    note = 'parsed from release (%s, $M)' % src
+                    _eb = parsed.get('adjEbitdaByBasis') or {
+                        parsed.get('adjEbitdaBasis') or 'unknown':
+                        parsed['adjEbitda']['value_musd']}
+                    _pick, _b, _note = basis_mod.select(name, _eb)
+                    basis_read = _b
+                    if _pick is not None:
+                        actual = _pick
+                        src = parsed['adjEbitda'].get('source') or 'prose'
+                        note = 'parsed from release ($M) — %s' % _note
+                    elif _note:
+                        note = _note
+                        src = 'basis-refused'
             elif (is_op_income_row(name)
                   and units.is_dollar_magnitude(name)):
                 want = op_income_basis(name)
@@ -1055,23 +1075,17 @@ def build_kpi_rows(parsed, entry):
                                 'release states no OI for this qualifier, and '
                                 'company OI is a different metric'
                                 % '+'.join(sorted(quals)))
-                elif want and want in oi:
-                    actual = oi[want]['value_musd']
-                    note = 'parsed from release (%s basis, $M)' % want
-                    src = oi[want].get('source') or 'prose'
-                elif want and oi:
-                    # The row demands a basis the release did not state.
-                    note = ('row demands %s operating income; the release '
-                            'states only %s - refusing to substitute a basis '
-                            '(CBRS rule)' % (want, sorted(oi)))
-                    src = 'basis-mismatch'
-                elif not want:
-                    pick = (oi.get('non-GAAP') or oi.get('GAAP')
-                            or oi.get('unknown'))
-                    if pick:
-                        actual = pick['value_musd']
-                        note = 'parsed from release ($M)'
-                        src = pick.get('source') or 'prose'
+                else:
+                    _pick, _b, _note = basis_mod.select(
+                        name, {k: v['value_musd'] for k, v in oi.items()})
+                    basis_read = _b
+                    if _pick is not None:
+                        actual = _pick
+                        note = 'parsed from release ($M) — %s' % _note
+                        src = 'prose'
+                    elif _note:
+                        note = _note
+                        src = 'basis-refused'
             elif is_gross_margin_row(name) or is_operating_margin_row(name):
                 which = ('grossMargin' if is_gross_margin_row(name)
                          else 'operatingMargin')
@@ -1098,8 +1112,20 @@ def build_kpi_rows(parsed, entry):
                                 'margin is a different metric'
                                 % '+'.join(sorted(quals)))
                 elif which in margins:
-                    actual, note = margins[which]['value'], 'parsed from release'
-                    src = margins[which].get('source') or 'prose'
+                    _by = margins[which].get('byBasis') or {}
+                    _avail = ({k: v['value'] for k, v in _by.items()}
+                              if _by else
+                              {margins[which].get('basis') or 'unknown':
+                               margins[which]['value']})
+                    _pick, _b, _note = basis_mod.select(name, _avail)
+                    basis_read = _b
+                    if _pick is not None:
+                        actual = _pick
+                        note = 'parsed from release — %s' % _note
+                        src = margins[which].get('source') or 'prose'
+                    elif _note:
+                        note = _note
+                        src = 'basis-refused'
         else:
             # A CURRENT_Q parse may ONLY fill a CURRENT_Q slot.
             note = 'forward-period slot (%s) - not filled from reported actuals' % period
@@ -1208,6 +1234,9 @@ def build_kpi_rows(parsed, entry):
             period=period,
             forward=period != 'CURRENT_Q',
             extractionSource=src,
+            basisDeclared=basis_mod.declared(name),
+            basisRead=basis_read,
+            basisSensitive=basis_mod.is_sensitive(name),
             unverified=bool(kpi.get('unverified')),
             # The parser normalises every dollar magnitude to $M, so the live
             # path DECLARES its unit rather than leaving it to be resolved.

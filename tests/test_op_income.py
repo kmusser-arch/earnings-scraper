@@ -152,12 +152,18 @@ def main():
     row = bad['keyKPIs'][6]
     check('and refuses when only GAAP is stated', row['actual'] is None,
           row['actual'])
+    # ★ The inline basis check was replaced by the shared basis.select(), so the
+    # source label and wording now come from one place for EPS, margins, OI and
+    # EBITDA alike. That inline version knew 'non-gaap' and 'gaap' but NOT
+    # 'adj' -- 61 of the 107 rows that declare a basis.
     check('    naming the refusal',
-          row['extractionSource'] == 'basis-mismatch',
+          row['extractionSource'] == 'basis-refused',
           row['extractionSource'])
     check('    and saying which basis was available',
-          'GAAP' in row['vsConsNote'] and 'refusing' in row['vsConsNote'],
+          'GAAP' in row['vsConsNote'] and 'NOT GRADED' in row['vsConsNote'],
           row['vsConsNote'][:38])
+    check('    and citing the CBRS founding case',
+          'CBRS' in row['vsConsNote'])
 
     print('')
     print('=== a segment OI row is a different metric ===')

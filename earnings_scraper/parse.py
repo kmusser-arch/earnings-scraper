@@ -1115,6 +1115,7 @@ def parse_margins(text):
     D3/D7, on the graded line.
     """
     out = {}
+    by_basis = {}
     for name, pat in _MARGIN_PATTERNS.items():
         best = None
         for m in pat.finditer(text):
@@ -1132,12 +1133,20 @@ def parse_margins(text):
                 continue
             basis = _norm_basis((m.group(1) or '').strip())
             cand = dict(value=val, basis=basis, raw=m.group(0).strip())
+            # ★ KEEP BOTH BASES. Collapsing to the non-GAAP "best" discarded the
+            # GAAP figure entirely, so a GAAP-declared row could not be served
+            # and nothing downstream could tell whether the release offered
+            # both. Basis enforcement needs the full set, not the winner.
+            by = by_basis.setdefault(name, {})
+            if basis not in by:
+                by[basis] = cand
             if best is None:
                 best = cand
             elif basis == 'non-GAAP' and best['basis'] != 'non-GAAP':
                 best = cand
         if best is not None:
             out[name] = best
+            out[name]['byBasis'] = by_basis.get(name) or {}
     return out
 
 
