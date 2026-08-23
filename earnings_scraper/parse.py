@@ -93,6 +93,11 @@ def parse_revenue(text):
     for pat in _REVENUE_PATTERNS:
         m = None
         for cand in pat.finditer(text):
+            # ★ Forward-looking symmetry. "Revenue of $8.7 billion is expected."
+            # was absorbed as a reported figure -- the forward verb trails the
+            # phrase, so the clause-filler guard never sees it.
+            if is_forward_looking(sentence_at(text, cand.start())):
+                continue
             # ★ THE SAME discriminator operating income and EBITDA use. The
             # keyword version (_is_segment_context) only looks for the literal
             # words "segment"/"division", so "Subscription revenue was $10.593
@@ -171,6 +176,40 @@ _CLAUSE_FILLER = re.compile(
     re.I)
 
 
+def sentence_at(text, pos):
+    """The sentence containing offset `pos`. Newlines end a clause too."""
+    left = (text or '')[:pos]
+    right = (text or '')[pos:]
+    start = max(left.rfind('\n'), left.rfind('. '), left.rfind('! '),
+                left.rfind('? ')) + 1
+    end = len(text or '')
+    for stop in ('\n', '. ', '! ', '? '):
+        i = right.find(stop)
+        if i != -1:
+            end = min(end, pos + i + 1)
+    return (text or '')[start:end]
+
+
+def is_forward_looking(fragment):
+    """True when this sentence is GUIDANCE, not a reported figure.
+
+    ★ NON-NEGOTIABLE 2 IN MIRROR IMAGE. That rule forbids populating a FORWARD
+    slot from reported actuals, and only that direction was ever written down.
+    The reverse -- a CURRENT-quarter row absorbing a guidance sentence -- is the
+    dominant form of the collision bug: of 75 substantive reverse-match
+    collisions in the library, 38 restrict by the single token 'guide'.
+    ("Q2 Revenue ($B)" matching "revenue is expected to be approximately
+    $8.7 billion.")
+    #
+    # Period scoping catches it only when the release NAMES the quarter. When
+    # the sentence says merely "is expected to be" or "we see", the
+    # forward-looking VERB is the only signal, and a row whose name lacks
+    # 'guide' has no token to fail on. So the verb is treated as a modifier the
+    # row must also carry -- symmetric, like every other modifier.
+    """
+    return bool(_SEG_FORWARD.search(fragment or ''))
+
+
 def _is_company_context(text, start):
     """True when the metric phrase at `start` is not qualified by a subject.
 
@@ -203,7 +242,12 @@ def parse_op_income(text):
     out = {}
     for pat in _OI_PATTERNS:
         for m in pat.finditer(text):
-            if _SEG_FORWARD.search(m.group(0)):
+            # ★ THE SENTENCE, not the matched span. Checking m.group(0) only
+            # catches a forward verb that appears INSIDE the match, so
+            # "operating income of $8.7 billion is expected." slipped through --
+            # the verb trails the phrase. Found by the modifier-symmetry corpus
+            # test, on a guard I had written myself and believed was complete.
+            if is_forward_looking(sentence_at(text, m.start())):
                 continue                   # a guide, not a reported actual
             if not _is_company_context(text, m.start()):
                 continue                   # a segment or subject-qualified line
@@ -300,7 +344,8 @@ def parse_adj_ebitda(text):
     out = {}
     for pat in _EBITDA_PATTERNS:
         for m in pat.finditer(text):
-            if _SEG_FORWARD.search(m.group(0)):
+            # ★ Sentence-level, same reason as operating income.
+            if is_forward_looking(sentence_at(text, m.start())):
                 continue
             if not _is_company_context(text, m.start()):
                 continue
@@ -361,9 +406,21 @@ def segment_adj_ebitda(text, tokens):
 # row name appears in the same sentence as the figure. There is no broader
 # fallback, by construction.
 
-_SEG_FORWARD = re.compile(
-    r'\b(?:guidance|guide|outlook|expect|expects|expected|forecast|'
-    r'anticipat\w*|target\w*|will\s+be|we\s+see)\b', re.I)
+# ★ ONE VOCABULARY, BOTH DIRECTIONS. This decides "is this sentence guidance?"
+# for the guard that keeps a current-quarter row OFF a forward sentence AND for
+# the trigger that lets the guidance parser SEE that sentence. They were two
+# separate lists and they disagreed: this one had `expected`, _GUIDE_TRIGGER had
+# only `expects?`. So "revenue is expected to be approximately $3.45 billion"
+# was refused by the row (correctly) and invisible to the guidance parser
+# (incorrectly) -- dropped by both sides, which loses the figure entirely
+# instead of merely mis-slotting it. Strictly worse than the bug being fixed.
+#
+# Passive voice is the common wire phrasing, so \w* suffixes throughout.
+_FORWARD_WORDS = (
+    r'\b(?:guidance|guid\w+|outlook|expect\w*|anticipat\w*|forecast\w*|'
+    r'project\w+|target\w*|sees?|we\s+see|will\s+be)\b')
+
+_SEG_FORWARD = re.compile(_FORWARD_WORDS, re.I)
 
 # "up 14% year over year to $5.8 billion" -- the FIRST figure in a wire
 # sentence is the reported one; a prior-year comparative follows it.
@@ -514,6 +571,9 @@ def parse_eps(text):
     candidates = []
     for pat in _EPS_PATTERNS:
         for m in pat.finditer(text):
+            # ★ "We expect non-GAAP EPS of $1.22." was read as a reported EPS.
+            if is_forward_looking(sentence_at(text, m.start())):
+                continue
             # Locate which group is the basis and which is the number.
             basis_raw, num_raw = None, None
             for g in m.groups():
@@ -545,9 +605,8 @@ def parse_eps(text):
 
 # --- guidance -----------------------------------------------------------------
 
-_GUIDE_TRIGGER = re.compile(
-    r'\b(?:guidance|outlook|expects?|anticipat\w+|forecast\w*|project\w+|'
-    r'sees?|guid\w+)\b', re.I)
+# ★ The SAME vocabulary as the guard. See _FORWARD_WORDS.
+_GUIDE_TRIGGER = re.compile(_FORWARD_WORDS, re.I)
 
 _PERIOD_NEXTQ = re.compile(
     r'\b(?:(?:first|second|third|fourth|1st|2nd|3rd|4th|next|current)\s+quarter'
@@ -587,6 +646,32 @@ _GUIDE_REV_RANGE = re.compile(
 
 _GUIDE_REV_POINT = re.compile(
     _REV_WORD + r'([^\n]{0,40}?)\$\s?([\d,]+(?:\.\d+)?)\s*' + _UNIT, re.I)
+
+
+# ★ LOCALITY. A forward word ANYWHERE in the "sentence" is not enough, because
+# `_sentences()` collapses a paragraph and a wire header has no terminating
+# punctuation for hundreds of characters. WDC-2026Q4's release opens with
+#
+#   "WD Reports Fiscal Fourth Quarter ... Q4FY26 Highlights: Revenue of
+#    $3.75 billion, up 44% ..."
+#
+# and that single pseudo-sentence runs long enough to contain a forward word
+# further along. The guidance parser then took the REPORTED $3.75B as the F1Q
+# revenue guide and the reported 54.1% as the margin guide -- non-negotiable 2,
+# the direction that WAS written down, reintroduced by widening the trigger.
+#
+# So the forward language must GOVERN THE CLAUSE the figure sits in: it has to
+# appear in the window running from a little before the metric word through to
+# the figure. "revenue IS EXPECTED TO BE approximately $3.45 billion" and "we
+# EXPECT revenue of $3.45 billion" both satisfy that; a forward word 200
+# characters away does not.
+_GOVERN_WINDOW = 70
+
+
+def _forward_governs(sent, metric_start, figure_end):
+    """True when forward language governs the clause holding this figure."""
+    lo = max(0, metric_start - _GOVERN_WINDOW)
+    return bool(_SEG_FORWARD.search(sent[lo:figure_end]))
 
 
 def _clean_gap(m):
@@ -674,7 +759,8 @@ def parse_guidance(text):
         # revenue-anchored first; the unanchored patterns are the fallback and
         # are only safe when the sentence names no other metric.
         am = _GUIDE_REV_RANGE.search(sent)
-        if am and _clean_gap(am):
+        if am and _clean_gap(am) and _forward_governs(sent, am.start(),
+                                                      am.end()):
             lo_raw, lo_unit, hi_raw, hi_unit = (am.group(2), am.group(3),
                                                 am.group(4), am.group(5))
             unit = lo_unit or hi_unit
@@ -686,7 +772,8 @@ def parse_guidance(text):
                                 basis='range', raw=sent.strip()[:300])
                 continue
         ap = _GUIDE_REV_POINT.search(sent)
-        if ap and _clean_gap(ap):
+        if ap and _clean_gap(ap) and _forward_governs(sent, ap.start(),
+                                                      ap.end()):
             val = _to_millions(ap.group(2), ap.group(3))
             if val is not None:
                 out[key] = dict(low=val, high=val, mid=val,
@@ -699,6 +786,8 @@ def parse_guidance(text):
             continue
 
         m = _RANGE.search(sent)
+        if m and not _forward_governs(sent, m.start(), m.end()):
+            m = None
         if m:
             lo_raw, lo_unit, hi_raw, hi_unit = m.groups()
             # "$17.3 to $17.5 billion" -- the unit trails, so it governs both.
@@ -711,6 +800,8 @@ def parse_guidance(text):
                                 basis='range', raw=sent.strip()[:300])
                 continue
         m = _SINGLE.search(sent)
+        if m and not _forward_governs(sent, m.start(), m.end()):
+            m = None
         if m:
             val = _to_millions(m.group(1), m.group(2))
             if val is not None:
@@ -914,6 +1005,13 @@ def parse_margins(text):
     for name, pat in _MARGIN_PATTERNS.items():
         best = None
         for m in pat.finditer(text):
+            # ★ "The company anticipates gross margin of 55.5%." was read as
+            # the reported margin. This was the only one of the five
+            # current-quarter parsers with NO forward guard at all; revenue and
+            # EPS refused most guidance shapes only by accident of pattern
+            # shape, which is not a guard.
+            if is_forward_looking(sentence_at(text, m.start())):
+                continue
             val = _to_float(m.group(2))
             if val is None or not (0 <= val <= 100):
                 continue
