@@ -93,6 +93,8 @@ def parse_revenue(text):
     for pat in _REVENUE_PATTERNS:
         m = None
         for cand in pat.finditer(text):
+            if _refused_zone(text, cand.start()):
+                continue          # balance sheet / cash flow -- never a source
             # ★ Forward-looking symmetry. "Revenue of $8.7 billion is expected."
             # was absorbed as a reported figure -- the forward verb trails the
             # phrase, so the clause-filler guard never sees it.
@@ -176,6 +178,28 @@ _CLAUSE_FILLER = re.compile(
     re.I)
 
 
+def _refused_zone(text, pos, _cache={}):
+    """True when `pos` sits in the balance sheet or cash-flow statement.
+
+    ★ CLAUDE.md's do-not-automate list already forbade this; the parser simply
+    had no zone concept, so the policy was unenforced. A balance-sheet blob is
+    where a correct-LOOKING number of the wrong definition comes from -- SNDK's
+    $93.9B backlog is real, parses cleanly, and belongs to no graded row.
+
+    The income statement is NOT refused: its line items are where revenue and
+    EPS legitimately live, and APP-2026Q2 states its figures ONLY in tables.
+    """
+    from . import zones
+    key = id(text)
+    spans = _cache.get(key)
+    if spans is None or _cache.get('_len_%d' % key) != len(text or ''):
+        spans = zones.zone_spans(text)
+        _cache.clear()
+        _cache[key] = spans
+        _cache['_len_%d' % key] = len(text or '')
+    return zones.is_refused_zone(text, pos, spans)
+
+
 def sentence_at(text, pos):
     """The sentence containing offset `pos`. Newlines end a clause too."""
     left = (text or '')[:pos]
@@ -242,6 +266,8 @@ def parse_op_income(text):
     out = {}
     for pat in _OI_PATTERNS:
         for m in pat.finditer(text):
+            if _refused_zone(text, m.start()):
+                continue
             # ★ THE SENTENCE, not the matched span. Checking m.group(0) only
             # catches a forward verb that appears INSIDE the match, so
             # "operating income of $8.7 billion is expected." slipped through --
@@ -344,6 +370,8 @@ def parse_adj_ebitda(text):
     out = {}
     for pat in _EBITDA_PATTERNS:
         for m in pat.finditer(text):
+            if _refused_zone(text, m.start()):
+                continue
             # ★ Sentence-level, same reason as operating income.
             if is_forward_looking(sentence_at(text, m.start())):
                 continue
@@ -571,6 +599,8 @@ def parse_eps(text):
     candidates = []
     for pat in _EPS_PATTERNS:
         for m in pat.finditer(text):
+            if _refused_zone(text, m.start()):
+                continue
             # ★ "We expect non-GAAP EPS of $1.22." was read as a reported EPS.
             if is_forward_looking(sentence_at(text, m.start())):
                 continue
@@ -716,21 +746,104 @@ _GUIDE_EPS = re.compile(
     r'\$?\s?(\d+(?:\.\d+)?)', re.I)
 
 
-def _sentences(text):
-    """Split into sentences, tolerating hard-wrapped press-release copy.
+# ★ BOUNDARY RECOVERY. A wire marks bullets with newlines, NOT terminal
+# punctuation. WDC-2026Q4's header is six real lines with no glyphs and no full
+# stops:
+#
+#   Q4FY26 Highlights:
+#   Revenue of $3.75 billion, up 44% year-over-year
+#   GAAP gross margin of 54.1%; non-GAAP gross margin of 54.4%
+#   GAAP diluted EPS of $8.21; non-GAAP diluted EPS of $3.56
+#   Cash flow from operations of $1.39 billion; free cash flow of $1.28 billion
+#   Q1FY27 revenue expected to be up 42% to 49% year-over-year
+#
+# Splitting on [.!?] merged all six into one 482-char run holding TEN figures,
+# and the word "expected" on the LAST line then governed the whole block -- so
+# the reported $3.75B and 54.1% landed in the F1Q revenue and margin GUIDE rows.
+# Recovering the boundaries the input actually carries fixes every per-clause
+# rule at once, not just the forward guard.
+#
+# TWO signals are needed, because a newline is not always a boundary. Wire
+# bodies wrap at ~72 columns, so
+#     "...expects revenue of" / "$18.1 billion" / "to $18.3 billion."
+# is ONE clause across three lines, and splitting it makes the parser read the
+# low end as a point estimate.
+#
+#   next line   starts a clause?  bullet glyph, or not lowercase and not a
+#                                 joining word
+#   prev line   closeable?        does NOT end on a joining word, a comma or a
+#                                 dangling dash -- those mean the clause runs on
+#
+# Both must hold. "Highlights:" is closeable and "Revenue" starts a clause, so
+# they split. "revenue of" is NOT closeable, so "$18.1 billion" stays attached.
+_BULLET = u'[•·▪●‣⁃∙*–—-]'
 
-    Wire bodies wrap at ~72 columns, so a guidance range routinely straddles
-    a newline: "revenue of $18.1 billion\\nto $18.3 billion". Splitting on
-    \\n first tears the range apart and the parser falls back to reading the
-    low end as a point estimate. Collapse whitespace within each paragraph
-    before splitting on sentence punctuation.
+# ★ NO re.I HERE. The first alternative was [a-z] under re.I, which matches
+# UPPERCASE too -- so every line read as a continuation and nothing split at
+# all. A flag silently widening a character class, which is the same species as
+# the backspace-for-\b and the glyph-versus-escape no-ops.
+_JOINING = (r'to|and|or|through|from|per|of|the|a|an|in|with|at|by|for|than|'
+            r'between|including|versus|vs')
+
+_CONTINUES = re.compile(r'^(?:' + _JOINING + r')\b|^[)\],;]')
+
+_STARTS_NEW = re.compile(r'^\s*' + _BULLET + r'\s+', re.U)
+
+_OPEN_END = re.compile(r'(?:\b(?:' + _JOINING + r')|[,\-–—+&]|\$)\s*$',
+                       re.I)
+
+
+def _line_starts_clause(line):
+    """True when this line BEGINS a clause rather than continuing one."""
+    t = (line or '').strip()
+    if not t:
+        return False
+    if _STARTS_NEW.match(line or ''):
+        return True                       # an explicit bullet glyph
+    if t[:1].islower():
+        return False                      # a wrapped continuation
+    return not _CONTINUES.match(t)
+
+
+def _line_is_closeable(line):
+    """True when the previous clause could legitimately end at this line."""
+    t = (line or '').strip()
+    if not t:
+        return True
+    return not _OPEN_END.search(t)
+
+
+def _sentences(text):
+    """Split into clauses on the boundaries the input actually carries.
+
+    Boundary kinds, most reliable first:
+      1. a blank line                       -- always
+      2. a bullet glyph                     -- always
+      3. a line that starts a clause AFTER a line that could close
+                                            -- RECOVERED; the wire does not
+                                               punctuate these
+      4. terminal punctuation               -- the classic case
     """
     out = []
-    for para in re.split(r'\n\s*\n', text):
-        flat = re.sub(r'\s+', ' ', para).strip()
-        if not flat:
+    for para in re.split(r'\n\s*\n', text or ''):
+        if not para.strip():
             continue
-        out.extend(s for s in re.split(r'(?<=[.!?])\s+', flat) if s)
+        chunks, cur = [], []
+        for line in para.split('\n'):
+            if (cur and _line_starts_clause(line)
+                    and _line_is_closeable(cur[-1])):
+                chunks.append(' '.join(cur))
+                cur = [line.strip()]
+            else:
+                cur.append(line.strip())
+        if cur:
+            chunks.append(' '.join(cur))
+        for chunk in chunks:
+            flat = re.sub(r'\s+', ' ', chunk).strip()
+            flat = re.sub(r'^' + _BULLET + r'\s*', '', flat)
+            if not flat:
+                continue
+            out.extend(x for x in re.split(r'(?<=[.!?])\s+', flat) if x)
     return out
 
 
@@ -1005,6 +1118,8 @@ def parse_margins(text):
     for name, pat in _MARGIN_PATTERNS.items():
         best = None
         for m in pat.finditer(text):
+            if _refused_zone(text, m.start()):
+                continue
             # ★ "The company anticipates gross margin of 55.5%." was read as
             # the reported margin. This was the only one of the five
             # current-quarter parsers with NO forward guard at all; revenue and

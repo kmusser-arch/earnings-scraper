@@ -91,7 +91,20 @@ def parse_tables(text):
     scale = None
     found = {}
 
+    # ★ Offsets per line, so a table row can be placed in a ZONE. The table
+    # path is the ONLY way APP-2026Q2's figures are read, so the income
+    # statement stays allowed -- but a balance-sheet or cash-flow row must not
+    # become a graded actual.
+    from . import zones
+    spans = zones.zone_spans(text or '')
+    offs, acc = [], 0
+    for raw in (text or '').splitlines():
+        offs.append(acc)
+        acc += len(raw) + 1
+
     for i, line in enumerate(lines):
+        if i < len(offs) and zones.is_refused_zone(text, offs[i], spans):
+            continue
         if not line:
             continue
         m = _SCALE_HEADER.search(line)
