@@ -1,7 +1,36 @@
-__pycache__/
-*.pyc
+# The virtualenv. Recreate with the two committed wheels:
+#   py -m venv venv
+#   .\venv\Scripts\pip install shel_newsgateway-1.3.10-py3-none-any.whl
+#   .\venv\Scripts\pip install labs_journal-1.2.1-py3-none-any.whl
+venv/
+
+# Live wire capture. Grows every run (75,523 lines / 37,761 messages at the time
+# this repo was initialised) and it is a session artefact, not source.
+#
+# ★ It is also UTF-16LE. Reading it as UTF-8 or cp1252 returns ZERO parseable
+# messages and looks like an empty log, which is how it sat unexamined. The
+# committed fixtures in tests/fixtures/ are UTF-8 so they cannot repeat that.
+news.log
+*.log
+
+# Secrets. Never commit either.
 .env
 secrets.json
-state/
-pending/
-*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Editor / OS
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini
+# Runtime state. The watchlist is the tickers pasted on ONE morning (the staged
+# copy was 2026-08-18, still carrying a ZZZZ test ticker and library counts from
+# the day before), and hits/ and pending/ are per-run artefacts. Every one of
+# these directories is created on demand by cli.py, listener.py and
+# watchlist.py, so nothing needs a placeholder.
+earnings_scraper/state/

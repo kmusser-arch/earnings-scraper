@@ -12,7 +12,7 @@ import json
 import os
 import time
 
-from . import config, detect, gate, parse, score, scorecard
+from . import config, detect, gate, parse, revisions, score, scorecard
 
 
 class Listener:
@@ -21,6 +21,10 @@ class Listener:
         self.watchlist = watchlist
         self.entries = watchlist.get('entries', {})
         self.model = model
+        # ★ Per-session, in memory. A restart SHOULD re-score: the operator has
+        # not seen a card from a session they were not watching, and swallowing
+        # the first card after a crash is worse than a duplicate.
+        self.revisions = revisions.RevisionLog()
         self.popup = popup
         self.on_card = on_card
         self.verbose = verbose
@@ -46,6 +50,25 @@ class Listener:
             self._seen_ids.add(item_id)
 
         t0 = time.perf_counter()
+        # ★ REVISION GATE, before anything expensive. 264 of 21,660 captured
+        # messages are re-fires of a story already on the wire (217
+        # minor-update, 47 update). Each one would otherwise push a second card
+        # for a print already read -- and the second can DISAGREE with the
+        # first, because the body may have changed between them.
+        action, rev_note = self.revisions.classify(item)
+        if action != 'score':
+            if action == 'suppress-loud':
+                print('')
+                print('=' * 78)
+                print(rev_note)
+                print('   %s' % (item.get('headline') or '')[:72])
+                print('=' * 78)
+            else:
+                print('   · %s' % rev_note)
+            return
+        if rev_note:
+            print('   · %s' % rev_note)
+
         cls = detect.classify(item)
         if not cls['is_earnings']:
             self.stats['rejected'] += 1
