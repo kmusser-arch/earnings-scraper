@@ -26,6 +26,7 @@ positional grid must declare whether it tolerates a flagged record.
 from . import flat
 from . import score
 from . import units
+from .scorecard import row_cons as _row_cons, row_name as _row_name
 
 LIVE = 'live'          # a card built from a press release, this minute
 STORED = 'stored'      # a record already in the library
@@ -187,11 +188,11 @@ def _prose_in_numeric_slot(rec):
         if flat._CALL_POINTER.search(v):
             out.append(Finding('pr-withheld', 'FINDING',
                                '[%d] %s — the release did not carry it (%r)'
-                               % (i, (k.get('name') or '')[:34], v)))
+                               % (i, (_row_name(k) or '')[:34], v)))
             continue
         out.append(Finding('prose-in-numeric-slot', 'SOFT',
                            '[%d] %s holds %r against a numeric expectation'
-                           % (i, (k.get('name') or '')[:34], v)))
+                           % (i, (_row_name(k) or '')[:34], v)))
     return out
 
 
@@ -286,14 +287,18 @@ def bullish_drift_watch(model):
         pre = ((rec.get('preEarnings') or {}).get('keyKPIs')) or []
         act = ((rec.get('actuals') or {}).get('keyKPIs')) or []
         for i, kpi in enumerate(pre):
-            name = kpi.get('name') or ''
+            # ★ metric/cons variant: 31 rows across AEHR-2026Q4, NFLX-2026Q2
+            # and TSLA-2026Q2 store the name under `metric` and the street
+            # under `cons`. A direct k['name'] read skipped every one of them
+            # SILENTLY -- the drift watch was blind to 3 records.
+            name = _row_name(kpi) or ''
             if _score._classify_period(name, rec.get('quarter')) \
                     != 'NEXTQ_GUIDE':
                 continue
             if 'revenue' not in name.lower() or _score.row_qualifiers(name):
                 continue
             row = act[i] if i < len(act) and isinstance(act[i], dict) else {}
-            val, cons = row.get('actual'), kpi.get('consensus')
+            val, cons = row.get('actual'), _row_cons(kpi)
             if not isinstance(val, (int, float)) \
                     or not isinstance(cons, (int, float)):
                 continue
@@ -321,7 +326,7 @@ def bullish_drift_watch(model):
         pre = ((rec.get('preEarnings') or {}).get('keyKPIs')) or []
         act = ((rec.get('actuals') or {}).get('keyKPIs')) or []
         for i, kpi in enumerate(pre):
-            name = kpi.get('name') or ''
+            name = _row_name(kpi) or ''
             if '\u2605' not in name:
                 continue
             if _score._classify_period(name, rec.get('quarter')) \
@@ -331,7 +336,7 @@ def bullish_drift_watch(model):
                 continue
             row = act[i] if i < len(act) and isinstance(act[i], dict) else {}
             val = row.get('actual')
-            cons, bog = kpi.get('consensus'), kpi.get('bogey')
+            cons, bog = _row_cons(kpi), kpi.get('bogey')
             if not all(isinstance(x, (int, float)) for x in (val, cons, bog)):
                 continue
             ec, ac_ = _score._normalise_pair(cons, val, name,
@@ -433,6 +438,30 @@ def _live_duplicates(card):
             for i, (val, n) in score.duplicate_actuals(rows).items()]
 
 
+def _priority_one_hero(rec):
+    """A profile with no priority-1 hero makes non-negotiable 3 UNREACHABLE.
+
+    "A priority-1 hero KPI miss caps Current Quarter at 0.0" cannot fire if no
+    hero declares priority 1. It was absent from three profiles -- HOOD, LITE
+    and DUOL -- so the cap silently could not apply to them.
+
+    ★ SOFT, deliberately. HOOD-2026Q1 and LITE-2026Q3 are stored records that
+    were NOT re-scored when the profiles were fixed, so a hard failure here
+    would demand re-scoring history to satisfy an audit. The check is worth
+    having; it is not worth a forced re-score.
+    """
+    prof = (rec.get('_profile') or {})
+    heroes = prof.get('heroKPIs') or rec.get('heroKPIs') or []
+    if not heroes:
+        return []
+    if any(h.get('priority') == 1 for h in heroes if isinstance(h, dict)):
+        return []
+    return [Finding('priority-one-hero', 'SOFT',
+                    'no hero declares priority 1, so non-negotiable 3 (a '
+                    'priority-1 miss caps Current Quarter at 0.0) can never '
+                    'fire for this ticker')]
+
+
 RULES = [
     Rule('overall-weighting', STORED, _overall_weighting,
          'scores.overall must equal the 0.2/0.3/0.3/0.2 weighting'),
@@ -454,6 +483,9 @@ RULES = [
          'print type the framework says to stay for'),
     Rule('unread-categories', STORED, _unread_categories,
          'a scored category with no one-sentence read'),
+    Rule('priority-one-hero', STORED, _priority_one_hero,
+         'a profile with no priority-1 hero makes non-negotiable 3 '
+         'unreachable'),
     Rule('rotation-declared', STORED, _rotation_declared,
          'surface rows a human blanked as rotated; NEVER infer a rotation'),
     Rule('unit-declared', LIVE, _live_units,

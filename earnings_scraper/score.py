@@ -706,9 +706,118 @@ def hero_scope(name):
     return row_qualifiers(name) - _FORM_TOKENS
 
 
+# ★ Cosmetics and RANK tokens are not part of a name. A profile hero written
+# "🔥 #1 Q4 Adj EPS ($)" and a grid row written "Q4 Adj EPS ($) ★★★" are the same
+# metric; the marker and the rank must never reach the matcher.
+_MARKERS = re.compile(r'[🔥★⚡✅⛔]+|#\s*\d+', re.U)
+
+# ★ WHAT is being measured, on an axis INDEPENDENT of the subject scope.
+#
+# hero_scope() deliberately strips every metric word -- 'revenue', 'eps',
+# 'margin', 'gm', 'ebitda' are all in _GENERIC_TOKENS -- because a profile hero
+# name and a keyKPI name are written months apart and spell the same metric
+# differently. That is right for the SUBJECT question ("is this the Auto segment
+# or the company?") and catastrophic for the ROW question: it makes the scope of
+# "Q4 Adj EPS ($)" and of "Q4 Total Revenue ($B)" both EMPTY, and empty equals
+# empty. 19 heroes scope to nothing and 27 of 76 records matched more than one
+# row -- ORCL's EPS hero matched 7, including revenue, FCF and gross margin.
+#
+# So the metric is recovered on its own axis, from the words scope throws away.
+# Order matters: the margin forms must be tested before their level forms, and
+# EBITDA margin before gross margin, or "Adj EBITDA Margin" reads as a margin
+# of the wrong kind.
+_METRIC_KINDS = (
+    ('ebitdaMargin', re.compile(r'ebitda\s*margin', re.I)),
+    ('grossMargin', re.compile(r'gross\s*margin|\bgm\b', re.I)),
+    ('opMargin', re.compile(r'operating\s*margin|\bop\s*margin\b|\bopm\b',
+                            re.I)),
+    ('opIncome', re.compile(r'operating\s+income|\bop\s+income\b|\boi\b'
+                            r'|income\s+from\s+operations', re.I)),
+    ('ebitda', re.compile(r'\bebitda\b', re.I)),
+    ('eps', re.compile(r'\beps\b|earnings\s+per\s+share', re.I)),
+    ('fcf', re.compile(r'\bfcf\b|free\s+cash\s+flow', re.I)),
+    ('capex', re.compile(r'\bcapex\b|capital\s+expenditure', re.I)),
+    ('backlog', re.compile(r'\bbacklog\b', re.I)),
+    ('rpo', re.compile(r'\bc?rpo\b|remaining\s+performance', re.I)),
+    ('arr', re.compile(r'\barr\b|annual\s+recurring', re.I)),
+    ('netIncome', re.compile(r'net\s+income|net\s+profit', re.I)),
+    ('revenue', re.compile(r'\brevenues?\b|\brev\b|\bsales\b|\bacv\b',
+                           re.I)),
+)
+
+
+def hero_metric_kind(name):
+    """WHICH METRIC a name denotes, or None when it names no known metric."""
+    n = _MARKERS.sub(' ', name or '')
+    for kind, pat in _METRIC_KINDS:
+        if pat.search(n):
+            return kind
+    return None
+
+
 def hero_scope_matches(hero_name, row_name):
-    """True when a row measures the same SUBJECT as the hero KPI."""
-    return hero_scope(hero_name) == hero_scope(row_name)
+    """True when a row measures the same SUBJECT and the same METRIC.
+
+    Both axes are required. The subject axis alone admitted a gross-margin hero
+    onto a revenue row (TSLA: "Auto GM ex-credits" and "Auto Revenue
+    ex-credits YoY" share the scope {auto, ex, credits} exactly), and admitted
+    every empty-scope hero onto every other empty-scope row.
+    """
+    if hero_scope(hero_name) != hero_scope(row_name):
+        return False
+    h, r = hero_metric_kind(hero_name), hero_metric_kind(row_name)
+    # A name with no recognisable metric constrains nothing, so it is not used
+    # to REFUSE a subject match -- only to split two subject-identical rows.
+    if h is None or r is None:
+        return True
+    return h == r
+
+
+#: profile appliesTo -> the period class _classify_period returns
+_APPLIES_TO_PERIOD = {
+    'currentQuarter': 'CURRENT_Q',
+    'nextQGuidance': 'NEXTQ_GUIDE',
+    'fyGuidance': 'FY_GUIDE',
+}
+
+
+def hero_period_matches(applies_to, row_name, quarter=None):
+    """True when a row sits in the period the profile says the hero grades.
+
+    ★ The third axis, and the one the data handed over for free. 20 of the 76
+    heroes matched exactly two rows -- the reported quarter and the guide for
+    the same metric -- and `appliesTo` already distinguishes them. Nothing is
+    inferred from wording here.
+
+    A hero whose appliesTo is `narrative`, or absent, constrains no period:
+    narrative rows are qualitative and do not live on the period axis.
+    """
+    want = _APPLIES_TO_PERIOD.get(applies_to)
+    if want is None:
+        return True
+    return _classify_period(row_name or '', quarter) == want
+
+
+def resolve_hero_row(hero_name, row_names, applies_to=None, quarter=None):
+    """The ONE row this hero grades, or (None, why).
+
+    ★ A non-unique match is a FAILURE, not a partial success. Taking the first
+    of seven is how a hero silently grades the wrong metric, and taking none is
+    how it silently falls back to revenue -- which provably cannot reproduce the
+    accepted grades (SNDK beat 6.9% and scored +1.0; TSLA beat 0.5% and +2.0).
+    """
+    hits = [i for i, nm in enumerate(row_names)
+            if hero_scope_matches(hero_name, nm or '')
+            and hero_period_matches(applies_to, nm, quarter)]
+    if len(hits) == 1:
+        return hits[0], None
+    if not hits:
+        return None, ('hero %r matches NO row in this grid — refusing rather '
+                      'than falling back to revenue' % hero_name)
+    return None, ('hero %r matches %d rows (%s) — AMBIGUOUS, refusing rather '
+                  'than grading the first' % (
+                      hero_name, len(hits),
+                      ', '.join((row_names[i] or '')[:22] for i in hits[:4])))
 
 
 def duplicate_actuals(rows):

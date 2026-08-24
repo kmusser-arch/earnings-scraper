@@ -15,7 +15,7 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from earnings_scraper import gate, parse as P, score as S      # noqa: E402
-from earnings_scraper.model import Model, NoProfile            # noqa: E402
+from earnings_scraper.model import Model, NoCard, NoProfile    # noqa: E402
 
 
 def body_for(rec, entry):
@@ -88,9 +88,18 @@ def main():
     widths = collections.Counter()
     bands = collections.Counter()
 
+    # ★ The declared exclusion is ASSERTED, not called through. This file used
+    # to die on IBM-2026Q2's NoCard at record 0 and contribute ZERO assertions
+    # while the runner still counted a clean suite -- 63 invisible checks. A
+    # refusal that the test walks into is a refusal the test never verified.
+    refused = []
     for rec in model.records:
         try:
             entry = model.prepare_from_record(rec)
+        except NoCard:
+            refused.append(rec['id'])
+            avail['NO_CARD (declared exclusion, refused)'] += 1
+            continue
         except NoProfile:
             avail['NO_PROFILE (refused)'] += 1
             continue
@@ -123,6 +132,18 @@ def main():
     print('=== gate availability on per-record realistic bodies (n=%d) ===' % total)
     for k, v in avail.most_common():
         print('  %-32s %3d  (%.0f%%)' % (k, v, v / total * 100))
+    # The no-card rule fires on exactly the records that DECLARE the exclusion.
+    from earnings_scraper import audit
+    declared = sorted(r['id'] for r in model.records
+                      if audit.is_declared_exclusion(r))
+    print('')
+    print('=== the no-card rule refuses exactly the declared exclusions ===')
+    print('%s refused %s; declared %s'
+          % ('PASS' if sorted(refused) == declared else 'FAIL',
+             sorted(refused), declared))
+    if sorted(refused) != declared:
+        return 1
+
     print('')
     print('which category is still None:')
     for k, v in blocked.most_common():
