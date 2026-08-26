@@ -89,21 +89,47 @@ class Model:
             revUnitNull=units.get(None, 0),
             revUnitB=units.get('$B', 0),
             revUnitM=units.get('$M', 0),
-            pinningSet=len(self.records) - len(legacy),
+            pinningSet=len([r for r in self.reported_records()
+                            if r['id'] not in legacy]),
+            pendingCards=len(self.records) - len(self.reported_records()),
             calibrationRecordsUsed=self.calibration.get('recordsUsed'),
             libraryVersion=self.library.get('version'),
             libraryLastUpdated=self.library.get('lastUpdated'),
         )
 
     def _legacy_ids(self):
-        """Resolve `legacyNonHalfStepRecords` ("MDB +1.4") to record ids."""
+        """Resolve `legacyNonHalfStepRecords` ("MDB +1.4") to record ids.
+
+        ★ MATCHED BY TICKER, SCOPED TO REPORTED RECORDS. Keying on the score
+        as well would be precise, but every score in the list is STALE -- "MDB
+        +1.4" against a record scoring 1.6, "AVGO +1.4" against 0.53 -- so
+        score-matching finds nothing and silently empties the exclusion set.
+
+        ⚠ CONSEQUENCE, and it is a real trap: while those figures disagree with
+        the records the exclusion stays ticker-wide, so a SECOND reported
+        quarter for any of these seven tickers will drop out of the pinning set
+        without a word. Fixing that means correcting the scores in
+        calibration.json, which is a data decision.
+        """
         out = set()
         for entry in self.calibration.get('legacyNonHalfStepRecords') or []:
             ticker = str(entry).split()[0].upper()
-            for rec in self.records:
+            for rec in self.reported_records():
                 if (rec.get('ticker') or '').upper() == ticker:
                     out.add(rec['id'])
         return out
+
+    def reported_records(self):
+        """Records with an outcome. A PRE-EARNINGS card pins nothing.
+
+        ★ The half-step pinning set is drawn from prints that HAPPENED. A card
+        built this morning for tonight's print has no actuals and no scores, so
+        counting it broke the one invariant that must hold -- and the warning
+        told the operator to regenerate calibration.json, which would have
+        rewritten the 69 records that pin the model.
+        """
+        return [r for r in self.records
+                if str(r.get('status') or '').upper() != 'PRE-EARNINGS']
 
     def check_invariant(self):
         """calibration.recordsUsed must equal the half-step pinning-set size.
@@ -119,7 +145,8 @@ class Model:
 
     def pinning_records(self):
         legacy = self._legacy_ids()
-        return [r for r in self.records if r['id'] not in legacy]
+        return [r for r in self.reported_records()
+                if r['id'] not in legacy]
 
     # --- the index ------------------------------------------------------------
 
