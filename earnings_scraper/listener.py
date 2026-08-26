@@ -69,6 +69,42 @@ class Listener:
         if rev_note:
             print('   · %s' % rev_note)
 
+        # ★ DID FULL MODE ACTUALLY TAKE EFFECT? subscribe() refuses any mode
+        # but 'full' -- but that checks the REQUEST, not the RESPONSE, and
+        # nothing has ever verified the response because the scraper has never
+        # run in full mode.
+        #
+        # This sits BEFORE detect deliberately. detect scores an earnings
+        # headline at 0.60 with no body and 0.65 with a short one -- under its
+        # threshold either way, because confidence comes mostly from figure
+        # classes in the body. So a bodyless print is rejected as a near-miss
+        # and an alarm placed after detection can never fire.
+        #
+        # Gated on the WATCHLIST so ordinary bodyless traffic is untouched:
+        # ticker routing reads primary_instruments, which needs no body.
+        if not (item.get('body') or '').strip():
+            _tk, _ = detect.extract_tickers(item, self.entries)
+            _watched = [t for t in _tk if t in self.entries]
+            if _watched:
+                self.stats['bodyless'] = self.stats.get('bodyless', 0) + 1
+                print('')
+                print('=' * 78)
+                print('STOP — %s WIRE ITEM WITH NO BODY (%d so far). Full mode '
+                      'is NOT in effect.'
+                      % (','.join(_watched), self.stats['bodyless']))
+                print('   %s carries strip_body=False -- FTI is the only one '
+                      'of 38 sources that' % item.get('source'))
+                print('   withholds a body -- so the source did not strip it. '
+                      'Either the subscription')
+                print('   is in headlines mode or the entitlement does not '
+                      'grant bodies.')
+                print('   NO CARD IS POSSIBLE from a headline, and this is a '
+                      'ticker you are waiting')
+                print('   on. Fix the subscription before the next print.')
+                print('   %s' % (item.get('headline') or '')[:70])
+                print('=' * 78)
+                return
+
         cls = detect.classify(item)
         if not cls['is_earnings']:
             self.stats['rejected'] += 1
