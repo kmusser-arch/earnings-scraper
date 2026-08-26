@@ -31,8 +31,14 @@ def parse_pasted(text):
     Returns an ordered, de-duplicated list of (ticker, note).
     """
     out, seen = [], set()
+    # ★ STRIP THE BOM. PowerShell's `Out-File -Encoding utf8` writes one, which
+    # made the first line '\ufeffNVDA' -- the ticker regex needs a leading
+    # letter, so the FIRST name was silently dropped while every other line
+    # parsed. A watchlist missing one ticker looks exactly like a correct one.
+    text = (text or '').lstrip(u'\ufeff')
+    unread = []
     for raw_line in text.splitlines():
-        line = raw_line.strip()
+        line = raw_line.strip().lstrip(u'\ufeff')
         if not line or line.startswith('#'):
             continue
         chunks = [c.strip() for c in line.split(',') if c.strip()]
@@ -44,6 +50,9 @@ def parse_pasted(text):
         for cand in candidates:
             m = re.match(r'^([A-Za-z][A-Za-z0-9.\-]{0,6})\b(.*)$', cand)
             if not m:
+                # ★ Never drop a pasted line in silence -- that is exactly how
+                # NVDA disappeared. Collected and printed below.
+                unread.append(cand[:40])
                 continue
             ticker = m.group(1).upper()
             note = m.group(2).strip(' -–—\t,')
@@ -51,6 +60,12 @@ def parse_pasted(text):
                 continue
             seen.add(ticker)
             out.append((ticker, note))
+    if unread:
+        print('   ! %d pasted line(s) could not be read as a ticker and were '
+              'IGNORED:' % len(unread))
+        for u in unread[:6]:
+            print('       %r' % u)
+
     return out
 
 

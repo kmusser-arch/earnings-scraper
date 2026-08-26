@@ -1,0 +1,4 @@
+﻿NVDA
+CRWD
+OKTA
+CRM
