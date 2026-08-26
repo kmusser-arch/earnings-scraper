@@ -113,7 +113,21 @@ def _overall_weighting(rec):
                     % (sc['overall'], calc, OVERALL_TOLERANCE))]
 
 
+def _is_pending(rec):
+    """A card built but not yet reported: PRE-EARNINGS with no actuals.
+
+    ★ Its actuals array is legitimately EMPTY -- the print has not happened. Any
+    rule that compares grid lengths must exempt it, or every pre-earnings build
+    raises a HARD alignment failure on the very cards it just created.
+    """
+    if str(rec.get('status') or '').upper() != 'PRE-EARNINGS':
+        return False
+    return not ((rec.get('actuals') or {}).get('keyKPIs') or [])
+
+
 def _alignment_length(rec):
+    if _is_pending(rec):
+        return []          # not yet reported -- empty actuals is right
     pre = ((rec.get('preEarnings') or {}).get('keyKPIs')) or []
     act = ((rec.get('actuals') or {}).get('keyKPIs')) or []
     if not pre and not act:

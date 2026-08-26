@@ -207,9 +207,13 @@ def main():
             if S.is_op_income_row(nm):
                 reachable += 1
                 heroes += ('★' in nm)
-    check('all 11 rows match the predicate', total == reachable and total == 11,
+    # ★ FLOORS. 11 rows / 4 heroes when written; 12 / 5 after the 2026-08-26
+    # build. What matters is that EVERY row matches the predicate -- none
+    # silently unreachable -- not the total.
+    check('every OI row matches the predicate, whatever the total',
+          total == reachable and total >= 11,
           '%d of %d' % (reachable, total))
-    check('4 of them are graded heroes', heroes == 4, heroes)
+    check('at least 4 are graded heroes', heroes >= 4, heroes)
 
     print('')
     print('=== precedence has THREE states, and None reaches the third ===')

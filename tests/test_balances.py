@@ -229,7 +229,11 @@ def main():
             total += 1
             if B.classify_row(nm) or B.refusal_reason(nm):
                 handled += 1
-    check('39 rows carry one of these words', total == 39, total)
+    # ★ A FLOOR, not an exact pin. Every pre-earnings build adds rows -- this
+    # was 39 when written and 49 after four cards landed on 2026-08-26. An
+    # exact total is a scheduled false alarm; a DROP still fails.
+    print('     %d rows carry one of these words (>=39 expected)' % total)
+    check('at least 39 rows carry one of these words', total >= 39, total)
     check('every one is either classified or explicitly refused',
           handled == total, '%d of %d' % (handled, total))
 

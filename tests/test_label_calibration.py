@@ -31,7 +31,12 @@ FAIL = [0]
 
 # band -> (n, up, down, mean move). Down is the load-bearing one for Neutral.
 CLAIMED = {
-    'Bullish': (28, 23, None, +10.57),
+    # ★ RE-PINNED 2026-08-26, not loosened. CRM-2027Q1's pctChangeNextDay was
+    # corrected 0 -> -0.75% (print May 27 close $177.51, May 28 next-day close
+    # $176.17). The quoted +8.17% was MAY 29 -- two sessions later, and a sector
+    # event: IGV +5%, OKTA +30%, SNOW +46%. n and the up-count did not move,
+    # which is why the calibration still stands.
+    'Bullish': (28, 23, None, +10.5457),
     'Neutral': (20, 5, 14, -1.60),
     'Bearish': (9, 0, None, -10.80),
 }
@@ -111,8 +116,10 @@ def main():
                if not isinstance((r.get('stockReaction') or {}), dict)
                or not isinstance((r.get('stockReaction') or {})
                                  .get('pctChangeNextDay'), (int, float))]
-    check('19 records sit outside the calibration', len(missing) == 19,
-          len(missing))
+    # ★ A FLOOR. Every pre-earnings build adds records with no outcome yet:
+    # 19 when written, 23 after the 2026-08-26 build.
+    check('at least 19 records sit outside the calibration',
+          len(missing) >= 19, len(missing))
     print('     %s' % ', '.join(sorted(missing)[:6]) + ' ...')
     print('     Backfilling these would CHANGE the published rates, not')
     print('     confirm them. That is a calibration decision, not a repair.')
