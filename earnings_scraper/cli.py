@@ -92,7 +92,11 @@ def cmd_run(args):
 
     print('Connecting to %s:%s as %s ...' % (
         env.SHEL_DATA_ENGINE_HOST, env.SHEL_DATA_ENGINE_PORT, args.user))
-    client.connect()
+    # ★ HOST AND PORT MUST BE PASSED. connect(host=None, port=None) forwards
+    # both to the socket unchanged -- it does NOT fall back to the environment
+    # the client was constructed with -- so a bare connect() reaches
+    # socket.connect((None, None)). The print above already had the values.
+    client.connect(env.SHEL_DATA_ENGINE_HOST, env.SHEL_DATA_ENGINE_PORT)
     listener_mod.subscribe(client, lst, mode='full')
     gradeable = [t for t, e in wl['entries'].items() if not e.get('error')]
     nocard = [t for t, e in wl['entries'].items() if e.get('error')]
