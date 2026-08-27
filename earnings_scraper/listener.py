@@ -34,13 +34,79 @@ class Listener:
         # "subscription died". Without it, an ended subscription and a clean
         # Ctrl+C are indistinguishable.
         self.stop_requested = False
+        # ★ Transport liveness. Distinguishes an IDLE wire (nothing being read)
+        # from a QUIET one (read fine, nothing to say). Last night those two
+        # looked identical for four hours.
+        self.started_at = time.time()
+        self.first_frame_at = None
+        self._last_beat = self.started_at
+        self._dead_warned = False
+        self.heartbeat_seconds = 60.0
+        self.first_frame_deadline = 30.0
         self.stats = dict(items=0, wire_items=0, candidates=0, cards=0,
                           rejected=0, off_watchlist=0, no_card=0, errors=0)
+
+    # --- liveness -------------------------------------------------------------
+
+    def tick(self, now=None):
+        """Called from the wire pump between drains. Prints, returns nothing.
+
+        ★ Two jobs, both about telling IDLE from QUIET:
+
+        1. A FIRST-FRAME WATCHDOG. If nothing at all has arrived within
+           `first_frame_deadline`, the transport is suspect -- said ONCE, with
+           the base rate attached so the operator can judge it against the
+           clock.
+        2. A HEARTBEAT every `heartbeat_seconds`: frames read, wire items,
+           watchlist matches, cards. An idle wire and a quiet wire produce
+           different numbers here, which is the whole point -- last night they
+           were indistinguishable without waiting for a print that never came.
+        """
+        now = now or time.time()
+
+        if self.first_frame_at is None and not self._dead_warned:
+            waited = now - self.started_at
+            if waited >= self.first_frame_deadline:
+                self._dead_warned = True
+                hour = time.gmtime(now).tm_hour
+                busy = 10 <= hour <= 23
+                print('')
+                print('=' * 78)
+                print('NO FRAMES IN %.0f SECONDS — the transport may be dead.'
+                      % waited)
+                print('   Measured over 36,213 real frames: the median gap '
+                      'between frames is 0.0s')
+                print('   and p99 is 34s. At 20Z (16:00 ET) the feed runs ~188 '
+                      'frames/MINUTE.')
+                if busy:
+                    print('   It is %02dZ, inside the busy window — %.0fs of '
+                          'total silence is NOT' % (hour, waited))
+                    print('   normal. Check the subscription before the next '
+                          'print.')
+                else:
+                    print('   It is %02dZ. Overnight (02Z-06Z) the feed drops '
+                          'to 1-59 frames per HOUR,' % hour)
+                    print('   so this may simply be a quiet wire. Re-check '
+                          'inside market hours.')
+                print('=' * 78)
+
+        if now - self._last_beat >= self.heartbeat_seconds:
+            self._last_beat = now
+            st = self.stats
+            up = now - self.started_at
+            print('   [%s] up %dm · %d frames · %d wire · %d matched · '
+                  '%d cards · %d no-card%s'
+                  % (time.strftime('%H:%M:%S'), int(up // 60), st['items'],
+                     st['wire_items'], st['candidates'] - st['off_watchlist'],
+                     st['cards'], st['no_card'],
+                     '' if self.first_frame_at else '  ⛔ NOTHING READ YET'))
 
     # --- the hot path ---------------------------------------------------------
 
     def handle(self, item):
         self.stats['items'] += 1
+        if self.first_frame_at is None:
+            self.first_frame_at = time.time()
         if item.get('msg_type') != 'news_item':
             return
         if item.get('source') not in config.WIRE_SOURCES:

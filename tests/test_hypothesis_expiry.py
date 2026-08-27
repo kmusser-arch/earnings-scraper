@@ -59,11 +59,47 @@ def main():
               and not any(str((r.get('summaries') or {}).get(c) or '').strip()
                           for c in CATS)]
     unflagged_unread = [r['id'] for r in unread if not took_flag_branch(r)]
-    expiry('no record WITHOUT the flag lacks its reads',
-           unflagged_unread == [], unflagged_unread)
-    expiry('every unread record carries the flag',
-           all(took_flag_branch(r) for r in unread),
-           [r['id'] for r in unread if not took_flag_branch(r)])
+
+    # ★ RE-STATED 2026-08-27, after the original expired.
+    #
+    # OLD: "no record WITHOUT the flag lacks its reads" -- therefore the flag
+    #      branch is the cause rather than the record.
+    # BROKE ON: CRM/CRWD/OKTA-2027Q2, hand-written after the 2026-08-26 prints,
+    #      unflagged, no summaries. The flag branch was NOT fixed; a manual
+    #      scoring pass skipped the reads. Same signature, different cause.
+    # NEW: "no record without the flag AND WRITTEN BY THE EXTRACTOR lacks its
+    #      reads." Hand-written records are a THIRD population.
+    #
+    # ⧗ AND THE NEW FORM IS NOT YET TESTABLE. No record carries any provenance
+    # marker, and ZERO records have ever been written by the extractor -- the
+    # scraper has never completed a live print. All 80 are hand-written, so
+    # scoped to extractor-written records the claim quantifies over an EMPTY
+    # SET and is vacuously true. Asserting it would be a green test that
+    # verifies nothing, which is the failure mode this whole file exists to
+    # prevent.
+    #
+    # It becomes real when the extractor stamps provenance on the first record
+    # it writes. Until then: report the population, assert only what is
+    # actually observed.
+    extractor_written = [r for r in recs if r.get('extractionRun')
+                         or r.get('writtenBy') == 'extractor']
+    print('     records written by the EXTRACTOR: %d of %d'
+          % (len(extractor_written), len(recs)))
+    print('     unflagged AND unread (all hand-written): %s'
+          % (unflagged_unread or 'none'))
+    if not extractor_written:
+        print('     ⧗ PENDING — the re-stated hypothesis ("no UNFLAGGED,')
+        print('       EXTRACTOR-WRITTEN record lacks its reads") quantifies over')
+        print('       an empty set. Not asserted: a vacuous pass is worse than')
+        print('       an open question. Needs a provenance stamp on the first')
+        print('       record the extractor writes.')
+    else:
+        scoped = [r['id'] for r in extractor_written
+                  if not took_flag_branch(r)
+                  and not any(str((r.get('summaries') or {}).get(c) or '').strip()
+                              for c in CATS)]
+        expiry('no UNFLAGGED, EXTRACTOR-WRITTEN record lacks its reads',
+               scoped == [], scoped)
 
     # ★ Compare on the DATE, not on a truncated timestamp literal. createdAt
     # carries microseconds and a Z ('2026-07-27T16:14:04.775598Z'), so a string

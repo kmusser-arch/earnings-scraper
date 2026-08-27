@@ -151,6 +151,21 @@ def cmd_run(args):
                 print('=' * 78)
                 return
 
+    def beat():
+        # ★ A DIAGNOSTIC MUST NEVER BE LOUDER THAN THE WORK. This thread exists
+        # only to report liveness; if it dies it must do so silently rather
+        # than spraying a traceback across the one screen the operator is
+        # watching for a print. BaseException covers the KeyboardInterrupt that
+        # reaches every thread on Ctrl+C.
+        try:
+            while not lst.stop_requested:
+                lst.tick()
+                time.sleep(1.0)
+        except BaseException:
+            return
+
+    threading.Thread(target=beat, daemon=True).start()
+
     if popup is not None:
         threading.Thread(target=pump_wire, daemon=True).start()
         try:
@@ -191,6 +206,117 @@ def _iter_log(path):
             yield json.loads(line)
         except ValueError:
             continue
+
+
+def cmd_wirecheck(args):
+    """Subscribe to every entitled source and prove frames arrive.
+
+    Exit 0 = frames flowing. Exit 1 = nothing read, and the transport is the
+    first suspect. No watchlist, no library, no scoring.
+    """
+    import threading
+    from shelnewsgateway import NewsGatewayClient, auth
+    from shelnewsgateway.environments import Environment, Staging, Prod
+
+    seen = dict(n=0, first=None, by_source={}, first_headline=None)
+    t0 = time.time()
+
+    def on_frame(item):
+        seen['n'] += 1
+        if seen['first'] is None:
+            seen['first'] = time.time() - t0
+            seen['first_headline'] = (item.get('headline') or '')[:66]
+        src = item.get('source') or item.get('msg_type') or '?'
+        seen['by_source'][src] = seen['by_source'].get(src, 0) + 1
+
+    if args.host or args.port:
+        env = Environment(args.host or Staging.SHEL_DATA_ENGINE_HOST,
+                          args.port or Staging.SHEL_DATA_ENGINE_PORT)
+    else:
+        env = Prod if args.prod else Staging
+
+    print('WIRE CHECK — %s:%s as %s' % (env.SHEL_DATA_ENGINE_HOST,
+                                        env.SHEL_DATA_ENGINE_PORT, args.user))
+    # ★ A PREFLIGHT MUST DIAGNOSE, NOT TRACEBACK. Its whole job is to be run
+    # when something is wrong, so an unhandled exception here is a tool that
+    # fails at the one moment it is needed.
+    #
+    # NOTE: NewsGatewayClient.__init__ ALREADY connects (journal.py:87 calls
+    # self.connect(self.host, self.port)), so the constructor is where a bad
+    # endpoint or a dead host surfaces -- not the explicit connect() below.
+    try:
+        token = args.token or auth.get_token(args.user)
+    except Exception as exc:
+        print('FAIL — could not obtain a token: %r' % (exc,))
+        print('   A cached token lasts ~24h. Refresh it from an interactive')
+        print('   terminal, then re-run.')
+        return 1
+    try:
+        client = NewsGatewayClient(env, args.user, token=token)
+        client.connect(env.SHEL_DATA_ENGINE_HOST, env.SHEL_DATA_ENGINE_PORT)
+    except Exception as exc:
+        print('FAIL — could not connect: %s: %s' % (type(exc).__name__, exc))
+        print('   Nothing downstream can work. This is the transport, not the')
+        print('   watchlist, the library or the parser.')
+        return 1
+
+    # ★ ALL sources, deliberately. See the module note: the five earnings wires
+    # are too quiet to prove liveness in 30 seconds.
+    handle = client.subscribe_news(on_frame, sources=None, mode=args.mode)
+    print('subscribed to ALL entitled sources in %s mode; waiting up to %ds'
+          % (args.mode, args.seconds))
+
+    stop = [False]
+
+    def pump():
+        while not stop[0]:
+            try:
+                client.wait()
+            except Exception as exc:
+                print('[wire] %r' % (exc,))
+                return
+            if client.outstanding_request_count() == 0:
+                print('SUBSCRIPTION ENDED while waiting.')
+                try:
+                    handle.raise_on_error()
+                except Exception as exc:
+                    print('   %r' % (exc,))
+                return
+
+    threading.Thread(target=pump, daemon=True).start()
+
+    deadline = t0 + args.seconds
+    while time.time() < deadline and seen['n'] < args.frames:
+        time.sleep(0.25)
+    stop[0] = True
+    waited = time.time() - t0
+
+    print('')
+    if seen['n'] >= args.frames:
+        print('PASS — %d frames in %.1fs (first after %.2fs)'
+              % (seen['n'], waited, seen['first']))
+        print('   %s' % (seen['first_headline'] or ''))
+        top = sorted(seen['by_source'].items(), key=lambda kv: -kv[1])[:8]
+        print('   by source: %s'
+              % ', '.join('%s=%d' % (k, v) for k, v in top))
+        wires = [k for k in seen['by_source'] if k in config.WIRE_SOURCES]
+        print('   earnings wires seen: %s' % (', '.join(sorted(wires)) or
+                                              'none yet (they are low volume)'))
+        return 0
+
+    hour = time.gmtime().tm_hour
+    print('FAIL — %d frames in %.0fs. The transport is the first suspect.'
+          % (seen['n'], waited))
+    print('   Measured over 36,213 real frames across all sources: median gap')
+    print('   0.00s, p99 34s, and 188 frames/MINUTE during the 20Z hour.')
+    if 10 <= hour <= 23:
+        print('   It is %02dZ, INSIDE the busy window. This is not a quiet '
+              'wire.' % hour)
+    else:
+        print('   It is %02dZ. Overnight the feed drops to 1-59 frames per '
+              'HOUR, so' % hour)
+        print('   re-run this inside market hours before concluding anything.')
+    return 1
 
 
 def cmd_replay(args):
@@ -461,6 +587,20 @@ def build_parser():
     au = sub.add_parser('audit',
                         help='HARD 10 — domain-implausible expected values')
     au.set_defaults(func=cmd_audit)
+
+    wc = sub.add_parser('wirecheck',
+                        help='prove frames arrive before a print depends on it')
+    wc.add_argument('-u', '--user', required=True, help='SHEL username')
+    wc.add_argument('--token', default=None)
+    wc.add_argument('--prod', action='store_true')
+    wc.add_argument('--host', default=None)
+    wc.add_argument('--port', type=int, default=None)
+    wc.add_argument('--mode', default='full', choices=['full', 'headlines'])
+    wc.add_argument('--seconds', type=float, default=30.0,
+                    help='how long to wait for the first frames (default 30)')
+    wc.add_argument('--frames', type=int, default=1,
+                    help='how many frames constitute a PASS (default 1)')
+    wc.set_defaults(func=cmd_wirecheck)
 
     st = sub.add_parser('selftest',
                         help='grade a synthetic release against a real card')
