@@ -175,13 +175,17 @@ def main():
     print('=== published tally reproduced from the live library ===')
     tally = {}
     contained = 0
+    evaluable = 0
     for rec in model.records:
         s = rec.get('scores') or {}
         try:
             gg = gate.evaluate(s.get('currentQuarter'), s.get('nextQGuidance'),
                                s.get('fyGuidance'), fw)
         except gate.IncompleteScore:
+            # ★ A PRE-EARNINGS card has no scores yet. It is not a containment
+            # failure; it is a print that has not happened.
             continue
+        evaluable += 1
         if gate.assert_containment(gg['overallBracket'], s.get('overall')):
             contained += 1
         px = gate.reaction_of(rec)
@@ -192,8 +196,15 @@ def main():
         t['down'] += (px < 0)
         t['total'] += px
 
-    # ★ FLOOR: the library grows at every pre-earnings build (76 -> 80).
-    check('containment covers every record', contained == len(model.records), contained)
+    # ★ THE DENOMINATOR IS EVALUABLE RECORDS, NOT ALL RECORDS. The loop above
+    # skips anything the gate cannot evaluate -- which is precisely a
+    # PRE-EARNINGS card. Comparing against len(model.records) was right only
+    # while every record happened to be scored.
+    pending = len(model.records) - evaluable
+    print('     %d evaluable · %d pending/incomplete · %d records'
+          % (evaluable, pending, len(model.records)))
+    check('containment holds for every EVALUABLE record',
+          contained == evaluable, '%d of %d' % (contained, evaluable))
 
     # ★ THE PUBLISHED 29 / 1 / 27 TALLY IS A v1 MEASUREMENT AND IS PINNED AS
     # HISTORY. It is what produced the STAY_FOR_CALL base rate, so it must stay

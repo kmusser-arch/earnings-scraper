@@ -36,7 +36,16 @@ CLAIMED = {
     # $176.17). The quoted +8.17% was MAY 29 -- two sessions later, and a sector
     # event: IGV +5%, OKTA +30%, SNOW +46%. n and the up-count did not move,
     # which is why the calibration still stands.
-    'Bullish': (28, 23, None, +10.5457),
+    # ★ RE-PINNED AGAIN 2026-08-27. MRVL-2027Q1 corrected -2.00 -> +3.09
+    # (verified tape, print May 27 2026 AMC). +5.09pp on one record moves
+    # the mean +10.5457 -> +10.7275 AND crosses zero, so the up-count goes
+    # 23 -> 24. Membership is unchanged: same 28 records.
+    #
+    # Two outcome corrections in two days, both raising the Bullish mean.
+    # Worth watching: if the corrections keep landing one way, the
+    # published +10.57 was biased by whichever tape reading was easiest to
+    # find, not by the data. Not adjusted for -- recorded.
+    'Bullish': (28, 24, None, +10.7275),
     'Neutral': (20, 5, 14, -1.60),
     'Bearish': (9, 0, None, -10.80),
 }

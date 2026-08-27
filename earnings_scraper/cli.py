@@ -224,7 +224,8 @@ def cmd_wirecheck(args):
     from shelnewsgateway.environments import Environment, Staging, Prod
 
     seen = dict(n=0, news=0, first=None, by_source={}, first_headline=None,
-                subscribed=None, dead=False, error=None)
+                subscribed=None, dead=False, error=None,
+                with_body=0, body_by_source={}, body_sample=None)
     t0 = time.time()
 
     def on_frame(item):
@@ -245,6 +246,19 @@ def cmd_wirecheck(args):
         seen['news'] += 1
         src = item.get('source') or item.get('msg_type') or '?'
         seen['by_source'][src] = seen['by_source'].get(src, 0) + 1
+        # ★ GRANTED IS NOT DELIVERED. The gateway echoing mode='full' says the
+        # REQUEST was accepted; it does not prove a body rides along. Nothing
+        # can be graded from a headline, so the body is counted per source --
+        # and per source matters because FTI strips its body by contract while
+        # the five earnings wires do not.
+        body = (item.get('body') or '').strip()
+        if body:
+            seen['with_body'] += 1
+            seen['body_by_source'][src] = seen['body_by_source'].get(src, 0) + 1
+            if seen['body_sample'] is None:
+                seen['body_sample'] = (
+                    src, len(body),
+                    ' '.join(body[:90].split()))
 
     if args.host or args.port:
         env = Environment(args.host or Staging.SHEL_DATA_ENGINE_HOST,
@@ -355,6 +369,27 @@ def cmd_wirecheck(args):
         top = sorted(seen['by_source'].items(), key=lambda kv: -kv[1])[:8]
         print('   by source: %s'
               % ', '.join('%s=%d' % (k, v) for k, v in top))
+        print('')
+        # ★ THE LINE THAT DECIDES WHETHER ANYTHING CAN BE GRADED.
+        if seen['with_body']:
+            src, n, sample = seen['body_sample']
+            print('   BODIES PRESENT — %d of %d frames carried one'
+                  % (seen['with_body'], seen['news']))
+            bb = sorted(seen['body_by_source'].items(), key=lambda kv: -kv[1])
+            print('   with body by source: %s'
+                  % ', '.join('%s=%d' % (k, v) for k, v in bb[:8]))
+            print('   first body: %s, %d chars' % (src, n))
+            print('     %s...' % sample)
+        else:
+            print('   ⛔ NO BODIES — %d frames, not one carried a body.'
+                  % seen['news'])
+            print('   The gateway granted full mode but delivered headlines. '
+                  'NOTHING CAN BE')
+            print('   GRADED from a headline: the teaser truncates before any '
+                  'figure. Note that')
+            print('   a low-volume sample may simply have missed the '
+                  'body-carrying sources --')
+            print('   re-run with --seconds 60 before concluding.')
         wires = [k for k in seen['by_source'] if k in config.WIRE_SOURCES]
         print('   earnings wires seen: %s' % (', '.join(sorted(wires)) or
                                               'none yet (they are low volume)'))
