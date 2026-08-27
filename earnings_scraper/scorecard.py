@@ -411,6 +411,16 @@ def record_from_card(card, entry):
         company=card.get('company'),
         quarter=card.get('quarter'),
         status=card.get('status'),
+        # ★ PROVENANCE, STAMPED AT THE MOMENT OF WRITING. The library reserves
+        # 'extractor' alongside the 80 'hand-written' records so the reads
+        # hypothesis can be scoped to the population the flag branch actually
+        # governs. Reserving the value is useless unless the write path sets
+        # it -- without this line the first machine-written record would be
+        # indistinguishable from a hand-written one, and the hypothesis would
+        # quantify over an empty set forever while appearing to wait.
+        provenance='extractor',
+        extractedAt=card.get('receivedAt'),
+        extractedFrom=card.get('wire'),
         # ★ narrative stays None; the three others carry what was graded.
         scores=dict(card.get('scores') or {}),
         preEarnings=dict(keyKPIs=pre),

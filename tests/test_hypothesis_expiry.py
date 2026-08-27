@@ -81,10 +81,17 @@ def main():
     # It becomes real when the extractor stamps provenance on the first record
     # it writes. Until then: report the population, assert only what is
     # actually observed.
-    extractor_written = [r for r in recs if r.get('extractionRun')
-                         or r.get('writtenBy') == 'extractor']
-    print('     records written by the EXTRACTOR: %d of %d'
-          % (len(extractor_written), len(recs)))
+    # ★ The real field, stamped by record_from_card at write time. All 80
+    # existing records carry provenance 'hand-written'; 'extractor' appears the
+    # first time the scraper writes one.
+    extractor_written = [r for r in recs if r.get('provenance') == 'extractor']
+    hand = [r for r in recs if r.get('provenance') == 'hand-written']
+    unstamped = [r['id'] for r in recs if not r.get('provenance')]
+    print('     provenance: %d hand-written · %d extractor · %d unstamped'
+          % (len(hand), len(extractor_written), len(unstamped)))
+    if unstamped:
+        print('     ⚠ unstamped records cannot be classified: %s'
+              % unstamped[:5])
     print('     unflagged AND unread (all hand-written): %s'
           % (unflagged_unread or 'none'))
     if not extractor_written:
@@ -92,7 +99,8 @@ def main():
         print('       EXTRACTOR-WRITTEN record lacks its reads") quantifies over')
         print('       an empty set. Not asserted: a vacuous pass is worse than')
         print('       an open question. Needs a provenance stamp on the first')
-        print('       record the extractor writes.')
+        print('       record the extractor writes — record_from_card now')
+        print('       stamps provenance=extractor, so write #1 activates it.')
     else:
         scoped = [r['id'] for r in extractor_written
                   if not took_flag_branch(r)
