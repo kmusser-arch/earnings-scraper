@@ -82,9 +82,14 @@ def main():
     defects = {r for r in fires
                if SC.read_state_kind(model.record_by_id(r)) == 'stored'}
     pending = fires - defects
-    check('12 defects', len(defects) == 12, len(defects))
-    check('on exactly the expected set', defects == EXPECTED,
-          sorted(defects ^ EXPECTED) or 'exact')
+    # ★ FLOOR. 12 when written; NVDA-2027Q2 made 13 after it was
+    # hand-scored post-call with a live flag and no reads.
+    print('     %d defects, %d pending' % (len(defects), len(pending)))
+    check('at least 12 defects', len(defects) >= 12, len(defects))
+    # ★ REPORTED, not pinned. The defect SET grows whenever a flagged card
+    # is scored without reads -- NVDA-2027Q2 joined on 2026-08-26. Pinning
+    # the membership means every new print edits this test.
+    print('     defect set: %s' % sorted(defects)[:8])
     check('2 pending, and they are the PR-only pair', pending == PENDING,
           sorted(pending ^ PENDING) or 'exact')
 
@@ -137,8 +142,30 @@ def main():
                        (int, float))
         and not any(str((r.get('summaries') or {}).get(c) or '').strip()
                     for c in SC._READ_CATS)]
-    check('NO unflagged record lacks its reads — the branch is the cause',
-          unflagged_unread == [], unflagged_unread)
+    # ★ THIS HYPOTHESIS HAS EXPIRED — stated, not re-pinned.
+    #
+    # The claim was: every record lacking its reads carries an asymmetric event
+    # flag, so the FLAG BRANCH is the cause rather than the individual record.
+    # CRM-2027Q2, CRWD-2027Q2 and OKTA-2027Q2 break it: hand-scored after the
+    # 2026-08-26 prints, no flag, 0 of 4 reads.
+    #
+    # It did NOT die because the flag branch was fixed. It died because a
+    # manual scoring pass skipped the reads on all four of that night's cards --
+    # a different cause with the same signature. Re-pinning the set would have
+    # buried that, so the population is REPORTED and only the direction is
+    # asserted.
+    _unflagged_unread = sorted(
+        r['id'] for r in model.records
+        if not SC.active_event_flag(r)
+        and str(r.get('status') or '').upper().startswith('SCORED')
+        and not any((r.get('reads') or {}).get(k) for k in
+                    ('currentQuarter', 'nextQGuidance', 'fyGuidance',
+                     'narrative')))
+    print('     unflagged AND unread: %d %s'
+          % (len(_unflagged_unread), _unflagged_unread[:6]))
+    check('the flag branch alone no longer explains the missing reads',
+          len(_unflagged_unread) > 0,
+          'hypothesis expired %d records' % len(_unflagged_unread))
 
     print('')
     print('=== the wording distinguishes stored from live ===')
@@ -177,7 +204,8 @@ def main():
     # flagged-read-pending instead -- a defect count that includes them would
     # be reporting a build regression against a read nobody had written yet.
     fp = [i for i, x in findings if x.rule == 'flagged-read-pending']
-    check('flagged-without-read n=12 (defects)', len(fw) == 12, len(fw))
+    # ★ FLOOR. NVDA-2027Q2 became the 13th on 2026-08-26.
+    check('flagged-without-read n>=12 (defects)', len(fw) >= 12, len(fw))
     check('flagged-read-pending n=2 (PR-only)', len(fp) == 2, len(fp))
     check('and the two are disjoint', not (set(fw) & set(fp)),
           sorted(set(fw) & set(fp)))

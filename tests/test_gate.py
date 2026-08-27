@@ -192,7 +192,8 @@ def main():
         t['down'] += (px < 0)
         t['total'] += px
 
-    check('containment 76/76', contained == 76, contained)
+    # ★ FLOOR: the library grows at every pre-earnings build (76 -> 80).
+    check('containment covers every record', contained == len(model.records), contained)
 
     # ★ THE PUBLISHED 29 / 1 / 27 TALLY IS A v1 MEASUREMENT AND IS PINNED AS
     # HISTORY. It is what produced the STAY_FOR_CALL base rate, so it must stay

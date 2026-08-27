@@ -97,7 +97,7 @@ def cmd_run(args):
     # the client was constructed with -- so a bare connect() reaches
     # socket.connect((None, None)). The print above already had the values.
     client.connect(env.SHEL_DATA_ENGINE_HOST, env.SHEL_DATA_ENGINE_PORT)
-    listener_mod.subscribe(client, lst, mode='full')
+    handle = listener_mod.subscribe(client, lst, mode='full')
     gradeable = [t for t, e in wl['entries'].items() if not e.get('error')]
     nocard = [t for t, e in wl['entries'].items() if e.get('error')]
     print('Subscribed to %s in full mode.' % ', '.join(config.WIRE_SOURCES))
@@ -108,12 +108,48 @@ def cmd_run(args):
     print('')
 
     def pump_wire():
-        try:
-            client.wait()
-        except KeyboardInterrupt:
-            pass
-        except Exception as exc:
-            print('[wire] %r' % exc)
+        """Drain the wire until the subscription genuinely ends.
+
+        ★ client.wait() RETURNS whenever nothing is outstanding, normally and
+        silently -- it drains what is currently pending, it is not a stream. A
+        single call read the socket once and returned; the thread then died
+        while the popup mainloop kept the process alive showing "Waiting for
+        releases", and no release was ever read. This is the SDK CLI's own
+        loop, including its check for a subscription that ended rather than
+        merely reconnected.
+        """
+        while not lst.stop_requested:
+            try:
+                client.wait()
+            except KeyboardInterrupt:
+                return
+            except Exception as exc:
+                print('')
+                print('=' * 78)
+                print('WIRE ERROR — %r' % (exc,))
+                print('   The connection is down. No release can be scored '
+                      'until this is fixed.')
+                print('=' * 78)
+                return
+            if client.outstanding_request_count() == 0:
+                # Nothing outstanding and we were not asked to stop: the
+                # SUBSCRIPTION itself ended -- rejected, or closed by the
+                # server. A recovered disconnect would have replayed the
+                # subscribe and re-added an outstanding request.
+                print('')
+                print('=' * 78)
+                print('SUBSCRIPTION ENDED — the wire is no longer being read.')
+                try:
+                    if handle is not None:
+                        handle.raise_on_error()
+                    print('   No error reported; the server closed it.')
+                except Exception as exc:
+                    print('   %r' % (exc,))
+                    print('   A REJECTED subscription looks exactly like a '
+                          'quiet wire from the outside.')
+                print('   Nothing further will be scored. Restart the run.')
+                print('=' * 78)
+                return
 
     if popup is not None:
         threading.Thread(target=pump_wire, daemon=True).start()
@@ -127,6 +163,9 @@ def cmd_run(args):
         except KeyboardInterrupt:
             pass
 
+    # ★ Tell the pump this was a deliberate stop, so an ENDED SUBSCRIPTION
+    # stays distinguishable from an operator quitting.
+    lst.stop_requested = True
     print('')
     print('stats: %s' % lst.stats)
     return 0

@@ -49,6 +49,11 @@ class StubClient(object):
         self.connected_to = None
         self.subscribed = None
         self.waited = False
+        self.wait_calls = 0
+        self.delivered = 0
+        self.callback = None
+        self.handle = None
+        self._outstanding = 0
 
     def connect(self, host=None, port=None):
         # The real client forwards these straight to socket.connect((host,
@@ -58,10 +63,36 @@ class StubClient(object):
     def subscribe_news(self, callback, sources=None, mode='headlines',
                        format_id=1):
         self.subscribed = dict(sources=sources, mode=mode)
-        return object()
+        self.callback = callback
+        self._outstanding = 1
+        self.handle = StubHandle()
+        return self.handle
 
-    def wait(self):
+    # ★ THE REAL CONTRACT. Session.wait() drains whatever is outstanding and
+    # RETURNS -- normally, silently -- as soon as the count hits zero. It is
+    # not a stream. A pump that calls it once reads one drain and then never
+    # reads the socket again.
+    def wait(self, max_count=None):
         self.waited = True
+        self.wait_calls += 1
+        if self.wait_calls > 3:
+            # the wire goes quiet: nothing outstanding, wait() returns at once
+            self._outstanding = 0
+            return None
+        if self.callback is not None:
+            self.delivered += 1
+            self.callback(dict(msg_type='news_item', source='BUS',
+                               id='stub-%d' % self.wait_calls,
+                               headline='Stub Co Reports Second Quarter Results'))
+        return None
+
+    def outstanding_request_count(self):
+        return self._outstanding
+
+
+class StubHandle(object):
+    def raise_on_error(self):
+        return None
 
 
 class Args(object):
@@ -175,6 +206,29 @@ def main():
           sorted(sub.get('sources') or []))
     check('    which is ASW, BUS, NFI, PRN, PZM',
           sorted(config.WIRE_SOURCES) == ['ASW', 'BUS', 'NFI', 'PRN', 'PZM'])
+
+    print('')
+    print('=== THE PUMP MUST LOOP — one wait() is not a stream ===')
+    # ★ THE REGRESSION THAT COST FOUR PRINTS. pump_wire called client.wait()
+    # once, on a daemon thread. wait() returns as soon as nothing is
+    # outstanding -- normally and silently -- so the thread ended and the
+    # socket was never read again while the popup showed "Waiting for
+    # releases". Connected, subscribed, idle, silent.
+    check('wait() was called MORE THAN ONCE', client.wait_calls > 1,
+          client.wait_calls)
+    check('    it kept draining until the wire went quiet',
+          client.wait_calls >= 4, client.wait_calls)
+    check('    and messages reached the listener on each pass',
+          client.delivered >= 3, client.delivered)
+    check('the pump stops when nothing is outstanding',
+          client.outstanding_request_count() == 0)
+
+    print('')
+    print('=== the subscription HANDLE is kept, not discarded ===')
+    # A rejected subscription is indistinguishable from a quiet wire unless
+    # raise_on_error() can be consulted.
+    check('subscribe returned a handle the caller retained',
+          client.handle is not None)
 
     print('')
     print('=== subscribe() itself refuses headlines mode ===')

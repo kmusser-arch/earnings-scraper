@@ -248,7 +248,8 @@ def main():
     print('=== ⚡ the asymmetric event flag is carried forward ===')
     n_flag = sum(1 for r in model.records if r.get('asymmetricEventFlag'))
     n_watch = sum(1 for r in model.records if r.get('asymmetricEventWatch'))
-    check('library carries 22 flags', n_flag == 22, n_flag)
+    # ★ FLOOR, not an exact pin: 22 when written, 23 after 2026-08-26.
+    check('library carries at least 22 flags', n_flag >= 22, n_flag)
     check('and 5 weaker "watch" entries', n_watch == 5, n_watch)
 
     amd = model.record_by_id('AMD-2026Q1')

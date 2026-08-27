@@ -227,6 +227,19 @@ def read_state_kind(record):
     return 'live'
 
 
+def _is_pending_card(record):
+    """PRE-EARNINGS with no actuals: the print has not happened.
+
+    ★ Its category reads are absent because reads are written FROM THE CALL.
+    That is not the missing-deliverable defect this module hunts -- it is the
+    normal state of a card built this morning for tonight's print.
+    """
+    rec = record or {}
+    if str(rec.get('status') or '').upper() != 'PRE-EARNINGS':
+        return False
+    return not ((rec.get('actuals') or {}).get('keyKPIs') or [])
+
+
 def flagged_without_read(record, kind=None):
     """An ACTIVE asymmetric event flag on a card carrying no category read.
 
@@ -244,6 +257,8 @@ def flagged_without_read(record, kind=None):
     they have not been written yet, so the same condition is a reminder that
     this is the print that needs them.
     """
+    if _is_pending_card(record):
+        return None
     if not active_event_flag(record):
         return None
     if kind is None:

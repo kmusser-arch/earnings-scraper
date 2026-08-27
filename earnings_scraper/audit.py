@@ -412,6 +412,8 @@ def _unread_categories(rec):
     score is wrong or the data is incomplete -- a scored category with no
     sentence is that condition, unannounced.
     """
+    if _is_pending(rec):
+        return []          # reads come from the call; it has not happened
     sm = rec.get('summaries') or {}
     sc = rec.get('scores') or {}
     cats = ('currentQuarter', 'nextQGuidance', 'fyGuidance', 'narrative')

@@ -30,6 +30,10 @@ class Listener:
         self.verbose = verbose
         self.log_hits = log_hits
         self._seen_ids = set()
+        # ★ Set on shutdown so the wire pump can tell "asked to stop" from
+        # "subscription died". Without it, an ended subscription and a clean
+        # Ctrl+C are indistinguishable.
+        self.stop_requested = False
         self.stats = dict(items=0, wire_items=0, candidates=0, cards=0,
                           rejected=0, off_watchlist=0, no_card=0, errors=0)
 
