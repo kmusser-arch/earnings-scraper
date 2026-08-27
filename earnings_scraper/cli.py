@@ -218,14 +218,26 @@ def cmd_wirecheck(args):
     from shelnewsgateway import NewsGatewayClient, auth
     from shelnewsgateway.environments import Environment, Staging, Prod
 
-    seen = dict(n=0, first=None, by_source={}, first_headline=None)
+    seen = dict(n=0, news=0, first=None, by_source={}, first_headline=None,
+                subscribed=None)
     t0 = time.time()
 
     def on_frame(item):
         seen['n'] += 1
+        # ★ THE CONFIRMATION IS THE ANSWER TO THE ENTITLEMENT QUESTION. The
+        # gateway replies with msg_type='subscribed' and ECHOES BACK the mode it
+        # actually granted. If the request for 'full' comes back as 'headlines',
+        # the account is not entitled to bodies -- and that is exactly the
+        # failure that would look like a quiet wire from the outside. Tracked
+        # separately from news frames, because it proves the SUBSCRIPTION was
+        # accepted rather than that news is flowing.
+        if item.get('msg_type') == 'subscribed':
+            seen['subscribed'] = item
+            return
         if seen['first'] is None:
             seen['first'] = time.time() - t0
             seen['first_headline'] = (item.get('headline') or '')[:66]
+        seen['news'] += 1
         src = item.get('source') or item.get('msg_type') or '?'
         seen['by_source'][src] = seen['by_source'].get(src, 0) + 1
 
@@ -286,15 +298,37 @@ def cmd_wirecheck(args):
     threading.Thread(target=pump, daemon=True).start()
 
     deadline = t0 + args.seconds
-    while time.time() < deadline and seen['n'] < args.frames:
+    while time.time() < deadline and seen['news'] < args.frames:
         time.sleep(0.25)
     stop[0] = True
     waited = time.time() - t0
 
     print('')
-    if seen['n'] >= args.frames:
-        print('PASS — %d frames in %.1fs (first after %.2fs)'
-              % (seen['n'], waited, seen['first']))
+    # ★ Reported FIRST and always: accepted-vs-rejected is a different question
+    # from news-is-flowing, and last night the two were indistinguishable.
+    sub = seen['subscribed']
+    if sub is None:
+        print('NO SUBSCRIPTION CONFIRMATION — the gateway never acknowledged '
+              'the request.')
+        print('   A rejected subscription looks exactly like a quiet wire from '
+              'the outside.')
+    else:
+        granted = sub.get('mode')
+        print('SUBSCRIPTION ACCEPTED — gateway echoed mode=%r' % (granted,))
+        if granted and granted != args.mode:
+            print('   ⛔ YOU ASKED FOR %r AND WERE GRANTED %r.' % (args.mode,
+                                                                  granted))
+            print('   In headlines mode there is NO BODY, so nothing can be '
+                  'graded. This is an')
+            print('   ENTITLEMENT limit, not a code bug -- it needs whoever '
+                  'provisions the gateway.')
+        elif granted:
+            print('   mode matches the request; bodies should be present.')
+    print('')
+
+    if seen['news'] >= args.frames:
+        print('PASS — %d news frames in %.1fs (first after %.2fs)'
+              % (seen['news'], waited, seen['first']))
         print('   %s' % (seen['first_headline'] or ''))
         top = sorted(seen['by_source'].items(), key=lambda kv: -kv[1])[:8]
         print('   by source: %s'
@@ -305,8 +339,8 @@ def cmd_wirecheck(args):
         return 0
 
     hour = time.gmtime().tm_hour
-    print('FAIL — %d frames in %.0fs. The transport is the first suspect.'
-          % (seen['n'], waited))
+    print('FAIL — %d news frames in %.0fs (%d frames total). The transport is '
+          'the first suspect.' % (seen['news'], waited, seen['n']))
     print('   Measured over 36,213 real frames across all sources: median gap')
     print('   0.00s, p99 34s, and 188 frames/MINUTE during the 20Z hour.')
     if 10 <= hour <= 23:
