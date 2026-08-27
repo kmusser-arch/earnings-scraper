@@ -46,7 +46,13 @@ class StubClient(object):
 
     def __init__(self, env, user, token=None, **kw):
         self.env, self.user, self.token = env, user, token
-        self.connected_to = None
+        # ★ THE REAL CONTRACT. NewsGatewayClient.__init__ connects (journal.py:87)
+        # and then calls self._login(). A constructed client is connected AND
+        # authenticated; the caller must not connect again.
+        self.connected_to = (env.SHEL_DATA_ENGINE_HOST,
+                             env.SHEL_DATA_ENGINE_PORT)
+        self.logged_in = True
+        self.reconnects = 0
         self.subscribed = None
         self.waited = False
         self.wait_calls = 0
@@ -56,12 +62,21 @@ class StubClient(object):
         self._outstanding = 0
 
     def connect(self, host=None, port=None):
-        # The real client forwards these straight to socket.connect((host,
-        # port)) with no fallback, so None here IS the bug.
+        # ★ A SECOND CONNECT IS A NEW, ANONYMOUS SOCKET. The real client
+        # forwards host/port straight to socket.connect() with no fallback (so
+        # None is a TypeError), and nothing re-authenticates -- _login() runs
+        # only from __init__ and from the internal reconnect path. Calling this
+        # from outside therefore DISCARDS THE LOGIN.
         self.connected_to = (host, port)
+        self.logged_in = False
+        self.reconnects += 1
 
     def subscribe_news(self, callback, sources=None, mode='headlines',
                        format_id=1):
+        # ★ Exactly what the gateway does on an unauthenticated connection.
+        if not self.logged_in:
+            raise RuntimeError('Client must be logged in before requesting '
+                               'news-gateway')
         self.subscribed = dict(sources=sources, mode=mode)
         self.callback = callback
         self._outstanding = 1
@@ -130,6 +145,17 @@ def run_with_stub(args, watchlist):
             rc = C.cmd_run(args)
         except KeyboardInterrupt:
             rc = 0
+        except RuntimeError as exc:
+            # ★ The stub raises the gateway's own refusal when a subscribe is
+            # attempted on an unauthenticated socket. Surfaced as a named
+            # failure rather than a bare traceback so the OUTPUT states the
+            # contract that was broken.
+            print('FAIL %-58s %s' % ('subscribe on an unauthenticated socket',
+                                     str(exc)[:34]))
+            print('     cmd_run called connect() after construction, which '
+                  'discards the login')
+            print('     performed by __init__. This is the 2026-08-26 silence.')
+            rc = 1
     finally:
         shelnewsgateway.NewsGatewayClient = real_client
         W.load = real_load
@@ -162,13 +188,18 @@ def main():
         print('%d failure(s)' % FAIL[0])
         return 1
     host, port = client.connected_to or (None, None)
-    check('connect() was called', client.connected_to is not None)
-    # ★ THE REGRESSION. A bare connect() passed (None, None) here.
-    check('host is not None', host is not None, host)
-    check('port is not None', port is not None, port)
-    check('host is a non-empty string', isinstance(host, str) and len(host) > 3,
-          host)
-    check('port is an int-ish value', str(port).isdigit(), port)
+    # ★ INVERTED 2026-08-27. The old assertion -- "connect() received a real
+    # host and port" -- verified the OPPOSITE of the contract. __init__ already
+    # connects and logs in, so a second connect() replaces the authenticated
+    # socket with an anonymous one and the following subscribe is rejected:
+    # "Client must be logged in before requesting news-gateway". That was the
+    # cause of the 2026-08-26 silence, and this test had blessed it.
+    check('the client is connected by CONSTRUCTION', host is not None, host)
+    check('    to a real host', isinstance(host, str) and len(host) > 3, host)
+    check('    on a real port', str(port).isdigit(), port)
+    check('connect() is NEVER called after construction',
+          client.reconnects == 0, client.reconnects)
+    check('    so the login survives', client.logged_in is True)
 
     print('')
     print('=== and it is the endpoint that was PRINTED ===')
@@ -188,12 +219,32 @@ def main():
     check('prod host is not None', phost is not None)
 
     print('')
-    print('=== --host/--port override both ===')
+    print('=== --host/--port reach the CONSTRUCTOR, not a later connect() ===')
     rc, oclient = run_with_stub(Args(host='example.invalid', port=12345), good)
     check('host honoured', oclient.connected_to[0] == 'example.invalid',
           oclient.connected_to[0])
     check('port honoured', str(oclient.connected_to[1]) == '12345',
           oclient.connected_to[1])
+    check('    and still no manual reconnect', oclient.reconnects == 0,
+          oclient.reconnects)
+
+    print('')
+    print('=== a subscription on an unauthenticated socket is REJECTED ===')
+    # Proof the stub can actually catch the regression: connect() by hand, and
+    # the subscribe must fail the way the gateway failed it.
+    probe = StubClient(type('E', (), dict(SHEL_DATA_ENGINE_HOST='h',
+                                          SHEL_DATA_ENGINE_PORT=1))(), 'u')
+    check('a constructed client is logged in', probe.logged_in is True)
+    probe.connect('h', 1)
+    check('    and a manual connect drops the login',
+          probe.logged_in is False)
+    try:
+        probe.subscribe_news(lambda _i: None, sources=['BUS'], mode='full')
+        check('subscribe is refused without a login', False, 'no raise')
+    except RuntimeError as exc:
+        check('subscribe is refused without a login', True)
+        check('    with the gateway\'s own message',
+              'must be logged in' in str(exc), str(exc)[:34])
 
     print('')
     print('=== the subscription is FULL mode on the five wires ===')
@@ -233,7 +284,11 @@ def main():
     print('')
     print('=== subscribe() itself refuses headlines mode ===')
     try:
-        listener_mod.subscribe(StubClient(None, 'u'), None, mode='headlines')
+        # StubClient now reads the env for host/port (it connects by
+        # construction, like the real client), so pass a real-shaped one.
+        _e = type('E', (), dict(SHEL_DATA_ENGINE_HOST='h',
+                                SHEL_DATA_ENGINE_PORT=1))()
+        listener_mod.subscribe(StubClient(_e, 'u'), None, mode='headlines')
         check('raises on headlines mode', False, 'no raise')
     except ValueError as exc:
         check('raises on headlines mode', True)

@@ -90,13 +90,18 @@ def cmd_run(args):
     token = args.token or auth.get_token(args.user)
     client = NewsGatewayClient(env, args.user, token=token)
 
-    print('Connecting to %s:%s as %s ...' % (
+    # ★ DO NOT CALL connect() HERE. NewsGatewayClient.__init__ already connects
+    # AND calls _login() -- a constructed client is connected and
+    # authenticated. Calling connect() again opens a SECOND socket and throws
+    # the login away, so the next subscribe is rejected with
+    # "Client must be logged in before requesting news-gateway" and the process
+    # waits forever on a subscription that was never accepted.
+    #
+    # This was the cause of the 2026-08-26 silence, and it was MY regression:
+    # the bare connect() before it raised a TypeError on host=None, which
+    # accidentally prevented the bug by failing loudly first.
+    print('Connected to %s:%s as %s (logged in by the constructor)' % (
         env.SHEL_DATA_ENGINE_HOST, env.SHEL_DATA_ENGINE_PORT, args.user))
-    # ★ HOST AND PORT MUST BE PASSED. connect(host=None, port=None) forwards
-    # both to the socket unchanged -- it does NOT fall back to the environment
-    # the client was constructed with -- so a bare connect() reaches
-    # socket.connect((None, None)). The print above already had the values.
-    client.connect(env.SHEL_DATA_ENGINE_HOST, env.SHEL_DATA_ENGINE_PORT)
     handle = listener_mod.subscribe(client, lst, mode='full')
     gradeable = [t for t, e in wl['entries'].items() if not e.get('error')]
     nocard = [t for t, e in wl['entries'].items() if e.get('error')]
@@ -219,7 +224,7 @@ def cmd_wirecheck(args):
     from shelnewsgateway.environments import Environment, Staging, Prod
 
     seen = dict(n=0, news=0, first=None, by_source={}, first_headline=None,
-                subscribed=None)
+                subscribed=None, dead=False, error=None)
     t0 = time.time()
 
     def on_frame(item):
@@ -264,8 +269,10 @@ def cmd_wirecheck(args):
         print('   terminal, then re-run.')
         return 1
     try:
+        # ★ Constructing it connects AND logs in. Calling connect() afterwards
+        # would replace the authenticated socket with an anonymous one -- see
+        # cmd_run for the failure that produced.
         client = NewsGatewayClient(env, args.user, token=token)
-        client.connect(env.SHEL_DATA_ENGINE_HOST, env.SHEL_DATA_ENGINE_PORT)
     except Exception as exc:
         print('FAIL — could not connect: %s: %s' % (type(exc).__name__, exc))
         print('   Nothing downstream can work. This is the transport, not the')
@@ -293,12 +300,18 @@ def cmd_wirecheck(args):
                     handle.raise_on_error()
                 except Exception as exc:
                     print('   %r' % (exc,))
+                    seen['error'] = exc
+                # ★ Stop the outer wait immediately. Sitting out the full 30s
+                # after the subscription is known dead made the operator Ctrl+C
+                # a tool whose whole job is to answer fast.
+                seen['dead'] = True
                 return
 
     threading.Thread(target=pump, daemon=True).start()
 
     deadline = t0 + args.seconds
-    while time.time() < deadline and seen['news'] < args.frames:
+    while (time.time() < deadline and seen['news'] < args.frames
+           and not seen['dead']):
         time.sleep(0.25)
     stop[0] = True
     waited = time.time() - t0
@@ -307,6 +320,15 @@ def cmd_wirecheck(args):
     # ★ Reported FIRST and always: accepted-vs-rejected is a different question
     # from news-is-flowing, and last night the two were indistinguishable.
     sub = seen['subscribed']
+    if seen['error'] is not None:
+        print('SUBSCRIPTION REJECTED by the gateway:')
+        print('   %s' % str(seen['error'])[:200])
+        print('')
+        print('   Nothing can be scored on a rejected subscription, and from '
+              'the outside it')
+        print('   looks exactly like a quiet wire -- which is what the '
+              '2026-08-26 evening was.')
+        return 1
     if sub is None:
         print('NO SUBSCRIPTION CONFIRMATION — the gateway never acknowledged '
               'the request.')
