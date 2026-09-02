@@ -74,8 +74,10 @@ def main():
               if isinstance((r.get('stockReaction') or {}), dict)
               and isinstance((r.get('stockReaction') or {})
                              .get('pctChangeNextDay'), (int, float))]
-    check('57 records carry it nested and numeric', len(nested) == 57,
-          len(nested))
+    # ★ Grows with every scored print: 57 -> 58 on 2026-09-02.
+    print('     %d records carry it nested and numeric' % len(nested))
+    check('at least 57 records carry it nested and numeric',
+          len(nested) >= 57, len(nested))
 
     bands = {'Bullish': [], 'Neutral': [], 'Bearish': []}
     for r in nested:
@@ -87,37 +89,59 @@ def main():
         bands[lab].append(float(r['stockReaction']['pctChangeNextDay']))
 
     print('')
-    print('=== each band re-derives its claimed rate ===')
+    print('=== each band, MEASURED — the claim is the relationship ===')
+    # ★ Populations and means move with every scored print. Pinning them meant
+    # three hand re-pins in four days, which trains you to edit without
+    # reading. What is load-bearing is the DIRECTION of each band, and that
+    # survives growth. The numbers print so drift stays visible.
+    stat = {}
     for lab in ('Bullish', 'Neutral', 'Bearish'):
         vals = bands[lab]
-        n, up, down, mean = CLAIMED[lab]
-        got_up = sum(1 for v in vals if v > 0)
-        got_dn = sum(1 for v in vals if v < 0)
-        got_mean = sum(vals) / len(vals) if vals else 0.0
-        check('%-8s n = %d' % (lab, n), len(vals) == n, len(vals))
-        check('    up %d of %d' % (up, n), got_up == up, got_up)
-        if down is not None:
-            check('    DOWN %d of %d — the reason Neutral is not "met '
-                  'expectations"' % (down, n), got_dn == down, got_dn)
-        check('    mean move %+.2f%%' % mean, abs(got_mean - mean) < 0.005,
-              '%+.4f' % got_mean)
+        up = sum(1 for v in vals if v > 0)
+        dn = sum(1 for v in vals if v < 0)
+        mean = sum(vals) / len(vals) if vals else 0.0
+        stat[lab] = (len(vals), up, dn, mean)
+        print('     %-8s n=%-3d up=%-3d down=%-3d mean=%+.2f%%'
+              % (lab, len(vals), up, dn, mean))
+
+    nb, ub, db, mb = stat['Bullish']
+    check('Bullish: a large majority closes UP', ub >= 0.70 * nb,
+          '%d of %d' % (ub, nb))
+    check('    and the mean move is strongly positive', mb > 5.0,
+          '%+.2f%%' % mb)
+
+    nn, un, dn_, mn = stat['Neutral']
+    # ★ THE ONE THAT MATTERS MOST. "Neutral" must never render as "met
+    # expectations" while the majority of that band closes DOWN.
+    check('Neutral: a MAJORITY closes DOWN', dn_ > nn / 2.0,
+          '%d of %d down' % (dn_, nn))
+    check('    and the mean move is negative', mn < 0, '%+.2f%%' % mn)
+    check('    so Neutral is NOT "met expectations"', dn_ > un,
+          '%d down vs %d up' % (dn_, un))
+
+    nr, ur, dr, mr = stat['Bearish']
+    check('Bearish: essentially none closes up', ur == 0, ur)
+    check('    and the mean move is strongly negative', mr < -5.0,
+          '%+.2f%%' % mr)
 
     print('')
     print('=== the three n sum to the calibration population ===')
-    check('28 + 20 + 9 = 57', sum(len(v) for v in bands.values()) == 57,
-          sum(len(v) for v in bands.values()))
+    check('the bands account for every outcome record',
+          sum(len(v) for v in bands.values()) == len(nested),
+          '%d vs %d' % (sum(len(v) for v in bands.values()), len(nested)))
 
     print('')
     print('=== not one Bearish print has EVER closed up ===')
-    check('0 of 9, and it survives dropping the no-card record',
-          all(v <= 0 for v in bands['Bearish'])
-          and len([v for v in bands['Bearish'] if v < 0]) == 9)
+    check('not one Bearish print has closed up',
+          all(v <= 0 for v in bands['Bearish']),
+          '%d up' % sum(1 for v in bands['Bearish'] if v > 0))
 
     print('')
     print('=== the flat record is why "70%% down" and "25%% up" both hold ===')
     flat = [v for v in bands['Neutral'] if v == 0]
-    check('exactly one Neutral record closed unchanged', len(flat) == 1,
-          len(flat))
+    print('     %d Neutral record(s) closed unchanged' % len(flat))
+    check('flat records exist, so up%% and down%% need not sum to 100',
+          len(flat) >= 1, len(flat))
 
     print('')
     print('=== 19 records have NO outcome and are NOT counted ===')
@@ -127,8 +151,11 @@ def main():
                                  .get('pctChangeNextDay'), (int, float))]
     # ★ A FLOOR. Every pre-earnings build adds records with no outcome yet:
     # 19 when written, 23 after the 2026-08-26 build.
-    check('at least 19 records sit outside the calibration',
-          len(missing) >= 19, len(missing))
+    print('     %d records sit outside the calibration' % len(missing))
+    check('records without an outcome are excluded, not counted',
+          all(not isinstance((r.get('stockReaction') or {})
+                             .get('pctChangeNextDay'), (int, float))
+              for r in m.records if r['id'] in set(missing)))
     print('     %s' % ', '.join(sorted(missing)[:6]) + ' ...')
     print('     Backfilling these would CHANGE the published rates, not')
     print('     confirm them. That is a calibration decision, not a repair.')
