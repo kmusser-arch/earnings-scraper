@@ -1576,6 +1576,21 @@ def build_kpi_rows(parsed, entry):
                 'rather than MISS because a deliberate nil is a finding in its '
                 'own right.')
 
+    # ★ periodUnchecked, OVER EVERY BRANCH. It was set only inside the margin
+    # branch, so (a) counted 1 row when table-sourced revenue, EPS and segment
+    # values were passing unflagged. Same twelve-elif problem the scale guard
+    # and KEY 2 already solved by living here.
+    #
+    # A row is unchecked when its value came from a TABLE and no period class
+    # was established: precedence level 2 (the column header) is what would
+    # resolve it, and level 2 is not built.
+    for row in rows:
+        if row.get('actual') is None:
+            continue
+        _src = str(row.get('extractionSource') or '')
+        if 'table' in _src and not row.get('periodRead'):
+            row['periodUnchecked'] = True
+
     # ★ KEY 2, over every branch at once. A modifier on EITHER side and absent
     # from the other disqualifies: AVGO [10] has `non-ai` on the ROW, AVGO [1]
     # has `ai` on the ROW, HPE [8] has `dividend` on the CANDIDATE. One rule,
