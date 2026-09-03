@@ -34,6 +34,7 @@ import re
 from . import basis as basis_mod
 from . import completeness as completeness_mod
 from . import modifiers as modifiers_mod
+from .period import REPORTED as REPORTED_CLS
 from . import quotes as quotes_mod
 from . import period as period_mod
 from . import config, gate, plausibility, units
@@ -1556,8 +1557,18 @@ def build_kpi_rows(parsed, entry):
                     _msrc = margins[which].get('source')
                     _from_table = (_msrc == 'table'
                                    or margins[which].get('offset') is None)
-                    if _from_table:
-                        _pcls, _psrc = None, 'table (level 2 not built)'
+                    if _from_table and margins[which].get('columnVerified'):
+                        # ★ LEVEL 2 IS BUILT. The column was identified at
+                        # parse time -- by the header's own window and year
+                        # strata, or by a stated delta that closes uniquely --
+                        # or no value was written at all. SNDK's 84.6 comes
+                        # back through 'up 6.2 ppt', which is a constraint with
+                        # one solution rather than a guess.
+                        _pcls, _psrc = REPORTED_CLS, 'table (column verified)'
+                        periodRead = REPORTED_CLS
+                        periodGap = False
+                    elif _from_table:
+                        _pcls, _psrc = None, 'table (column unverified)'
                         periodRead = None
                         periodGap = True
                     else:
@@ -1754,14 +1765,37 @@ def build_kpi_rows(parsed, entry):
     # values were passing unflagged. Same twelve-elif problem the scale guard
     # and KEY 2 already solved by living here.
     #
-    # A row is unchecked when its value came from a TABLE and no period class
-    # was established: precedence level 2 (the column header) is what would
-    # resolve it, and level 2 is not built.
+    # A row is unchecked when its value came from a TABLE whose COLUMN was not
+    # identified. Level 2 is now built for the VERTICAL reader: parse_tables
+    # resolves the column off the header's window and year strata, or off a
+    # stated delta that closes uniquely, or writes NO VALUE AT ALL.
+    #
+    # ★ SO THE FACT IS DERIVABLE IN ONE PLACE. An exact source of 'table' means
+    # the vertical reader wrote it, and the vertical reader cannot write an
+    # unverified value. Threading a columnVerified flag through the twelve
+    # branches that each set `src` would be the same twelve-elif problem that
+    # moved this pass here in the first place.
+    #
+    # ★★ AND IT IS SCOPED. 'table (segment, horizontal)' is the OTHER reader,
+    # whose columns close by cross-row arithmetic rather than by header, and it
+    # stays flagged -- claiming its verification here would be asserting a
+    # check that a different mechanism did not perform.
     for row in rows:
         if row.get('actual') is None:
             continue
         _src = str(row.get('extractionSource') or '')
-        if 'table' in _src and not row.get('periodRead'):
+        if 'table' not in _src:
+            continue
+        # ★ 'table (segment)' now carries its own header verification too,
+        # so it joins the exact-'table' case. 'table (segment, horizontal)'
+        # still does not -- that reader closes by cross-row arithmetic, and
+        # claiming a header check it never ran would be a false provenance.
+        if _src.strip() in ('table', 'table (segment)'):
+            row['columnVerified'] = True
+            row['periodUnchecked'] = False
+            if not row.get('periodRead'):
+                row['periodRead'] = REPORTED_CLS
+        elif not row.get('periodRead'):
             row['periodUnchecked'] = True
 
     # ★ KEY 2, over every branch at once. A modifier on EITHER side and absent

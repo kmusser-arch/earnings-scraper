@@ -119,14 +119,25 @@ def parse_tables(text):
                 continue
             basis = ('non-GAAP' if re.match(r'^non-?GAAP', line, re.I)
                      else None)
-            val, is_pct = _first_value(lines, i)
+            val, is_pct, why = verified_value(lines, i)
+            # ★ THE VERIFICATION TRAVELS WITH THE VALUE. Downstream must not
+            # infer 'came from a table, therefore checked' -- that is the same
+            # assumption this module exists to remove.
+            col_verified = val is not None
             if val is None:
+                # ★ REFUSED, NOT SKIPPED SILENTLY. The reason travels with the
+                # metric so the card can say 'column unverified' rather than
+                # 'not found in release' -- two different problems with two
+                # different remedies.
+                if why:
+                    found.setdefault('_refused', {})[metric] = dict(
+                        line=i, note=why, label=line[:60])
                 break
             if wants_pct:
                 # Percentages need no declared scale.
                 if not is_pct and not (0.0 <= val <= 100.0):
                     break
-                _record(found, metric, val, basis, None, i)
+                _record(found, metric, val, basis, None, i, col_verified)
             else:
                 if is_pct:
                     break
@@ -135,23 +146,105 @@ def parse_tables(text):
                     # inferring one from the digit count (error class D5).
                     break
                 _record(found, metric, val * _SCALE_TO_MUSD[scale], basis,
-                        scale, i)
+                        scale, i, col_verified)
             break
     return found
 
 
-def _record(found, metric, value, basis, scale, line):
+def _record(found, metric, value, basis, scale, line, column_verified=False):
     prev = found.get(metric)
     # First occurrence wins, EXCEPT that a non-GAAP row supersedes a GAAP one.
     if prev is not None and not (basis == 'non-GAAP'
                                  and prev.get('basis') != 'non-GAAP'):
         return
     found[metric] = dict(value=value, basis=basis, scale=scale, line=line,
-                         source='table')
+                         source='table', columnVerified=column_verified)
+
+
+def row_value_cells(lines, label_index, limit=12):
+    """Every numeric cell of a vertically exploded row, in document order.
+
+    ★ THE CELLS ARE THE COLUMNS. _first_value() took cell 0 and called it the
+    quarter; this returns the whole row so the header can say which cell that
+    actually is.
+    """
+    out = []
+    j = label_index + 1
+    while j < len(lines) and len(out) < limit:
+        cell = lines[j]
+        if _SKIPPABLE.match(cell):
+            j += 1
+            continue
+        # ★ A LONE UNIT MARKER IS NOT A CELL BOUNDARY. APP interleaves a bare
+        # '%' after each percentage column and a bare '$' before each dollar
+        # column; treating either as the end of the row truncated the cell
+        # list to 3 of 6 and the cardinality guard refused the row -- while
+        # index 0 would still have been the right VALUE off a wrong list.
+        if _PERCENT_ONLY.match(cell) or cell.strip() in ('$', '(', ')'):
+            j += 1
+            continue
+        m = _NUMERIC.match(cell)
+        if not m:
+            break
+        val = _to_float(m.group(1))
+        if val is None:
+            break
+        k = j + 1
+        while k < len(lines) and _SKIPPABLE.match(lines[k]):
+            k += 1
+        is_pct = k < len(lines) and bool(_PERCENT_ONLY.match(lines[k]))
+        if not is_pct and cell.endswith('%'):
+            is_pct = True
+        out.append((val, is_pct))
+        j += 1
+    return out
+
+
+def verified_value(lines, label_index):
+    """The REPORTED-column value of a row, or a refusal.
+
+    Returns (value, is_percent, note). `value` is None with a note whenever the
+    column cannot be identified.
+
+    ★★ THE COLUMN IS IDENTIFIED, NEVER ASSUMED. The wrong column is the same
+    metric in the same unit, and prior-year-YTD / current-Q = 2/(1+g) equals
+    1.00 at 100% year-on-year growth -- the cohort this library trades. There
+    is no magnitude to threshold against at the centre of that zone, so the
+    header is the only thing that can answer.
+    """
+    from . import vtables
+    cells = row_value_cells(lines, label_index)
+    if not cells:
+        return None, False, None
+    if len(cells) == 1:
+        # a single-column row states one period and cannot be mis-picked
+        return cells[0][0], cells[0][1], None
+
+    got = vtables.column_map(lines, label_index, len(cells))
+    if got.get('valueIndex') is not None:
+        i = got['valueIndex']
+        return cells[i][0], cells[i][1], None
+
+    # ★ FALLBACK: the document's own stated delta, where no header is
+    # reachable. SNDK's highlights table says 'up 6.2 ppt' and
+    # 84.6 - 78.4 = 6.2 -- a constraint with a unique solution, not a guess.
+    closure = vtables.delta_closure(lines, label_index,
+                                    [c[0] for c in cells])
+    if closure.get('valueIndex') is not None:
+        i = closure['valueIndex']
+        return cells[i][0], cells[i][1], None
+
+    return None, False, ('column unverified: %s; %s'
+                         % (got.get('note') or 'no header',
+                            closure.get('note') or 'no stated delta'))
 
 
 def _first_value(lines, label_index):
-    """The first numeric cell after a label. Returns (value, is_percent)."""
+    """The first numeric cell after a label. Returns (value, is_percent).
+
+    ★ SUPERSEDED by verified_value() for multi-column rows. Kept because a
+    single-column row needs nothing more, and because other readers call it.
+    """
     j = label_index + 1
     seen = 0
     while j < len(lines) and seen < _LOOKAHEAD:
@@ -319,13 +412,23 @@ def find_segment(text, tokens):
             continue
         if not rev.search(line) and not re.search(r'^\s*segment', line, re.I):
             continue
-        val, is_pct = _first_value(lines, i)
-        if val is None or is_pct:
+        # ★ THE COLUMN IS IDENTIFIED HERE TOO. This path feeds SNOW's
+        # priority-1 hero, and it was the last table reader still taking cell
+        # 0 on faith. A refused hero with a stated reason is a decision; a
+        # wrong hero is a trade.
+        val, is_pct, why = verified_value(lines, i)
+        if val is None:
+            if why:
+                return dict(value=None, scale=scale, line=i,
+                            source='table (segment, column unverified)',
+                            note=why)
+            continue
+        if is_pct:
             continue
         if scale is None:
             continue                            # refuse, do not infer
         return dict(value=val * _SCALE_TO_MUSD[scale], scale=scale, line=i,
-                    source='table (segment)')
+                    source='table (segment)', columnVerified=True)
     return None
 
 # ══ (c) COLUMN CLASSIFICATION BY CROSS-ROW ARITHMETIC ══════════════════════

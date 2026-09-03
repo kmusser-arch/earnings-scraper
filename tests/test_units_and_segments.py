@@ -160,7 +160,13 @@ def main():
 
     print('')
     print('=== the segment extractor: table, preferred for precision ===')
+    # ★ THE HEADER IS PART OF THE FIXTURE NOW. A real vertical segment table
+    # states its windows, and without one 5,775 and 4,573 are the same metric
+    # in the same unit with nothing to say which is the quarter. The headerless
+    # case is asserted separately below, so this is the fixture becoming
+    # realistic rather than the rule becoming weaker.
     tbl = ('(In millions, except percentages)\n'
+           'Three Months Ended March 29,\n2026\n2025\n'
            'Data Center segment revenue\n$\n5,775\n4,573\n'
            'Client segment revenue\n2,885\n')
     t = find_segment(tbl, ['data', 'center'])
@@ -170,6 +176,21 @@ def main():
     check('an undeclared scale is refused, not inferred',
           find_segment('Data Center segment revenue\n5,775\n',
                        ['data', 'center']) is None)
+
+    # ★★ AND THE COLUMN IS REFUSED WHEN NOTHING IDENTIFIES IT. Two cells, no
+    # period header, no stated delta: 5,775 and 4,573 are the same metric in
+    # the same unit, and prior-year-YTD / current-Q = 2/(1+g) is 1.00 at 100%
+    # growth. A hero blank with a stated reason is a decision; a hero filled
+    # from an unidentified column is a trade.
+    headerless = find_segment('(In millions)\n'
+                              'Data Center segment revenue\n$\n5,775\n'
+                              '4,573\n', ['data', 'center'])
+    check('a headerless two-column segment row REFUSES',
+          headerless is not None and headerless.get('value') is None,
+          headerless)
+    check('  and it says the column is unverified',
+          'unverified' in ((headerless or {}).get('source') or ''),
+          (headerless or {}).get('source'))
     check('the table wins over prose on the same release',
           card(model, 'AMD-2026Q1',
                'Data Center segment revenue was $5.8 billion.\n' + tbl

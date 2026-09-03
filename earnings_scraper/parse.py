@@ -1293,21 +1293,26 @@ def parse_release(item):
     parsed['tablesScanned'] = needs_tables
 
     if parsed['revenue'] is None and 'revenue' in tbl:
-        parsed['revenue'] = dict(value_musd=tbl['revenue']['value'],
-                                 unit_seen=tbl['revenue']['scale'],
-                                 growth_pct=None, raw='table',
-                                 source='table')
+        parsed['revenue'] = dict(
+            value_musd=tbl['revenue']['value'],
+            unit_seen=tbl['revenue']['scale'],
+            growth_pct=None, raw='table', source='table',
+            columnVerified=bool(tbl['revenue'].get('columnVerified')))
     for key in ('grossMargin', 'operatingMargin'):
         if key not in parsed['margins'] and key in tbl:
-            parsed['margins'][key] = dict(value=tbl[key]['value'],
-                                          basis=tbl[key]['basis'] or 'unknown',
-                                          raw='table', source='table')
+            parsed['margins'][key] = dict(
+                value=tbl[key]['value'],
+                basis=tbl[key]['basis'] or 'unknown',
+                raw='table', source='table',
+                columnVerified=bool(tbl[key].get('columnVerified')))
     if not parsed['opIncome'] and 'operatingIncome' in tbl:
         # ★ Basis 'unknown' when the table label did not state one -- the row
         # that demands non-GAAP will refuse it rather than assume.
         parsed['opIncome'][tbl['operatingIncome'].get('basis') or 'unknown'] = (
             dict(value_musd=tbl['operatingIncome']['value'], raw='table',
-                 source='table'))
+                 source='table',
+                 columnVerified=bool(
+                     tbl['operatingIncome'].get('columnVerified'))))
     prose_eb = parsed.pop('adjEbitdaProse', None) or {}
     pick_eb = prose_eb.get('adjusted') or prose_eb.get('unknown')
     if pick_eb:
@@ -1316,11 +1321,13 @@ def parse_release(item):
         parsed['adjEbitdaBasis'] = ('adjusted' if 'adjusted' in prose_eb
                                     else 'unknown')
     if 'adjEbitda' not in parsed and 'adjEbitda' in tbl:
-        parsed['adjEbitda'] = dict(value_musd=tbl['adjEbitda']['value'],
-                                   raw='table', source='table')
+        parsed['adjEbitda'] = dict(
+            value_musd=tbl['adjEbitda']['value'], raw='table', source='table',
+            columnVerified=bool(tbl['adjEbitda'].get('columnVerified')))
     if not parsed['eps'] and 'eps' in tbl:
-        parsed['eps']['unknown'] = dict(value=tbl['eps']['value'],
-                                        raw='table', source='table')
+        parsed['eps']['unknown'] = dict(
+            value=tbl['eps']['value'], raw='table', source='table',
+            columnVerified=bool(tbl['eps'].get('columnVerified')))
     # ★ The body is kept so a row-aware extractor can run AFTER the KPI names
     # are known. Segment rows cannot be parsed blind -- which segments matter is
     # a property of the pre-earnings card, not of the release.
