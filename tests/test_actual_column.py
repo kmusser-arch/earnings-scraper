@@ -341,6 +341,53 @@ def main():
           step=1)
 
     print('')
+    print('=== THE LABELLER: a span inside quotes is a QUOTE ===')
+    # ★ AVGO [0] came back labelled 'prose (segment)' from chars 1395..1515,
+    # INSIDE Tan's quotation. Precedence runs on the label, so a mislabelled
+    # quote sat at rank 2 instead of rank 4 and 'table beats quote' was
+    # defeated wherever the mislabel occurred. SNOW passed only because ITS
+    # quote happened to be labelled correctly.
+    import earnings_scraper.quotes as _Q
+    for t in ('AVGO', 'HPE', 'SNOW'):
+        card, _ = cards[t]
+        body = io.open(os.path.join(FIX, '%s-2026-09-02.txt' % t),
+                       encoding='utf-8').read()
+        qs = [(a, a + len(x)) for a, x in _Q.spans(body)]
+        bad = []
+        for r in card['keyKPIs']:
+            if not isinstance(r.get('actual'), (int, float)):
+                continue
+            lbl = r.get('candidateLabel') or ''
+            off = body.find(lbl[:60]) if lbl else -1
+            if off >= 0 and any(a <= off < z for a, z in qs)                     and r.get('extractionSource') != 'quote':
+                bad.append((r.get('name'), r.get('extractionSource')))
+        check('%-5s no filled row is a mislabelled quote' % t, not bad, bad,
+              step=1)
+
+    print('')
+    print('=== ANTI-BROADCAST: a quote figure fills only its OWN metric ===')
+    # ★ My first quote reader required the row's MODIFIER tokens to be a subset
+    # of the sentence's -- vacuously true for a row with none, so total revenue
+    # landed in an EBITDA row, a gross-margin row and two qualitative rows. An
+    # empty required-set is a subset of everything: the 181-phantom-collision
+    # trap, reproduced in a new module.
+    acard, _ = cards['AVGO']
+    import earnings_scraper.score as _S
+    wrong = []
+    for r in acard['keyKPIs']:
+        v = r.get('actual')
+        if not isinstance(v, (int, float)):
+            continue
+        nm = r.get('name') or ''
+        kind = _S.hero_metric_kind(nm)
+        if kind is None:
+            wrong.append((nm[:34], v, 'unidentifiable metric holds a value'))
+        elif abs(v - 29600.0) < 1.0 and kind != 'revenue':
+            wrong.append((nm[:34], v, 'total revenue in a %s row' % kind))
+    check('no AVGO row holds a figure from another metric', not wrong, wrong,
+          step=1)
+
+    print('')
     print('=== HPE: no behaviour change (0 quote-only values) ===')
     hcard, _ = cards['HPE']
     hfilled = sum(1 for r in hcard['keyKPIs']

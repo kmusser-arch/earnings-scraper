@@ -1200,6 +1200,22 @@ def parse_margin_yoy_bps(text):
 
 # --- top level ----------------------------------------------------------------
 
+def _mask_quotes(text):
+    """`text` with quoted spans blanked to spaces. OFFSETS ARE PRESERVED.
+
+    ★ Blanked rather than removed, because the period register and every
+    candidate offset are positional -- deleting the spans would shift every
+    later position and silently mis-assign scope.
+    """
+    from . import quotes as _q
+    out = list(text or '')
+    for start, span in _q.spans(text or ''):
+        for i in range(start, min(start + len(span), len(out))):
+            if out[i] != '\n':
+                out[i] = ' '
+    return ''.join(out)
+
+
 def parse_release(item):
     """Parse a wire item's body into normalised reported figures.
 
@@ -1210,15 +1226,27 @@ def parse_release(item):
                       item.get('teaser') or '',
                       item.get('body') or ''])
 
+    # ★★ QUOTED SPANS ARE MASKED OUT OF THE PROSE PARSERS. A span inside
+    # quotation marks is a QUOTE whatever it names, and the prose/segment
+    # matchers have no notion of quotation marks -- AVGO's hero figure sat at
+    # chars 1395..1515 inside Tan's quote and came back labelled
+    # 'prose (segment)'. Precedence runs on that label, so a mislabelled quote
+    # sat at rank 2 instead of rank 4 and 'table beats quote' was defeated.
+    #
+    # Masking (to spaces, so every OFFSET is preserved) makes the ranking
+    # structural: a quoted value can only be supplied by the quote pass, which
+    # already runs last and is already filtered by KEY 1 / KEY 2 / scale.
+    prose = _mask_quotes(text)
+
     parsed = dict(
-        revenue=parse_revenue(text),
-        opIncome=parse_op_income(text),
-        adjEbitdaProse=parse_adj_ebitda(text),
-        eps=parse_eps(text),
-        guidance=parse_guidance(text),
-        margins=parse_margins(text),
-        marginYoYBps=parse_margin_yoy_bps(text),
-        guidanceAction=parse_guidance_action(text),
+        revenue=parse_revenue(prose),
+        opIncome=parse_op_income(prose),
+        adjEbitdaProse=parse_adj_ebitda(prose),
+        eps=parse_eps(prose),
+        guidance=parse_guidance(prose),
+        margins=parse_margins(prose),
+        marginYoYBps=parse_margin_yoy_bps(prose),
+        guidanceAction=parse_guidance_action(prose),
     )
 
     # ★ Vertical tables, as a FALLBACK only. Real wire releases carry the
@@ -1275,6 +1303,10 @@ def parse_release(item):
     # are known. Segment rows cannot be parsed blind -- which segments matter is
     # a property of the pre-earnings card, not of the release.
     parsed['text'] = text
+    # ★ The MASKED copy, for every prose/segment/table matcher. The full
+    # text stays available for the quote pass and the period register,
+    # both of which are positional and must see the whole document.
+    parsed['prose'] = prose
 
     parsed['fields'] = sum([
         1 if parsed['revenue'] else 0,

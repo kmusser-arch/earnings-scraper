@@ -106,14 +106,34 @@ def for_row(text, row_name, want_pct=False):
     concern the row at all, so a revenue row is not offered an EPS figure.
     """
     from . import modifiers as _mod
+    from . import score as _score
+
     toks = _mod.modifier_set(row_name or '')
+
+    # ★★ THE METRIC MUST AGREE, and this is not optional. Requiring only that
+    # the row's MODIFIER tokens appear in the sentence is vacuously true for
+    # any row that has none, so every quote figure matched every such row --
+    # total revenue landed in an EBITDA row, in a gross-margin row and in two
+    # qualitative rows. An empty required-set is a subset of everything.
+    #
+    # hero_metric_kind() already owns metric identity; consulting it beats
+    # inventing a second notion here. A row OR sentence whose metric cannot be
+    # identified is not a match: a filter that cannot discriminate must not be
+    # treated as a filter that passed.
+    row_kind = _score.hero_metric_kind(row_name or '')
+    if row_kind is None:
+        return []
+
     out = []
     for cand in candidates(text):
         if bool(cand['is_pct']) != bool(want_pct):
             continue
+        if _score.hero_metric_kind(cand['sentence']) != row_kind:
+            continue
         sent_toks = _mod.modifier_set(cand['sentence'])
         # every SCOPE token the row demands must appear in the sentence.
-        # KEY 2 will still run and can still refuse; this is a pre-filter.
+        # KEY 2 still runs afterwards and can still refuse; this is a
+        # pre-filter, not the decision.
         if toks and not toks <= sent_toks:
             continue
         out.append(cand)

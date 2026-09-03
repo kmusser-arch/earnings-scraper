@@ -945,7 +945,11 @@ def _segment_for(parsed, quals):
     Returns a dict with value_musd / source / note, or with `ambiguous` set, or
     None when the release simply does not state it.
     """
-    text = parsed.get('text') or ''
+    # ★ THE MASKED COPY. A span inside quotation marks is a QUOTE whatever it
+    # names, and this matcher has no notion of quotation marks -- AVGO's hero
+    # sat at chars 1395..1515 inside Tan's quote and came back labelled
+    # 'prose (segment)', which put it at precedence rank 2 instead of rank 4.
+    text = parsed.get('prose') or parsed.get('text') or ''
     if not text:
         return None
     toks = sorted(quals)
