@@ -32,6 +32,7 @@ trusted silently.
 import re
 
 from . import basis as basis_mod
+from . import completeness as completeness_mod
 from . import modifiers as modifiers_mod
 from . import quotes as quotes_mod
 from . import period as period_mod
@@ -1654,6 +1655,7 @@ def build_kpi_rows(parsed, entry):
             ungradedReason=(None if actual is not None else note),
             scaleRejected=None,
             scaleSuspect=False,
+            sourceIncomplete=False,
             modifierRejected=None,
             zeroReported=False,
         ))
@@ -1842,6 +1844,36 @@ def build_kpi_rows(parsed, entry):
 
     assert_units_declared(rows)
     assert_alignment(entry.get('keyKPIs') or [], rows)
+    # ★★ LAST POST-PASS, DELIBERATELY. This one READS `actual`, so it must run
+    # after every pass that WRITES it. Placed mid-chain it flagged the AVGO
+    # hero -- $16.7B AI semi revenue -- as blocked by a truncated source,
+    # because a later pass filled the row and cleared the reason but not the
+    # flag. A post-pass that reads a field runs after every pass that sets it.
+    #
+    # SOURCE-INCOMPLETE resolves the ambiguity that cost four build cycles: a
+    # blank from a truncated ingest and a blank from a parser gap were
+    # indistinguishable. Filled rows are KEPT, and so is any reason that
+    # already names a STRUCTURAL cause -- a forward-period slot would be blank
+    # on a complete release too, and restamping it blames the wire for a
+    # refusal the parser made correctly.
+    _sstate = parsed.get('sourceState') or {}
+    if _sstate.get('truncated'):
+        for row in rows:
+            # ★ PROPERTY 4 EXTENDS TO REASONS, NOT JUST VALUES. A filled row is
+            # kept, and so is a reason that ALREADY explains the blank for a
+            # structural cause -- a forward-period slot, a text consensus, a
+            # period mismatch, a scale refusal. Those rows would be blank on a
+            # complete release too, and 'source incomplete' would be a
+            # DOWNGRADE that blames the wire for the parser's correct refusal.
+            # Only the uninformative absence reasons get replaced.
+            if row.get('actual') is not None:
+                continue
+            if not completeness_mod.reason_is_absence(row.get('ungradedReason')):
+                continue
+            _why = completeness_mod.row_reason(row.get('name') or '', _sstate)
+            if _why:
+                row['ungradedReason'] = _why
+                row['sourceIncomplete'] = True
     return rows
 
 
@@ -2596,6 +2628,13 @@ def score_release(parsed, entry, model, evidence=None):
     on a PR-only run, so the scraper NEVER emits an overall score: three
     categories and a deferral.
     """
+    # ★★ COMPLETENESS IS ASSERTED, NOT ASSUMED. AVGO 2026-09-02 arrived as
+    # 9,498 chars ending '(MORE TO FOLLOW)' with every financial-statement
+    # section absent, and was scored as if whole -- and every build
+    # measurement taken over it was measured over part 1.
+    source_state = completeness_mod.assess(parsed.get('text') or '')
+    parsed['sourceState'] = source_state
+
     # ★ Level 2 needs the record's fiscal year, which lives in the id.
     parsed['recordId'] = entry.get('id') or entry.get('recordId') or ''
     parsed['recordQuarter'] = entry.get('quarter') or ''
@@ -2750,6 +2789,9 @@ def score_release(parsed, entry, model, evidence=None):
             # unvalidated at 6/29 coverage in the cohort that matters.
             adjustedScore=None,
             modifierApplied=False),
+        sourceComplete=not source_state.get('truncated'),
+        sourceState=source_state,
+        sourceBanner=completeness_mod.banner(source_state),
         beatMagnitude=dict(
             revPctVsCons=rev_pct_cons,
             revPctVsBogey=rev_pct_bogey,
