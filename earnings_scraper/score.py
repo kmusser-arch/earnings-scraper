@@ -32,6 +32,7 @@ trusted silently.
 import re
 
 from . import basis as basis_mod
+from . import modifiers as modifiers_mod
 from . import period as period_mod
 from . import config, gate, plausibility, units
 from .parse import pct_delta, verdict_for
@@ -1188,6 +1189,10 @@ def build_kpi_rows(parsed, entry):
         # ★ Set when a candidate's period could NOT be checked because level 2
         # is unbuilt -- an honest record of an unenforced row, not a pass.
         periodGap = False
+        # ★ The TEXT that was matched, so KEY 2 can compare modifier sets. The
+        # row name alone cannot disqualify anything -- the asymmetry is between
+        # the row and what was actually read.
+        cand_label = None
 
         # ★ A qualified row (Client / Gaming / Data Center / Embedded ...) can
         # only be filled from a figure parsed for that qualifier. We do not
@@ -1231,6 +1236,12 @@ def build_kpi_rows(parsed, entry):
                 seg = _segment_for(parsed, quals)
                 if seg and seg.get('value_musd') is not None:
                     actual = seg['value_musd']
+                    # ★ KEY 2 needs the matched TEXT. "Q3 AI semiconductor
+                    # revenue of $16.7 billion" carries `ai`+`semi` and no
+                    # negation, so a "Non-AI Semi Revenue" row disqualifies it
+                    # on `non-ai` -- independent of how far apart the two
+                    # numbers happen to be.
+                    cand_label = seg.get('raw')
                     note = seg.get('note') or 'parsed for segment %s ($M)' % (
                         '+'.join(sorted(quals)))
                     src = seg.get('source')
@@ -1432,6 +1443,7 @@ def build_kpi_rows(parsed, entry):
             # revenue row is correct (not-found); writing 0 or guessing is not.
             if g and 'revenue' in low and g.get('mid') is not None:
                 actual = g['mid']
+                cand_label = g.get('raw')
                 note = '%s midpoint parsed from release (%s-%s)' % (
                     period, g['low'], g['high'])
                 src = 'prose (guidance)'
@@ -1523,6 +1535,7 @@ def build_kpi_rows(parsed, entry):
             periodRead=periodRead,
             rowPeriod=period,
             periodUnchecked=periodGap,
+            candidateLabel=cand_label,
             unverified=bool(kpi.get('unverified')),
             # The parser normalises every dollar magnitude to $M, so the live
             # path DECLARES its unit rather than leaving it to be resolved.
@@ -1535,6 +1548,7 @@ def build_kpi_rows(parsed, entry):
             ungradedReason=(None if actual is not None else note),
             scaleRejected=None,
             scaleSuspect=False,
+            modifierRejected=None,
             zeroReported=False,
         ))
 
@@ -1561,6 +1575,28 @@ def build_kpi_rows(parsed, entry):
                 '(1588, 34800, 0.1425), never as exactly zero. Shown as ZERO '
                 'rather than MISS because a deliberate nil is a finding in its '
                 'own right.')
+
+    # ★ KEY 2, over every branch at once. A modifier on EITHER side and absent
+    # from the other disqualifies: AVGO [10] has `non-ai` on the ROW, AVGO [1]
+    # has `ai` on the ROW, HPE [8] has `dividend` on the CANDIDATE. One rule,
+    # three directions.
+    for i, row in enumerate(rows):
+        label = row.get('candidateLabel')
+        if not label or row.get('actual') is None:
+            continue
+        why = modifiers_mod.refusal_note(row.get('name') or '', label)
+        if not why:
+            continue
+        row['modifierRejected'] = row['actual']
+        row['actual'] = None
+        row['pctVsCons'] = None
+        row['pctVsBogey'] = None
+        row['vsCons'] = 'N/A'
+        row['vsBogey'] = '\u2014'
+        row['extractionSource'] = 'modifier-refused'
+        row['ungradedReason'] = why
+        row['vsConsNote'] = (
+            '\u26d4 NOT GRADED \u2014 %s' % why)
 
     for i, why in scale_refusals(rows, entry.get('keyKPIs') or []).items():
         polarity = why.startswith('polarity:')

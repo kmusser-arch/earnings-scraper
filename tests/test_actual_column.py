@@ -174,8 +174,12 @@ def main():
         for nm, val, why in ref:
             print('      %-40s rejected %-10s %s'
                   % ((nm or '')[:40], val, (why or '')[:52]))
-    check('the guard fired at least three times '
-          '(HPE EPS, SNOW growth, AVGO non-AI)', total >= 3, total, step=1)
+    # ★ TWO, not three, and that is an IMPROVEMENT. AVGO [10]'s 16700 used to
+    # be stopped by the scale band at 3.71x -- luck of magnitude. KEY 2 now
+    # refuses it on the NEGATION before it reaches the scale pass, which holds
+    # regardless of how far apart the AI and non-AI lines happen to be.
+    check('the scale guard fires on HPE EPS and SNOW growth', total >= 2,
+          total, step=1)
     print('')
     print('=== and every flagged row is EXCLUDED from scoring ===')
     for t in ('AVGO', 'HPE', 'SNOW'):
