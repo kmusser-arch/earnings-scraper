@@ -1,0 +1,12 @@
+{
+ "ticker": "HPE",
+ "source": "BUS",
+ "headline": "HPE Reports Fiscal 2026 Third Quarter Results",
+ "id": "b698d6593abf0563a2355c955a05b91c83aba12dbbfa0759fa57260d62bac7ba",
+ "publish_type": "first-publication",
+ "primary_instruments": [
+  "EQ:US:HPE"
+ ],
+ "recordId": "Q3",
+ "bodyChars": 113948
+}

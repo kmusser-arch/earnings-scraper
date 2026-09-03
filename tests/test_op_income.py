@@ -191,8 +191,19 @@ def main():
     print('=== $M units are not rescaled into $B ===')
     crwv = card(model, 'CRWV-2026Q2',
                 'Adjusted operating income of $267 million.\n')
-    check('CRWV reads 267 against a 66 consensus',
-          crwv['keyKPIs'][1]['actual'] == 267.0, crwv['keyKPIs'][1]['actual'])
+    # ★ FALSE POSITIVE OF THE STEP-1 SCALE GUARD, recorded not silenced.
+    # 267 against a 66 street is 4.05x, outside [0.33, 3.0], so the guard
+    # refuses it -- but $267M adjusted operating income against a $66M street is
+    # a REAL blowout, the same shape as DELL's AI orders at 60.9 vs 25.0. The
+    # band is not widened here; the decision is Kyle's. This asserts the CURRENT
+    # behaviour and names it, so the day the band changes this test flips back.
+    _row = crwv['keyKPIs'][1]
+    check('CRWV 267 vs 66 street is REFUSED at 4.05x (false positive)',
+          _row['actual'] is None and _row.get('scaleRejected') == 267.0,
+          _row.get('ungradedReason'))
+    check('    and the refusal states the ratio',
+          '4.05x' in (_row.get('ungradedReason') or ''),
+          (_row.get('ungradedReason') or '')[:40])
 
     print('')
     print('=== every OI row in the library is now reachable by name ===')

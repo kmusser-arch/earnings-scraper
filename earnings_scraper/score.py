@@ -1027,6 +1027,94 @@ def _segment_margin_for(parsed, quals):
                 raw=sm.get('raw'), ambiguous=None)
 
 
+#: the ratio band a candidate must sit inside, relative to its street value.
+#: OUTSIDE this, the value is refused rather than graded.
+SCALE_RATIO_LOW = 0.33
+SCALE_RATIO_HIGH = 3.0
+
+#: a row whose name declares one of these is a rate, not a magnitude
+_PCT_ROW = re.compile(r'\(\s*%\s*\)|\bpercent\b', re.I)
+
+#: per-share rows -- a dividend and an EPS both sit near "per share"
+_PER_SHARE_ROW = re.compile(r'\beps\b|earnings\s+per\s+share|per\s+share|'
+                            r'per\s+diluted\s+share', re.I)
+
+
+def declared_unit(name):
+    """The unit a ROW NAME declares: '$B', '$M', '%', '$' or None."""
+    n = name or ''
+    if re.search(r'\(\s*\$\s*B\s*\)', n, re.I):
+        return '$B'
+    if re.search(r'\(\s*\$\s*M\s*\)', n, re.I):
+        return '$M'
+    if _PCT_ROW.search(n):
+        return '%'
+    if re.search(r'\(\s*\$\s*\)', n):
+        return '$'
+    return None
+
+
+def scale_refusal(name, actual, expected, actual_unit=None):
+    """Why this value must NOT be written to this row, or None to allow it.
+
+    ★ Refusing is correct behaviour. A blank row is honest; a wrong row lies
+    with a colour on it. HPE reported 🔴 MISS on non-GAAP EPS using 0.1425 --
+    the DIVIDEND -- when EPS was 1.11, a beat of $0.18. That inverts the trade.
+    """
+    if not isinstance(actual, (int, float)):
+        return None
+    unit = declared_unit(name)
+
+    # ── 1. a rate row cannot hold a magnitude ─────────────────────────────
+    if unit == '%' and abs(actual) > 100.0:
+        return ('scale: %g cannot fill a (%%) row \u2014 a rate above 100 is a '
+                'magnitude in the wrong slot' % actual)
+
+    if not isinstance(expected, (int, float)) or not expected:
+        return None
+
+    # ★ Put both sides on one scale BEFORE dividing. The parser emits $M while
+    # a row's street may be stored in $B; comparing raw gives ~1000x on almost
+    # every dollar row.
+    exp, act = _normalise_pair(expected, actual, name, actual_unit)
+    if exp is None or act is None or not exp:
+        return None
+    ratio = act / float(exp)
+
+    # ── 2. the per-share case, named explicitly ───────────────────────────
+    if unit == '$' and _PER_SHARE_ROW.search(name or ''):
+        if ratio < SCALE_RATIO_LOW or ratio > SCALE_RATIO_HIGH:
+            return ('scale: per-share %g vs street %g = %.2fx \u2014 a '
+                    'per-share row this far from street is usually the '
+                    'DIVIDEND or a different share basis, not EPS'
+                    % (act, exp, ratio))
+
+    # ── 3. the general band ───────────────────────────────────────────────
+    if ratio < SCALE_RATIO_LOW or ratio > SCALE_RATIO_HIGH:
+        return ('scale: actual %g vs street %g = %.2fx' % (act, exp, ratio))
+    return None
+
+
+def scale_refusals(rows, pre_rows):
+    """{index: reason} for every row whose value fails the scale guard."""
+    out = {}
+    for i, row in enumerate(rows):
+        pre = pre_rows[i] if i < len(pre_rows) else {}
+        exp = _row_expected(pre)
+        why = scale_refusal(row.get('name'), row.get('actual'), exp,
+                            row.get('actualUnit'))
+        if why:
+            out[i] = why
+    return out
+
+
+def _row_expected(pre_row):
+    """The street value for a pre-earnings row, coerced, or None."""
+    from . import scorecard as _sc
+    val, _strict = _sc.coerce_consensus(_sc.row_cons(pre_row or {}))
+    return val if isinstance(val, (int, float)) else None
+
+
 def build_kpi_rows(parsed, entry):
     """actuals.keyKPIs, index-aligned 1:1 with preEarnings.keyKPIs.
 
@@ -1353,11 +1441,32 @@ def build_kpi_rows(parsed, entry):
                                  and units.is_dollar_magnitude(name))
                         else None),
             unitAmbiguous=False,
+            # ★ Spec step 8: '— · ungraded' tells the trader nothing. A reason
+            # tells him whether to hand-fill it in the ninety seconds he has.
+            ungradedReason=(None if actual is not None else note),
+            scaleRejected=None,
         ))
 
     # ★ Refuse a value whose SCALE was declared in the row name but could not
     # be resolved. Writing it unitless is what turns 10.253 ($B) into a bare
     # 10,253 that grades CLEAR by accident.
+    # ★ SCALE GUARD (spec step 1). Runs BEFORE the unit-undeclared pass so a
+    # value refused on scale is reported as a scale problem rather than a unit
+    # one -- the trader needs to know WHICH, to decide whether to hand-fill.
+    for i, why in scale_refusals(rows, entry.get('keyKPIs') or []).items():
+        rows[i]['scaleRejected'] = rows[i]['actual']
+        rows[i]['actual'] = None
+        rows[i]['pctVsCons'] = None
+        rows[i]['pctVsBogey'] = None
+        rows[i]['vsCons'] = 'N/A'
+        rows[i]['vsBogey'] = 'SCALE?'
+        rows[i]['extractionSource'] = 'scale-refused'
+        rows[i]['ungradedReason'] = why
+        rows[i]['vsConsNote'] = (
+            '\u26d4 NOT GRADED \u2014 %s. Refusing rather than grading: a '
+            'wrong row renders a confident verdict, which is worse than a '
+            'blank one.' % why)
+
     for i, tok in unit_undeclared(rows).items():
         rows[i]['actual'] = None
         rows[i]['pctVsCons'] = None
@@ -1365,6 +1474,10 @@ def build_kpi_rows(parsed, entry):
         rows[i]['vsCons'] = 'N/A'
         rows[i]['vsBogey'] = '\u2014'
         rows[i]['extractionSource'] = 'unit-undeclared'
+        rows[i]['ungradedReason'] = (
+            'unit: the row declares its scale as %r and this build cannot '
+            'resolve it \u2014 a unitless magnitude grades correctly only by '
+            'accident' % tok)
         rows[i]['unitAmbiguous'] = True
         rows[i]['vsConsNote'] = (
             '\u26d4 NOT GRADED \u2014 the row name declares its scale as %r, '
@@ -1380,6 +1493,9 @@ def build_kpi_rows(parsed, entry):
         rows[i]['vsCons'] = 'N/A'
         rows[i]['vsBogey'] = '—'
         rows[i]['extractionSource'] = 'duplicate-refused'
+        rows[i]['ungradedReason'] = (
+            'duplicate: %s appeared in %d rows \u2014 one figure in two rows '
+            'is a matcher, not a reading' % (val, n))
         rows[i]['vsConsNote'] = (
             '⛔ NOT GRADED — the value %s appeared in %d rows, so it is a '
             'matcher firing too widely rather than a reading' % (val, n))

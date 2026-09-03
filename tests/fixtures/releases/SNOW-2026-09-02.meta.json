@@ -1,0 +1,12 @@
+{
+ "ticker": "SNOW",
+ "source": "BUS",
+ "headline": "Snowflake Reports Financial Results for the Second Quarter of Fiscal 2027",
+ "id": "d31042ee9f68fa294912e295fdd7f09629ff9bed88be0b8314babde09f997637",
+ "publish_type": "first-publication",
+ "primary_instruments": [
+  "EQ:US:SNOW"
+ ],
+ "recordId": "Q2",
+ "bodyChars": 120417
+}

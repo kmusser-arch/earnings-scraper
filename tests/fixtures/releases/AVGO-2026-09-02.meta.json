@@ -1,0 +1,12 @@
+{
+ "ticker": "AVGO",
+ "source": "PRN",
+ "headline": "Broadcom Inc. Announces Third Quarter Fiscal Year 2026 Financial Results and Quarterly Dividend",
+ "id": "2ebdf235610999e83df9e4cd073b6326d51ce9c9b55ba69c0e750361cb2c9973",
+ "publish_type": "first-publication",
+ "primary_instruments": [
+  "EQ:US:AVGO"
+ ],
+ "recordId": "Q3",
+ "bodyChars": 9498
+}
