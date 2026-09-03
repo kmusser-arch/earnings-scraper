@@ -1200,6 +1200,25 @@ def parse_margin_yoy_bps(text):
 
 # --- top level ----------------------------------------------------------------
 
+#: a list marker at the head of a line -- '--', '*', a bullet glyph. AVGO
+#: writes every headline figure as '-- Revenue of $29.6 billion for the third
+#: quarter', and the marker alone was enough to make parse_revenue refuse it.
+_LEAD_BULLET = re.compile(r'^[ \t]*(?:[-\u2013\u2014]{1,3}|[*\u2022\u00b7\u25aa\u25cf])[ \t]+',
+                          re.M)
+
+
+def _strip_lead_bullets(text):
+    """Blank leading list markers, PRESERVING LENGTH so offsets survive."""
+    out = []
+    last = 0
+    for m in _LEAD_BULLET.finditer(text or ''):
+        out.append((text or '')[last:m.start()])
+        out.append(' ' * (m.end() - m.start()))
+        last = m.end()
+    out.append((text or '')[last:])
+    return ''.join(out)
+
+
 def _mask_quotes(text):
     """`text` with quoted spans blanked to spaces. OFFSETS ARE PRESERVED.
 
@@ -1236,7 +1255,10 @@ def parse_release(item):
     # Masking (to spaces, so every OFFSET is preserved) makes the ranking
     # structural: a quoted value can only be supplied by the quote pass, which
     # already runs last and is already filtered by KEY 1 / KEY 2 / scale.
-    prose = _mask_quotes(text)
+    # ★ Bullets blanked as well as quotes -- both length-preserving, so
+    # every offset the period register and the candidates rely on
+    # survives untouched.
+    prose = _strip_lead_bullets(_mask_quotes(text))
 
     parsed = dict(
         revenue=parse_revenue(prose),

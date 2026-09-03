@@ -176,6 +176,68 @@ def _first_value(lines, label_index):
         return None, False
     return None, False
 
+#: a HORIZONTAL table row: a text label, then two or more numeric columns on
+#: the SAME line. AVGO's segment table is written this way; the five other
+#: releases measured carry ZERO such rows, which is what bounds this reader.
+_H_ROW = re.compile(
+    r'^\s*([A-Za-z][A-Za-z /&\'\-\.]{2,40}?)\s{2,}'
+    r'((?:[+\-]?\(?\$?\s?[\d,]+(?:\.\d+)?\)?\s*%?\s*){2,})$')
+_H_NUM = re.compile(r'([+\-]?)\(?\$?\s?([\d,]+(?:\.\d+)?)\)?\s*(%?)')
+
+
+def find_segment_horizontal(text, tokens):
+    """A HORIZONTAL table row whose label carries all `tokens`.
+
+    ★★ TAKES COLUMN 1 AND ONLY COLUMN 1. AVGO's rows run
+        Net revenue  29,591  15,952  86  29,591  15,952  86
+                     ^Q3'26  ^Q3'25 ^chg ^YTD'26 ^YTD'25 ^chg
+    so column 2 is the PRIOR YEAR and column 4 is YEAR-TO-DATE. Either would be
+    a plausible, same-metric, same-row, WRONG-PERIOD value -- the failure mode
+    no other guard in this pipeline can see.
+
+    Scale is still REQUIRED, never inferred (error D5).
+    """
+    toks = [x for x in (tokens or []) if x]
+    if not toks:
+        return None
+    pats = [re.compile(r'\b%s' % re.escape(x), re.I) for x in toks]
+
+    scale = None
+    for i, raw in enumerate((text or '').splitlines()):
+        line = raw.rstrip()
+        if not line.strip():
+            continue
+        sm = _SCALE_HEADER.search(line)
+        if sm and len(line) <= 80:
+            scale = sm.group(1).lower()
+            continue
+        m = _H_ROW.match(line)
+        if not m:
+            continue
+        label = m.group(1).strip()
+        if not all(pt.search(label) for pt in pats):
+            continue
+        cols = _H_NUM.findall(m.group(2))
+        if len(cols) < 2:
+            continue
+        sign, num, pct = cols[0]
+        if pct:
+            continue                     # a rate, not a magnitude
+        if scale is None:
+            continue                     # refuse, never infer (D5)
+        val = float(num.replace(',', '')) * _SCALE_TO_MUSD[scale]
+        if sign == '-':
+            val = -val
+        # ★ `raw` IS THE TABLE LABEL, because KEY 2 compares the candidate's
+        # text against the row name. Returning nothing here let the candidate
+        # label fall through to a note string, and KEY 2 then refused
+        # 'Semiconductor Solutions Revenue' for a `semi` the NOTE lacked.
+        return dict(value=val, scale=scale, line=i, raw=label,
+                    source='table (segment, horizontal)',
+                    columns=[c[1] for c in cols])
+    return None
+
+
 def find_segment(text, tokens):
     """A vertical-table row whose LABEL carries all of `tokens`.
 

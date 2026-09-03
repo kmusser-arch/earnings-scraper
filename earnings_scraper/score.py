@@ -939,6 +939,24 @@ def segment_sum_check(rows, entry):
 
 # --- KPI rows -----------------------------------------------------------------
 
+#: an em-dash commentary suffix. Dropped ONLY for a table-label lookup: a
+#: table label is a short noun and commentary after a dash never appears in
+#: one. NOT dropped globally -- measured, that would lose 'Trainium / Maia' and
+#: 'UALink / NVLink' from hero scope, where they are substantive.
+_TABLE_LABEL_SUFFIX = re.compile(r'\s+[\u2014\u2013-]{1,2}\s+.*$')
+
+
+def table_label_quals(name):
+    """Row qualifiers as a TABLE LABEL would carry them.
+
+    ★ A phrase list is whack-a-mole: '— HIGHEST VALUE' was in it and
+    '— HIGHEST VARIANCE' was not, so AVGO [3] demanded the words 'highest' and
+    'variance' from a segment table. Scoping the suffix drop to table lookups
+    fixes the class rather than the instance.
+    """
+    return row_qualifiers(_TABLE_LABEL_SUFFIX.sub('', name or ''))
+
+
 def _segment_for(parsed, quals):
     """Resolve ONE qualified row against the release. Table first, then prose.
 
@@ -956,11 +974,25 @@ def _segment_for(parsed, quals):
 
     from .tables import find_segment
     tbl = find_segment(text, toks)
+    if tbl is None:
+        # ★ The HORIZONTAL layout, tried only after the vertical one. AVGO
+        # writes its segment table as label-plus-columns on one line; the five
+        # other measured releases carry ZERO such rows, which is what bounds
+        # this. Takes COLUMN 1 only -- column 2 is the prior year.
+        from .tables import find_segment_horizontal
+        tbl = find_segment_horizontal(text, toks)
     if tbl is not None:
         return dict(value_musd=tbl['value'], source=tbl['source'],
                     note='parsed from the segment table ($M, declared %s)'
                          % tbl['scale'],
-                    stated=None, decimals=None, raw='table', ambiguous=None)
+                    # ★ PASS THE TABLE LABEL THROUGH. Hardcoding raw='table'
+                    # discarded it, so KEY 2 compared the row's {semi} against
+                    # modifier_set('table') == {} and refused
+                    # 'Semiconductor Solutions Revenue' for a token the
+                    # PLACEHOLDER lacked. A filter fed the wrong text is not a
+                    # filter.
+                    stated=None, decimals=None,
+                    raw=(tbl.get('raw') or 'table'), ambiguous=None)
 
     from .parse import segment_revenue
     pr = segment_revenue(text, toks)
@@ -1265,7 +1297,10 @@ def build_kpi_rows(parsed, entry):
             if balance_row(name):
                 pass                      # already handled above, never fall through
             elif 'revenue' in low and quals:
-                seg = _segment_for(parsed, quals)
+                # ★ TABLE-LABEL qualifiers: the em-dash suffix cannot be
+                # part of a table label, and a phrase list missed
+                # '— HIGHEST VARIANCE'.
+                seg = _segment_for(parsed, table_label_quals(name))
                 if seg and seg.get('value_musd') is not None:
                     actual = seg['value_musd']
                     # ★ KEY 2 needs the matched TEXT. "Q3 AI semiconductor
