@@ -277,6 +277,96 @@ def test_end_to_end_a_complete_card_is_untouched():
             row['name']
 
 
+def test_provenance_is_permanent_and_names_the_issuer():
+    """★★ A TRADING FACT, NOT A BUILD FACT. AVGO's AI-semi revenue appears in
+    NO table in the COMPLETE release -- the segment table carries
+    Semiconductor Solutions and Infrastructure Software only. $16.7B and
+    $21.7B live exclusively in prepared remarks, in part 1 and in the full
+    document alike. A quote source there is the CEILING, not a gap.
+
+    So the note must read as a property of Broadcom, and must survive the
+    truncation pass without being reworded into a missing table source.
+    """
+    import earnings_scraper.parse as P
+    import earnings_scraper.score as S
+    from earnings_scraper.model import Model
+
+    body = _read(os.path.join(FIX, 'AVGO-2026-09-02.txt'))
+    model = Model()
+    entry = model.prepare_from_record(model.record_by_id('AVGO-2026Q3'))
+    item = dict(msg_type='news_item', source='BUS', id='prov-AVGO',
+                headline='AVGO Reports Results', body=body)
+    card = S.score_release(P.parse_release(item), entry, model)
+    rows = card['keyKPIs']
+
+    tagged = [r for r in rows if r.get('provenanceNote')]
+    names = [r['name'] for r in tagged]
+    assert len(tagged) == 2, names
+
+    for row in tagged:
+        assert 'prepared remarks only' in row['provenanceNote']
+        assert 'no table source exists' in row['provenanceNote']
+        # ★ it must NOT read as a fixable gap
+        assert 'truncat' not in row['provenanceNote'].lower(), row['name']
+        assert row.get('extractionSource') == 'quote', row.get(
+            'extractionSource')
+        assert row.get('actual') is not None, 'the note is not an excuse'
+
+    # the hero and the next-quarter guide, and nothing else
+    assert any('Q3 AI Semi Revenue' in n for n in names), names
+    assert any('AI Semi Revenue Guide' in n for n in names), names
+
+
+def test_provenance_does_not_leak_across_the_modifier_axis():
+    """★ KEY 2 OWNS THIS. 'Non-AI Semi Revenue' has a token set that is a
+    SUPERSET of the AI hero's, so token containment alone tagged it -- and the
+    negation is the entire difference between the two metrics. The modifier
+    matcher already decides this symmetrically; the provenance pass asks it
+    rather than re-deriving the rule."""
+    import earnings_scraper.parse as P
+    import earnings_scraper.score as S
+    from earnings_scraper.model import Model
+
+    body = _read(os.path.join(FIX, 'AVGO-2026-09-02.txt'))
+    model = Model()
+    entry = model.prepare_from_record(model.record_by_id('AVGO-2026Q3'))
+    item = dict(msg_type='news_item', source='BUS', id='prov-AVGO',
+                headline='AVGO Reports Results', body=body)
+    card = S.score_release(P.parse_release(item), entry, model)
+
+    for row in card['keyKPIs']:
+        name = row.get('name') or ''
+        if 'Non-AI' in name or 'non-AI' in name:
+            assert not row.get('provenanceNote'), \
+                'the AI note leaked onto the negated metric: %s' % name
+    # ★ AND IT MUST NOT LEAK ACROSS THE PERIOD AXIS. Pinned on rowPeriod, not
+    # on a name substring: my first version of this check asserted against
+    # 'FY26 AI Semi' and caught 'Q4 FY26 AI Semi Revenue Guide', which is the
+    # legitimately-tagged NEXT-QUARTER row. The profile carries provenance for
+    # currentQuarter and nextQuarter only, so FY_GUIDE rows must be clean.
+    for row in card['keyKPIs']:
+        if row.get('rowPeriod') == 'FY_GUIDE':
+            assert not row.get('provenanceNote'),                 'leaked onto a full-year slot: %s' % row['name']
+
+
+def test_no_provenance_on_tickers_without_one():
+    """★ REFUSAL IS NOT FREE, and neither is a note. A profile with no
+    provenanceNote must produce no notes at all."""
+    import earnings_scraper.parse as P
+    import earnings_scraper.score as S
+    from earnings_scraper.model import Model
+
+    model = Model()
+    for tk, rid in (('SNOW', 'SNOW-2027Q2'), ('HPE', 'HPE-2026Q3')):
+        body = _read(os.path.join(FIX, '%s-2026-09-02.txt' % tk))
+        entry = model.prepare_from_record(model.record_by_id(rid))
+        item = dict(msg_type='news_item', source='BUS', id='prov-%s' % tk,
+                    headline='%s Reports' % tk, body=body)
+        card = S.score_release(P.parse_release(item), entry, model)
+        for row in card['keyKPIs']:
+            assert not row.get('provenanceNote'), '%s: %s' % (tk, row['name'])
+
+
 def main():
     """★ THE RUNNER COUNTS PRINTED PASSES. A file that asserts silently is
     indistinguishable from a file that does nothing -- that is exactly the

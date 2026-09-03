@@ -1259,6 +1259,71 @@ def _row_expected(pre_row):
     return val if isinstance(val, (int, float)) else None
 
 
+#: period words in a profile hero name. Dropped before token matching, because
+#: the profile says 'current quarter' where the row says 'Q3' and the profile
+#: says 'Next-Quarter' where the row says 'Q4 FY26'.
+_PROV_DROP = frozenset((
+    'current', 'next', 'prior', 'quarter', 'quarterly', 'year', 'full',
+    'the', 'a', 'an', 'of', 'and', 'hero', 'per',
+))
+
+#: profile appliesTo -> the row periods it may legitimately mark
+_PROV_PERIODS = {
+    'currentquarter': ('CURRENT_Q',),
+    'nextquarter': ('NEXTQ_GUIDE',),
+    'fullyear': ('FY_GUIDE',),
+}
+
+
+def _prov_tokens(name):
+    """The metric words in a name, period words and decoration removed."""
+    words = re.findall(r'[a-z]+', (name or '').lower())
+    return frozenset(w for w in words if w not in _PROV_DROP and len(w) > 1)
+
+
+def apply_provenance_notes(rows, entry):
+    """Stamp each row with its ticker profile's PERMANENT provenance note.
+
+    ★ AVGO's AI-semi revenue appears in no table in the COMPLETE release -- the
+    segment table carries Semiconductor Solutions and Infrastructure Software
+    only. $16.7B and $21.7B live exclusively in the CEO's prepared remarks. A
+    quote source there is not a degraded read standing in for a table; it is
+    the only read that exists, and it always will be.
+
+    So the note is a property of the ISSUER, carried in ticker-profiles.json
+    where it survives every quarter, and it must never be phrased as a gap.
+    """
+    heroes = [h for h in (entry.get('allHeroes') or [])
+              if h.get('provenanceNote')]
+    if not heroes:
+        return
+    for hero in heroes:
+        want = _prov_tokens(hero.get('name'))
+        if not want:
+            continue
+        periods = _PROV_PERIODS.get(
+            (hero.get('appliesTo') or '').replace(' ', '').lower())
+        for row in rows:
+            have = _prov_tokens(row.get('name'))
+            if not want <= have:
+                continue
+            # ★ PERIOD AGREEMENT SEPARATES THE TWO AI-SEMI ENTRIES, whose
+            # metric words are identical. Without it the current-quarter note
+            # lands on the guide row and leaks onto the FY anchors.
+            if periods and row.get('rowPeriod') not in periods:
+                continue
+            # KEY 2, THE MODIFIER AXIS. Token containment put the AI-semi note
+            # on 'Non-AI Semi Revenue', whose words are a SUPERSET of the
+            # hero's. The negation is the whole difference between the two
+            # metrics, and the modifier matcher already decides this
+            # symmetrically -- so ask it rather than re-deriving the rule here.
+            if modifiers_mod.disqualify(row.get('name') or '',
+                                        hero.get('name') or ''):
+                continue
+            row['provenanceNote'] = hero['provenanceNote']
+            row['provenanceSource'] = hero.get('provenanceSource')
+
+
 def build_kpi_rows(parsed, entry):
     """actuals.keyKPIs, index-aligned 1:1 with preEarnings.keyKPIs.
 
@@ -1856,6 +1921,10 @@ def build_kpi_rows(parsed, entry):
     # already names a STRUCTURAL cause -- a forward-period slot would be blank
     # on a complete release too, and restamping it blames the wire for a
     # refusal the parser made correctly.
+    # ★ PERMANENT PROVENANCE, before the truncation pass. A quote-only metric
+    # by ISSUER PRACTICE must not then be described as a missing table source.
+    apply_provenance_notes(rows, entry)
+
     _sstate = parsed.get('sourceState') or {}
     if _sstate.get('truncated'):
         for row in rows:
