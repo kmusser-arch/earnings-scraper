@@ -185,7 +185,8 @@ _H_ROW = re.compile(
 _H_NUM = re.compile(r'([+\-]?)\(?\$?\s?([\d,]+(?:\.\d+)?)\)?\s*(%?)')
 
 
-def find_segment_horizontal(text, tokens):
+def find_segment_horizontal(text, tokens, record_quarter=None,
+                            record_year=None):
     """A HORIZONTAL table row whose label carries all `tokens`.
 
     ★★ TAKES COLUMN 1 AND ONLY COLUMN 1. AVGO's rows run
@@ -202,11 +203,19 @@ def find_segment_horizontal(text, tokens):
         return None
     pats = [re.compile(r'\b%s' % re.escape(x), re.I) for x in toks]
 
+    from . import period as _period
+
     scale = None
+    header_classes = None
     for i, raw in enumerate((text or '').splitlines()):
         line = raw.rstrip()
         if not line.strip():
             continue
+        # ★ A line carrying period LABELS is a column header. Held as the
+        # running header until replaced, exactly like the scale header.
+        _cc = _period.column_classes(line, record_quarter, record_year)
+        if _cc and any(c in ('REPORTED', 'PRIOR_PERIOD') for c in _cc):
+            header_classes = _cc
         sm = _SCALE_HEADER.search(line)
         if sm and len(line) <= 80:
             scale = sm.group(1).lower()
@@ -220,20 +229,42 @@ def find_segment_horizontal(text, tokens):
         cols = _H_NUM.findall(m.group(2))
         if len(cols) < 2:
             continue
-        sign, num, pct = cols[0]
-        if pct:
-            continue                     # a rate, not a magnitude
         if scale is None:
             continue                     # refuse, never infer (D5)
+
+        # ★★ LEVEL 2. Take the column whose HEADER says REPORTED, never
+        # column 1 by assumption. AVGO's column 2 is 'Q3 25' -- the PRIOR
+        # YEAR -- and a wrong-column pick is a plausible, same-metric,
+        # same-row, in-band, WRONG-PERIOD value that nothing else here sees.
+        #
+        # Alignment is on MAGNITUDE columns only: the segment table's
+        # share-of-total columns ('70 %', '57 %') carry no header of their
+        # own, so percentages come off both sides before matching.
+        mags = [(sg, nm) for sg, nm, pc in cols if not pc]
+        classes = [c for c in (header_classes or []) if c is not None]
+        pick_idx = None
+        if classes and len(classes) == len(mags):
+            for _k, _cls in enumerate(classes):
+                if _cls == 'REPORTED':
+                    pick_idx = _k
+                    break
+        if pick_idx is None:
+            # ★ REFUSE, and say why. Defaulting to column 1 is the assumption
+            # level 2 exists to remove.
+            return dict(value=None, scale=scale, line=i, raw=label,
+                        source='table (segment, horizontal)',
+                        periodUnchecked=True,
+                        note=('column header not aligned: %d period column(s) '
+                              'vs %d magnitude column(s)'
+                              % (len(classes), len(mags))),
+                        columns=[c[1] for c in cols])
+        sign, num = mags[pick_idx]
         val = float(num.replace(',', '')) * _SCALE_TO_MUSD[scale]
         if sign == '-':
             val = -val
-        # ★ `raw` IS THE TABLE LABEL, because KEY 2 compares the candidate's
-        # text against the row name. Returning nothing here let the candidate
-        # label fall through to a note string, and KEY 2 then refused
-        # 'Semiconductor Solutions Revenue' for a `semi` the NOTE lacked.
         return dict(value=val, scale=scale, line=i, raw=label,
                     source='table (segment, horizontal)',
+                    columnIndex=pick_idx, columnClasses=classes,
                     columns=[c[1] for c in cols])
     return None
 

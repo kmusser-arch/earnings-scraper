@@ -957,6 +957,34 @@ def table_label_quals(name):
     return row_qualifiers(_TABLE_LABEL_SUFFIX.sub('', name or ''))
 
 
+def _record_period(parsed):
+    """(quarter, fiscal_year) for the record being scored, or (None, None).
+
+    ★ THE YEAR IS IN THE ID, NOT IN `quarter`. Level 2 classifies a column
+    header by RELATION -- 'Q3 26' is REPORTED and 'Q3 25' is PRIOR_PERIOD only
+    relative to the record -- so without the year every header is UNRESOLVED
+    and the reader refuses. `quarter` is 'Q3'; the id is 'AVGO-2026Q3'.
+
+    The id's year is the FISCAL year and the header's 'Q3 26' is also fiscal,
+    so they compare directly with no calendar conversion.
+    """
+    import re as _re
+    rid = str(parsed.get('recordId') or '')
+    quarter = year = None
+    m = _re.search(r'(\d{4})\s*Q([1-4])', rid, _re.I)
+    if m:
+        year, quarter = int(m.group(1)), int(m.group(2))
+    else:
+        qm = _re.search(r'Q([1-4])', str(parsed.get('recordQuarter') or ''),
+                        _re.I)
+        if qm:
+            quarter = int(qm.group(1))
+        ym = _re.search(r'(20\d{2})', rid)
+        if ym:
+            year = int(ym.group(1))
+    return quarter, year
+
+
 def _segment_for(parsed, quals):
     """Resolve ONE qualified row against the release. Table first, then prose.
 
@@ -980,7 +1008,18 @@ def _segment_for(parsed, quals):
         # other measured releases carry ZERO such rows, which is what bounds
         # this. Takes COLUMN 1 only -- column 2 is the prior year.
         from .tables import find_segment_horizontal
-        tbl = find_segment_horizontal(text, toks)
+        # ★ LEVEL 2 needs the record's own period to classify the column
+        # headers: 'Q3 26' is REPORTED and 'Q3 25' is PRIOR_PERIOD only
+        # relative to the record being scored.
+        _rq, _ry = _record_period(parsed)
+        tbl = find_segment_horizontal(text, toks, record_quarter=_rq,
+                                      record_year=_ry)
+        if tbl is not None and tbl.get('value') is None:
+            # the header could not be aligned -- refuse, do not fall back
+            return dict(value_musd=None, source='table (column-unaligned)',
+                        note=tbl.get('note'), stated=None, decimals=None,
+                        raw=tbl.get('raw') or 'table', ambiguous=None,
+                        periodUnchecked=True)
     if tbl is not None:
         return dict(value_musd=tbl['value'], source=tbl['source'],
                     note='parsed from the segment table ($M, declared %s)'
@@ -2557,6 +2596,9 @@ def score_release(parsed, entry, model, evidence=None):
     on a PR-only run, so the scraper NEVER emits an overall score: three
     categories and a deferral.
     """
+    # ★ Level 2 needs the record's fiscal year, which lives in the id.
+    parsed['recordId'] = entry.get('id') or entry.get('recordId') or ''
+    parsed['recordQuarter'] = entry.get('quarter') or ''
     kpi_rows = build_kpi_rows(parsed, entry)
 
     cq = grade_current_quarter(parsed, entry, kpi_rows, model, evidence)

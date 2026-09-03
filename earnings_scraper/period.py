@@ -298,3 +298,108 @@ def classify_at(text, offset, fragment=None, register=None,
 
     # 4. never fills
     return UNRESOLVED, 'unresolved'
+
+# ══ LEVEL 2 — COLUMN HEADERS ═══════════════════════════════════════════════
+#
+# ★ A period LABEL is not a period STATEMENT. classify_candidate() looks for a
+# verb or an expectation; 'Q3 26' has neither, so every column header comes
+# back UNRESOLVED. Level 2 therefore compares labels to the record's own
+# quarter rather than classifying them as prose.
+
+#: 'Q3 26', 'Q3 FY26', '3Q26', 'Q3 2026'
+_Q_LABEL = re.compile(r'\b(?:Q([1-4])\s?(?:FY)?\s?(\d{2,4})'
+                      r'|([1-4])Q\s?(?:FY)?\s?(\d{2,4}))\b', re.I)
+#: 'Three Months Ended August 2, 2026'
+_MONTHS_ENDED = re.compile(
+    r'\b(three|six|nine|twelve)\s+months\s+ended\b[^|]{0,30}?(\d{4})', re.I)
+#: a change/variance column -- never a period
+_CHANGE_COL = re.compile(r'\bchange\b|\bvariance\b|\bvs\b|\bgrowth\b|%', re.I)
+
+
+def _norm_year(y):
+    y = int(y)
+    return y + 2000 if y < 100 else y
+
+
+def parse_period_label(label):
+    """(quarter, year) from a column header, or None.
+
+    Returns quarter=None for a 'months ended' header, which names a year and a
+    span rather than a fiscal quarter.
+    """
+    t = ' '.join((label or '').split())
+    if not t:
+        return None
+    m = _Q_LABEL.search(t)
+    if m:
+        q = m.group(1) or m.group(3)
+        y = m.group(2) or m.group(4)
+        return int(q), _norm_year(y)
+    m = _MONTHS_ENDED.search(t)
+    if m:
+        return None, _norm_year(m.group(2))
+    return None
+
+
+def column_classes(header, record_quarter=None, record_year=None):
+    """[period class] per column, left to right, from a header line.
+
+    ★ Classified by RELATION to the record's own period:
+        same quarter AND year   -> REPORTED
+        anything earlier        -> PRIOR_PERIOD
+        a change/variance col   -> None (not a period at all)
+        unparseable             -> UNRESOLVED, which never fills
+    """
+    out = []
+    for cell in _split_header(header):
+        if _CHANGE_COL.search(cell) and not _Q_LABEL.search(cell):
+            out.append(None)
+            continue
+        got = parse_period_label(cell)
+        if got is None:
+            out.append(UNRESOLVED)
+            continue
+        q, y = got
+        if record_year is None:
+            out.append(UNRESOLVED)
+            continue
+        if y < record_year:
+            out.append(PRIOR_PERIOD)
+        elif y > record_year:
+            out.append(GUIDE_NEXT_Q)
+        elif q is None or record_quarter is None:
+            out.append(REPORTED)
+        elif q < record_quarter:
+            out.append(PRIOR_PERIOD)
+        elif q > record_quarter:
+            out.append(GUIDE_NEXT_Q)
+        else:
+            out.append(REPORTED)
+    return out
+
+
+def _split_header(header):
+    """Header cells, in order. Splits on 2+ spaces, then on period tokens.
+
+    AVGO collapses its header to 'data) Q3 26 Q3 25 Change Q3 26 Q3 25 Change'
+    with single spaces, so a whitespace split alone yields nothing usable --
+    the period tokens themselves are the delimiters.
+    """
+    t = ' '.join((header or '').split())
+    if not t:
+        return []
+    cells, last = [], 0
+    marks = [(m.start(), m.end()) for m in _Q_LABEL.finditer(t)]
+    if not marks:
+        return [c for c in re.split(r'\s{2,}', t) if c.strip()]
+    for a, z in marks:
+        cells.append(t[a:z])
+        # anything between this label and the next that looks like a change
+        # column counts as its own cell
+        last = z
+        nxt = t.find(' ', z)
+        if nxt != -1:
+            gap = t[z:t.find('Q', z) if t.find('Q', z) > z else len(t)]
+            if _CHANGE_COL.search(gap):
+                cells.append(gap.strip())
+    return [c for c in cells if c.strip()]
