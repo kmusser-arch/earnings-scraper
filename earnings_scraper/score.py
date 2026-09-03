@@ -426,7 +426,7 @@ def _name_matches_any(name, candidates):
 def _resolved_actual(kpi_name, kpi_rows):
     for row in kpi_rows:
         if row.get('name') == kpi_name:
-            return row.get('actual')
+            return gradeable_actual(row)
     return None
 
 
@@ -859,7 +859,7 @@ def segment_sum_check(rows, entry):
     total, segs = None, []
     for r in rows or []:
         name = r.get('name') or ''
-        v = r.get('actual')
+        v = gradeable_actual(r)
         if not isinstance(v, (int, float)):
             continue
         if _classify_period(name, entry.get('quarter')) != 'CURRENT_Q':
@@ -1040,6 +1040,23 @@ _PER_SHARE_ROW = re.compile(r'\beps\b|earnings\s+per\s+share|per\s+share|'
                             r'per\s+diluted\s+share', re.I)
 
 
+def gradeable_actual(row):
+    """A row's actual AS FAR AS SCORING IS CONCERNED.
+
+    ★ None whenever the value failed the scale guard. kpi_rows is read for
+    actuals in five places -- flag counting, hero extraction gaps, the hero
+    clearance leg, the consensus-miss count and the next-Q fade zone. If any
+    one of them reads `actual` directly, a value too suspect to grade still
+    moves a category score. Routed through here so a sixth consumer added later
+    inherits the exclusion instead of reintroducing the bug.
+    """
+    if not row:
+        return None
+    if row.get('scaleSuspect'):
+        return None
+    return row.get('actual')
+
+
 def declared_unit(name):
     """The unit a ROW NAME declares: '$B', '$M', '%', '$' or None."""
     n = name or ''
@@ -1065,10 +1082,12 @@ def scale_refusal(name, actual, expected, actual_unit=None):
         return None
     unit = declared_unit(name)
 
-    # ── 1. a rate row cannot hold a magnitude ─────────────────────────────
-    if unit == '%' and abs(actual) > 100.0:
-        return ('scale: %g cannot fill a (%%) row \u2014 a rate above 100 is a '
-                'magnitude in the wrong slot' % actual)
+    # ★ RULE (b) IS DELETED. "any value > 100 cannot fill a (%) row" had a 100%
+    # false-positive rate over 407 hand-filled rows -- 8 refusals, 8 wrong, 6 of
+    # them hero rows: OKTA NRR 107, NET DBNRR 118, MDB NRR 122, PLTR NDR 150 and
+    # 157, PLTR US Commercial growth 133. Retention rates EXCEED 100 BY
+    # DEFINITION and growth rates routinely do. It also had no unique true
+    # positives: rule (c) catches SNOW's 1588 at 52x street.
 
     if not isinstance(expected, (int, float)) or not expected:
         return None
@@ -1079,6 +1098,18 @@ def scale_refusal(name, actual, expected, actual_unit=None):
     exp, act = _normalise_pair(expected, actual, name, actual_unit)
     if exp is None or act is None or not exp:
         return None
+
+    # ★ A RATIO IS MEANINGLESS ONCE A SIGN IS INVOLVED.
+    if (exp < 0) != (act < 0):
+        # A sign flip is never a scale problem -- it is a different quantity.
+        # META-2026Q1 stores -4.028 for Daily Active People against a 3.58
+        # street; no scale interpretation makes a negative user count valid.
+        return ('polarity: sign flip \u2014 street %g, actual %g' % (exp, act))
+    if exp < 0 and act < 0:
+        # Both negative: skip the ratio entirely. AXTI's non-GAAP EPS improving
+        # from -0.04 to -0.01 is a BEAT, and reads as 0.25x.
+        return None
+
     ratio = act / float(exp)
 
     # ── 2. the per-share case, named explicitly ───────────────────────────
@@ -1445,6 +1476,7 @@ def build_kpi_rows(parsed, entry):
             # tells him whether to hand-fill it in the ninety seconds he has.
             ungradedReason=(None if actual is not None else note),
             scaleRejected=None,
+            scaleSuspect=False,
         ))
 
     # ★ Refuse a value whose SCALE was declared in the row name but could not
@@ -1454,18 +1486,37 @@ def build_kpi_rows(parsed, entry):
     # value refused on scale is reported as a scale problem rather than a unit
     # one -- the trader needs to know WHICH, to decide whether to hand-fill.
     for i, why in scale_refusals(rows, entry.get('keyKPIs') or []).items():
-        rows[i]['scaleRejected'] = rows[i]['actual']
-        rows[i]['actual'] = None
+        polarity = why.startswith('polarity:')
+        # ★ THE VALUE STAYS VISIBLE. A blank tells the trader nothing; "267
+        # SCALE? (4.05x street)" tells him CRWV genuinely beat 4x in two
+        # seconds, and "0.1425 SCALE? (0.15x — the DIVIDEND)" tells him it is
+        # garbage. The bug was never the number being visible, it was a
+        # CONFIDENT VERDICT on an unvalidated number.
+        #
+        # A POLARITY flip is different: a sign mismatch is not the same
+        # quantity at all, so that value is NOT written.
+        if polarity:
+            rows[i]['scaleRejected'] = rows[i]['actual']
+            rows[i]['actual'] = None
+            rows[i]['vsBogey'] = 'POLARITY'
+            rows[i]['extractionSource'] = 'polarity-refused'
+        else:
+            rows[i]['scaleRejected'] = rows[i]['actual']
+            rows[i]['vsBogey'] = 'SCALE?'
+            rows[i]['extractionSource'] = 'scale-unvalidated'
         rows[i]['pctVsCons'] = None
         rows[i]['pctVsBogey'] = None
         rows[i]['vsCons'] = 'N/A'
-        rows[i]['vsBogey'] = 'SCALE?'
-        rows[i]['extractionSource'] = 'scale-refused'
         rows[i]['ungradedReason'] = why
+        # ★ Excluded from every category score and from beatMagnitude. A score
+        # resting on a value too suspect to grade is a fabricated score
+        # (non-negotiable 7).
+        rows[i]['scaleSuspect'] = True
         rows[i]['vsConsNote'] = (
-            '\u26d4 NOT GRADED \u2014 %s. Refusing rather than grading: a '
-            'wrong row renders a confident verdict, which is worse than a '
-            'blank one.' % why)
+            '\u26d4 NOT GRADED \u2014 %s. The value is shown so it can be '
+            'read at a glance, but it is EXCLUDED from every category score: a '
+            'confident verdict on an unvalidated number is the original bug.'
+            % why)
 
     for i, tok in unit_undeclared(rows).items():
         rows[i]['actual'] = None
@@ -1566,7 +1617,7 @@ def hero_extraction_gaps(entry, kpi_rows, category):
             row = by_name.get(name) or {}
             if row.get('unverified') or kpi.get('unverified'):
                 break
-            if row.get('actual') is None:
+            if gradeable_actual(row) is None:
                 gaps.append(dict(hero=hero.get('name'), row=name,
                                  extractionSource=(row.get('extractionSource')
                                                    or 'not-found')))
@@ -1671,7 +1722,7 @@ def next_q_fade_zone(entry, kpi_rows):
         if is_reverse_polarity(name):
             continue
         row = by_name.get(name) or {}
-        actual = row.get('actual')
+        actual = gradeable_actual(row)
         cons, bogey = kpi.get('consensus'), kpi.get('bogey')
         if not all(isinstance(v, (int, float)) for v in (actual, cons, bogey)):
             continue
@@ -1779,7 +1830,7 @@ def grade_current_quarter(parsed, entry, kpi_rows, model, evidence=None):
     derivation = None
     if idx is not None:
         hero_kpi_name = (entry['keyKPIs'][idx].get('name') or '')
-        hero_actual = kpi_rows[idx].get('actual')
+        hero_actual = gradeable_actual(kpi_rows[idx])
         hero_bogey = entry['keyKPIs'][idx].get('bogey')
         hero_cons = entry['keyKPIs'][idx].get('consensus')
         if hero_actual is not None:

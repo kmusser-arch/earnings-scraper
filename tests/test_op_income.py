@@ -198,9 +198,13 @@ def main():
     # band is not widened here; the decision is Kyle's. This asserts the CURRENT
     # behaviour and names it, so the day the band changes this test flips back.
     _row = crwv['keyKPIs'][1]
-    check('CRWV 267 vs 66 street is REFUSED at 4.05x (false positive)',
-          _row['actual'] is None and _row.get('scaleRejected') == 267.0,
-          _row.get('ungradedReason'))
+    check('CRWV 267 vs 66 street is SHOWN but flagged SCALE? at 4.05x',
+          _row['actual'] == 267.0 and _row.get('vsBogey') == 'SCALE?'
+          and _row.get('scaleSuspect') is True,
+          '%s / %s' % (_row.get('actual'), _row.get('vsBogey')))
+    check('    and is EXCLUDED from scoring, not graded',
+          'CLEAR' not in str(_row.get('vsBogey'))
+          and 'BEAT' not in str(_row.get('vsBogey')))
     check('    and the refusal states the ratio',
           '4.05x' in (_row.get('ungradedReason') or ''),
           (_row.get('ungradedReason') or '')[:40])

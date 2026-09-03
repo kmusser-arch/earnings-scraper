@@ -114,11 +114,20 @@ def main():
         rejected = row.get('scaleRejected')
         reason = row.get('ungradedReason') or row.get('vsConsNote') or ''
 
+        verdict = str(row.get('vsBogey') or '')
+        suspect = bool(row.get('scaleSuspect'))
+        confident = any(w in verdict.upper() for w in ('CLEAR', 'FADE', 'MISS', 'BEAT', 'CRUSH', 'NUKE'))
+
         # ── the POSITIVE direction ────────────────────────────────────────
         if want is None:
-            ok = not isinstance(got, (int, float))
-            check('%-5s [%2d] %-34s stays UNGRADED' % (ticker, idx, nm), ok,
-                  got if not ok else 'ungraded', step=pos_step)
+            # "stays ungraded" now means: carries NO confident verdict. The
+            # value may be shown with SCALE? -- that is the step-1b action.
+            ok = (not isinstance(got, (int, float))) or (suspect
+                                                         and not confident)
+            check('%-5s [%2d] %-34s not graded confidently'
+                  % (ticker, idx, nm), ok,
+                  ('%s %s' % (got, verdict)) if not ok else
+                  (verdict or 'ungraded'), step=pos_step)
         else:
             ok = (isinstance(got, (int, float))
                   and abs(_as_row_scale(got, row) - want) < 0.051)
@@ -129,8 +138,14 @@ def main():
         if must_not is not None:
             took = (isinstance(got, (int, float))
                     and abs(_as_row_scale(got, row) - must_not) < 0.051)
-            check('      └ must NOT take %g' % must_not, not took,
-                  ('TOOK IT' if took else 'refused'), step=neg_step)
+            # ★ THE INVARIANT, restated for step 1b. Showing the wrong value is
+            # allowed; GRADING it is not. A number the trader can see and judge
+            # beats a blank he cannot.
+            ok = (not took) or (suspect and not confident)
+            check('      \u2514 %g never graded confidently' % must_not, ok,
+                  ('GRADED %s' % verdict) if not ok
+                  else ('%s / excluded' % (verdict or 'absent')),
+                  step=neg_step)
             if rejected is not None:
                 print('        refusal: %s' % str(reason)[:96])
 
@@ -157,8 +172,18 @@ def main():
         for nm, val, why in ref:
             print('      %-40s rejected %-10s %s'
                   % ((nm or '')[:40], val, (why or '')[:52]))
-    check('the guard fired at least twice (HPE EPS, SNOW growth)', total >= 2,
-          total, step=1)
+    check('the guard fired at least three times '
+          '(HPE EPS, SNOW growth, AVGO non-AI)', total >= 3, total, step=1)
+    print('')
+    print('=== and every flagged row is EXCLUDED from scoring ===')
+    for t in ('AVGO', 'HPE', 'SNOW'):
+        card, _ = cards[t]
+        susp = [r for r in card['keyKPIs'] if r.get('scaleSuspect')]
+        graded = [r for r in susp
+                  if any(w in str(r.get('vsBogey') or '').upper()
+                         for w in ('CLEAR', 'FADE', 'MISS', 'BEAT', 'CRUSH', 'NUKE'))]
+        check('%-5s %d scale-suspect row(s), 0 graded' % (t, len(susp)),
+              not graded, [r.get('vsBogey') for r in graded], step=1)
 
     print('')
     print('=== what the cards must KEEP doing (spec section 7) ===')
