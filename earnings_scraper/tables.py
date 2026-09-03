@@ -207,7 +207,8 @@ def find_segment_horizontal(text, tokens, record_quarter=None,
 
     scale = None
     header_classes = None
-    for i, raw in enumerate((text or '').splitlines()):
+    lines_all = (text or '').splitlines()
+    for i, raw in enumerate(lines_all):
         line = raw.rstrip()
         if not line.strip():
             continue
@@ -240,32 +241,50 @@ def find_segment_horizontal(text, tokens, record_quarter=None,
         # Alignment is on MAGNITUDE columns only: the segment table's
         # share-of-total columns ('70 %', '57 %') carry no header of their
         # own, so percentages come off both sides before matching.
-        mags = [(sg, nm) for sg, nm, pc in cols if not pc]
+        # ★★ (c) CROSS-ROW ARITHMETIC identifies the VALUE columns, rather
+        # than a '%' marker (unreliable -- this very table marks its share
+        # columns on one row and not the next) or a position (the assumption
+        # level 2 exists to remove).
+        #
+        # Reconciled against the table's OWN total row, so the check is
+        # self-contained. Requires TWO closures: on a two-row table 'sums to
+        # ~100' proves nothing by itself.
+        block, totals = _table_block(lines_all, i)
+        vcols = value_columns(block, totals) if block else None
         classes = [c for c in (header_classes or []) if c is not None]
+
         pick_idx = None
-        if classes and len(classes) == len(mags):
+        why = None
+        if vcols is None:
+            why = 'column arithmetic did not close'
+        elif len(vcols) != len(classes):
+            why = ('column arithmetic closed on %d value column(s) but the '
+                   'header names %d period(s)' % (len(vcols), len(classes)))
+        else:
             for _k, _cls in enumerate(classes):
                 if _cls == 'REPORTED':
-                    pick_idx = _k
+                    pick_idx = vcols[_k]
                     break
+            if pick_idx is None:
+                why = 'no REPORTED column in the header'
+
         if pick_idx is None:
-            # ★ REFUSE, and say why. Defaulting to column 1 is the assumption
-            # level 2 exists to remove.
+            return dict(value=None, scale=scale, line=i, raw=label,
+                        source='table (segment, horizontal)',
+                        periodUnchecked=True, note=why,
+                        columns=[c[1] for c in cols])
+        allnums = _row_numbers(line)[1]
+        if pick_idx >= len(allnums):
             return dict(value=None, scale=scale, line=i, raw=label,
                         source='table (segment, horizontal)',
                         periodUnchecked=True,
-                        note=('column header not aligned: %d period column(s) '
-                              'vs %d magnitude column(s)'
-                              % (len(classes), len(mags))),
+                        note='value column %d is beyond this row' % pick_idx,
                         columns=[c[1] for c in cols])
-        sign, num = mags[pick_idx]
-        val = float(num.replace(',', '')) * _SCALE_TO_MUSD[scale]
-        if sign == '-':
-            val = -val
+        val = allnums[pick_idx] * _SCALE_TO_MUSD[scale]
         return dict(value=val, scale=scale, line=i, raw=label,
                     source='table (segment, horizontal)',
                     columnIndex=pick_idx, columnClasses=classes,
-                    columns=[c[1] for c in cols])
+                    valueColumns=vcols, columns=[c[1] for c in cols])
     return None
 
 
@@ -308,3 +327,95 @@ def find_segment(text, tokens):
         return dict(value=val * _SCALE_TO_MUSD[scale], scale=scale, line=i,
                     source='table (segment)')
     return None
+
+# ══ (c) COLUMN CLASSIFICATION BY CROSS-ROW ARITHMETIC ══════════════════════
+#
+# ★ Verify or refuse. A '%' marker is unreliable (the same AVGO table marks its
+# share columns on one row and not the next) and position is the assumption
+# level 2 exists to remove. Arithmetic across rows is checkable.
+
+SHARE_TOL = 1.5          # a share column sums to 100 +/- this
+VALUE_TOL = 0.005        # a value column matches a stated total within 0.5%
+
+
+def _row_numbers(line):
+    """The numeric fields of a horizontal row, in order, as floats."""
+    m = _H_ROW.match((line or '').rstrip())
+    if not m:
+        return None, []
+    out = []
+    for sign, num, _pct in _H_NUM.findall(m.group(2)):
+        try:
+            v = float(num.replace(',', ''))
+        except ValueError:
+            return None, []
+        out.append(-v if sign == '-' else v)
+    return m.group(1).strip(), out
+
+
+def _table_block(lines_all, i):
+    """The consecutive horizontal rows around line `i`, and any stated totals.
+
+    ★ A table's TOTAL row is its own reconciliation source, so the arithmetic
+    check needs nothing imported from elsewhere. A block with no total row
+    fails to close and is refused, which is correct.
+    """
+    lo = hi = i
+    while lo > 0 and _row_numbers(lines_all[lo - 1])[0]:
+        lo -= 1
+    while hi + 1 < len(lines_all) and _row_numbers(lines_all[hi + 1])[0]:
+        hi += 1
+    rows, totals = [], []
+    for k in range(lo, hi + 1):
+        lbl, nums = _row_numbers(lines_all[k])
+        if not lbl or not nums:
+            continue
+        if re.match(r'^\s*total\b', lbl, re.I):
+            totals.extend(nums)
+        else:
+            rows.append(nums)
+    return rows, tuple(t for t in totals if t and abs(t) > 100.0)
+
+
+def classify_columns_by_arithmetic(rows, totals=()):
+    """Classify each column of a table block by what its values SUM to.
+
+    `rows`   [[float, ...]] -- the numeric fields of each data row
+    `totals` stated totals the table should reconcile to, in any order
+
+    Returns (classes, closures) where classes[i] is 'SHARE', 'VALUE' or None,
+    and `closures` counts how many independent relations closed. The caller
+    must REFUSE unless closures >= 2.
+    """
+    if not rows:
+        return [], 0
+    width = min(len(r) for r in rows)
+    if width == 0:
+        return [], 0
+    classes = [None] * width
+    closures = 0
+    for i in range(width):
+        col = [r[i] for r in rows]
+        total = sum(col)
+        if abs(total - 100.0) <= SHARE_TOL:
+            classes[i] = 'SHARE'
+            closures += 1
+            continue
+        for t in totals:
+            if t and abs(total - t) <= abs(t) * VALUE_TOL:
+                classes[i] = 'VALUE'
+                closures += 1
+                break
+    return classes, closures
+
+
+def value_columns(rows, totals=()):
+    """Indices of the VALUE columns, or None when the arithmetic did not close.
+
+    ★ Requires TWO independent closures. On a two-row table a single
+    'sums to 100' proves nothing.
+    """
+    classes, closures = classify_columns_by_arithmetic(rows, totals)
+    if closures < 2:
+        return None
+    return [i for i, c in enumerate(classes) if c == 'VALUE']
