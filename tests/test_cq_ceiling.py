@@ -35,7 +35,11 @@ def score_corpus(model, rid):
         return None, None
     text = open(os.path.join(CORPUS, rid + '.txt'), encoding='utf-8').read()
     item = dict(msg_type='news_item', source='BUS', id=rid,
-                headline=text.splitlines()[0], body=text)
+                headline=text.splitlines()[0],
+                # ★ Prepend a period scope header: step 2 refuses a
+                # value whose period cannot be established, and a
+                # synthesised body carries none.
+                body='Third Quarter Fiscal 2026 Financial Results\n' + text)
     return S.score_release(P.parse_release(item), entry, model), entry
 
 

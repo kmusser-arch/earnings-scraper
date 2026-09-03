@@ -32,6 +32,7 @@ trusted silently.
 import re
 
 from . import basis as basis_mod
+from . import period as period_mod
 from . import config, gate, plausibility, units
 from .parse import pct_delta, verdict_for
 
@@ -1089,6 +1090,13 @@ def scale_refusal(name, actual, expected, actual_unit=None):
     # DEFINITION and growth rates routinely do. It also had no unique true
     # positives: rule (c) catches SNOW's 1588 at 52x street.
 
+    # ★ ZERO IS EXEMPT FROM THE RATIO TEST ENTIRELY. A scale error never
+    # produces exactly 0.0 -- mis-parses land as 1588, 34800, 0.1425, wrong
+    # MAGNITUDES. Zero is a value. AVGO Buyback: street 600, reported nil, and
+    # the nil was the finding.
+    if actual == 0:
+        return None
+
     if not isinstance(expected, (int, float)) or not expected:
         return None
 
@@ -1174,6 +1182,12 @@ def build_kpi_rows(parsed, entry):
         # ★ Which basis was actually READ. Recorded on every row so a wrong one
         # is visible on the card rather than inferred from the number.
         basis_read = None
+        # ★ Which period class the value was read under, so a refusal can name
+        # it instead of leaving the trader to guess.
+        periodRead = None
+        # ★ Set when a candidate's period could NOT be checked because level 2
+        # is unbuilt -- an honest record of an unenforced row, not a pass.
+        periodGap = False
 
         # ★ A qualified row (Client / Gaming / Data Center / Embedded ...) can
         # only be filled from a figure parsed for that qualifier. We do not
@@ -1340,12 +1354,53 @@ def build_kpi_rows(parsed, entry):
                                 'margin is a different metric'
                                 % '+'.join(sorted(quals)))
                 elif which in margins:
-                    _by = margins[which].get('byBasis') or {}
-                    _avail = ({k: v['value'] for k, v in _by.items()}
-                              if _by else
-                              {margins[which].get('basis') or 'unknown':
-                               margins[which]['value']})
-                    _pick, _b, _note = basis_mod.select(name, _avail)
+                    # ★ KEY 1 BEFORE THE METRIC. The row's period must match
+                    # the scope in force where the value was found, or the
+                    # value is not written. HPE's 14% sits under "Fiscal 2027
+                    # Outlook Framework" and SNOW's 15.5% under "For the third
+                    # quarter of fiscal 2027, the company expects" -- neither
+                    # carries a marker in its own span, which is why a wider
+                    # window cannot fix this and a register can.
+                    # ★ PROSE ONLY, for now. A TABLE candidate carries
+                    # offset=None and raw='table', so it classifies UNRESOLVED
+                    # -- not because the document is ambiguous but because
+                    # precedence level 2 (the column header) is NOT BUILT.
+                    # Refusing on that is refusing on my own ignorance.
+                    #
+                    # It cost SNDK-2026Q4 its gross margin (84.6, table) and
+                    # falsified the PR-only ceiling theorem: currentQuarter
+                    # fell +1.0 -> +0.0, two notches BELOW the hand read.
+                    _msrc = margins[which].get('source')
+                    _from_table = (_msrc == 'table'
+                                   or margins[which].get('offset') is None)
+                    if _from_table:
+                        _pcls, _psrc = None, 'table (level 2 not built)'
+                        periodRead = None
+                        periodGap = True
+                    else:
+                        _pcls, _psrc = period_mod.classify_at(
+                            parsed.get('text') or '',
+                            margins[which].get('offset') or 0,
+                            fragment=margins[which].get('raw'),
+                            register=parsed.get('periodRegister'))
+                    if _pcls is not None and not period_mod.may_fill(
+                            period, _pcls):
+                        note = period_mod.refusal_note(period, _pcls)
+                        src = 'period-refused'
+                        periodRead = _pcls
+                        actual = None
+                        margins = dict(margins)
+                        margins.pop(which, None)
+                    _by = (margins.get(which) or {}).get('byBasis') or {}
+                    if which not in margins:
+                        _avail = {}
+                    else:
+                        _avail = ({k: v['value'] for k, v in _by.items()}
+                                  if _by else
+                                  {margins[which].get('basis') or 'unknown':
+                                   margins[which]['value']})
+                    _pick, _b, _note = ((None, None, None) if not _avail
+                                        else basis_mod.select(name, _avail))
                     basis_read = _b
                     if _pick is not None:
                         actual = _pick
@@ -1465,6 +1520,9 @@ def build_kpi_rows(parsed, entry):
             basisDeclared=basis_mod.declared(name),
             basisRead=basis_read,
             basisSensitive=basis_mod.is_sensitive(name),
+            periodRead=periodRead,
+            rowPeriod=period,
+            periodUnchecked=periodGap,
             unverified=bool(kpi.get('unverified')),
             # The parser normalises every dollar magnitude to $M, so the live
             # path DECLARES its unit rather than leaving it to be resolved.
@@ -1477,6 +1535,7 @@ def build_kpi_rows(parsed, entry):
             ungradedReason=(None if actual is not None else note),
             scaleRejected=None,
             scaleSuspect=False,
+            zeroReported=False,
         ))
 
     # ★ Refuse a value whose SCALE was declared in the row name but could not
@@ -1485,6 +1544,24 @@ def build_kpi_rows(parsed, entry):
     # ★ SCALE GUARD (spec step 1). Runs BEFORE the unit-undeclared pass so a
     # value refused on scale is reported as a scale problem rather than a unit
     # one -- the trader needs to know WHICH, to decide whether to hand-fill.
+    # ★ A REPORTED NIL GETS ITS OWN VERDICT. Not a blank (which loses the
+    # finding) and not a MISS (which buries a deliberate capital-allocation
+    # change under the same colour as a shortfall).
+    for i, row in enumerate(rows):
+        if row.get('actual') == 0 and not row.get('scaleSuspect'):
+            row['vsBogey'] = 'ZERO'
+            row['vsCons'] = 'N/A'
+            row['pctVsCons'] = None
+            row['pctVsBogey'] = None
+            row['zeroReported'] = True
+            row['ungradedReason'] = 'reported nil'
+            row['vsConsNote'] = (
+                'REPORTED NIL \u2014 the value is 0, which is a reading and '
+                'not a scale error: a mis-parse lands as a wrong MAGNITUDE '
+                '(1588, 34800, 0.1425), never as exactly zero. Shown as ZERO '
+                'rather than MISS because a deliberate nil is a finding in its '
+                'own right.')
+
     for i, why in scale_refusals(rows, entry.get('keyKPIs') or []).items():
         polarity = why.startswith('polarity:')
         # ★ THE VALUE STAYS VISIBLE. A blank tells the trader nothing; "267

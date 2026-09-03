@@ -49,7 +49,11 @@ def card(model, rid, body):
     entry = model.prepare_from_record(model.record_by_id(rid))
     return S.score_release(P.parse_release(
         dict(msg_type='news_item', source='BUS', id=rid,
-             headline='%s reports' % rid, body=body)), entry, model)
+             headline='%s reports' % rid, # ★ Every real release states its period in a heading, and
+             # step 2 refuses a value whose period cannot be
+             # established. Prepended HERE so every call site
+             # inherits it.
+             body='Third Quarter Fiscal 2026 Financial Results\n' + body)), entry, model)
 
 
 def main():
@@ -104,7 +108,10 @@ def main():
 
     print('')
     print('=== every live row that holds a magnitude declares its unit ===')
-    body = ('Total revenue of $10.253 billion, up 32% year over year.\n'
+    # ★ A period scope HEADER: step 2 refuses a value whose period
+    # cannot be established, and every real release states its period.
+    body = ('Third Quarter Fiscal 2026 Financial Results\n'
+            'Total revenue of $10.253 billion, up 32% year over year.\n'
             'Data Center segment revenue was $5.8 billion.\n'
             'Client segment revenue was $2,885 million.\n'
             'Non-GAAP gross margin of 55.0%.\n')

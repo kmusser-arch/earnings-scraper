@@ -111,6 +111,7 @@ def main():
     print('')
     print('=== the basis read is recorded on EVERY row ===')
     body = ('Western Digital Reports Results\n\n'
+            'Third Quarter Fiscal 2026 Financial Results\n'
             'Revenue was $3.75 billion.\n'
             'GAAP gross margin of 54.1%; non-GAAP gross margin of 54.4%.\n'
             'GAAP diluted EPS of $8.21; non-GAAP diluted EPS of $3.56.\n')

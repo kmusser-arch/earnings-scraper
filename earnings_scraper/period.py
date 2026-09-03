@@ -75,11 +75,23 @@ _REPORTED = re.compile(
     r'|\bin\s+the\s+quarter\b|\bfor\s+the\s+quarter\b'
     r'|\bwas\b|\bwere\b|\breported\b|\bdelivered\b|\bgrew\b|\bincreased\s+to\b'
     r'|\bcame\s+in\b|\bof\s+the\s+quarter\b|\bthis\s+quarter\b'
-    r'|\bQ[1-4]\s+\w+\s+(?:revenue|margin|income|EPS)\b'
-    # ★ HPE's house style for a reported figure carries NO VERB at all:
-    # "Non-GAAP(1) of 16.2%, up 770 basis points". With no forward marker
-    # present, "of <number>" is a statement of fact.
-    r'|\bof\s+\$?\d', re.I)
+    r'|\bQ[1-4]\s+\w+\s+(?:revenue|margin|income|EPS)\b', re.I)
+
+# ★ REMOVED: r'\bof\s+\$?\d' as reported intent.
+#
+# It was added for HPE's verbless bullet style ("Non-GAAP(1) of 16.2%") and it
+# DEFEATED THE REGISTER. SNOW's guide value arrives as the bare span "Non-GAAP
+# operating margin2 of 15.5%", which the rule read as REPORTED -- and because
+# an inline marker outranks the register (precedence level 1), it beat the
+# "For the third quarter of fiscal 2027, the company expects:" header that
+# actually governs it. The guide value then filled a reported slot and graded
+# DEMOLISH.
+#
+# A WEAK INLINE RULE IS WORSE THAN NO INLINE RULE: it outranks the structure
+# that does know the answer. "of 15.5%" states a value, not a period. The
+# verbless bullets resolve from the register instead -- HPE's 16.2% at offset
+# 1521 sits under "Third Quarter Fiscal 2026 Financial Results" at 1048 and
+# classifies REPORTED without any inline help.
 
 
 #: the first numeric token in a fragment -- used ONLY to order a marker
@@ -165,3 +177,124 @@ def refusal_note(row_period, candidate_class):
                 'can classify')
     return ('period mismatch: found %s, row wants %s'
             % (candidate_class, want))
+
+# ══ THE PERIOD SCOPE REGISTER ══════════════════════════════════════════════
+#
+# Scope markers, tested in this order. The FIRST match on a line wins, and the
+# ordering is deliberate: a full-year phrase must be tested before the
+# quarter phrase it contains ("full year fiscal 2027" also matches "fiscal
+# 2027").
+
+_ORD = r'(?:first|second|third|fourth|1st|2nd|3rd|4th|Q[1-4]|[1-4]Q)'
+
+_SCOPE_MARKERS = (
+    # ── full-year guidance, tested FIRST ──────────────────────────────────
+    (GUIDE_FY, r'for\s+the\s+full[-\s]?year(?:\s+of)?\s+fiscal'),
+    (GUIDE_FY, r'full[-\s]?year\s+fiscal\s+\d{2,4}\s+outlook'),
+    (GUIDE_FY, r'fiscal\s+\d{2,4}\s+full[-\s]?year\s+outlook'),
+    (GUIDE_FY, r'fiscal\s+\d{2,4}\s+outlook\s+framework'),
+    (GUIDE_FY, r'\bFY\s?\d{2,4}\s+outlook'),
+    (GUIDE_FY, r'full[-\s]?year\s+(?:guidance|outlook|framework)'),
+    (GUIDE_FY, r'for\s+(?:the\s+)?full\s+fiscal\s+year'),
+    (GUIDE_FY, r'for\s+the\s+full\s+year,?\s+(?:we|the\s+company)\s+expect'),
+
+    # ── next-quarter guidance ─────────────────────────────────────────────
+    (GUIDE_NEXT_Q,
+     r'for\s+the\s+' + _ORD + r'\s+quarter\s+of\s+fiscal[^.]{0,40}'
+     r'(?:we|the\s+company)\s+expect'),
+    (GUIDE_NEXT_Q, r'for\s+the\s+' + _ORD + r'\s+quarter[^.]{0,30}expect'),
+    (GUIDE_NEXT_Q, r'the\s+outlook\s+for\s+the\s+' + _ORD + r'\s+quarter'),
+    (GUIDE_NEXT_Q, r'fiscal\s+\d{2,4}\s+' + _ORD + r'\s+quarter\s+outlook'),
+    (GUIDE_NEXT_Q, _ORD + r'\s+quarter\s+fiscal\s+\d{2,4}\s+outlook'),
+    (GUIDE_NEXT_Q, r'\b' + _ORD + r'\s+quarter\s+(?:guidance|outlook)\b'),
+    (GUIDE_NEXT_Q, r'\bguidance\s+for\s+the\s+' + _ORD + r'\s+quarter'),
+
+    # ── reported results ──────────────────────────────────────────────────
+    (REPORTED,
+     _ORD + r'\s+quarter\s+fiscal(?:\s+year)?\s+\d{2,4}\s+'
+     r'(?:financial\s+)?(?:results|highlights)'),
+    (REPORTED,
+     r'fiscal(?:\s+year)?\s+\d{2,4}\s+' + _ORD + r'\s+quarter\s+'
+     r'(?:financial\s+)?(?:results|highlights)'),
+    (REPORTED, r'\b' + _ORD + r'\s+quarter\s+(?:financial\s+)?results\b'),
+    (REPORTED, r'results\s+for\s+the\s+' + _ORD + r'\s+quarter'),
+    (REPORTED, r'\b(?:financial\s+)?highlights\b'),
+)
+
+_SCOPE_COMPILED = tuple((cls, re.compile(pat, re.I)) for cls, pat in
+                        _SCOPE_MARKERS)
+
+#: a table column header naming the reported period
+_COL_REPORTED = re.compile(
+    r'\b(?:three|six|nine|twelve)\s+months\s+ended\b', re.I)
+
+
+def scope_marker(line):
+    """The period scope a LINE establishes for what follows, or None.
+
+    Only the FIRST match matters: a line is one scope statement, and testing
+    full-year before quarter keeps "full year fiscal 2027" out of the
+    quarter bucket.
+    """
+    text = ' '.join((line or '').split())
+    if not text:
+        return None
+    for cls, pat in _SCOPE_COMPILED:
+        if pat.search(text):
+            return cls
+    return None
+
+
+def build_register(text):
+    """[(offset, period)] for every scope marker, in DOCUMENT ORDER.
+
+    ★ Structural, not proximity-based. A window wide enough to reach SNOW's
+    list header would be wide enough to reach the WRONG header on the next
+    release.
+    """
+    reg = []
+    offset = 0
+    for line in (text or '').splitlines():
+        cls = scope_marker(line)
+        if cls:
+            reg.append((offset, cls))
+        offset += len(line) + 1
+    return reg
+
+
+def period_at(register, offset):
+    """The scope in force at `offset` -- the nearest PRECEDING marker."""
+    current = UNRESOLVED
+    for off, cls in register or ():
+        if off > offset:
+            break
+        current = cls
+    return current
+
+
+def classify_at(text, offset, fragment=None, register=None,
+                column_class=None):
+    """The period of a candidate at `offset`, by the four-level precedence.
+
+    Returns (period, source) so a refusal can say WHERE the period came from --
+    'inline' / 'column' / 'register' / 'unresolved'.
+    """
+    # 1. an inline marker inside the candidate's own clause
+    if fragment:
+        inline = classify_candidate(fragment)
+        if inline != UNRESOLVED:
+            return inline, 'inline'
+
+    # 2. a table column header
+    if column_class:
+        return column_class, 'column'
+
+    # 3. the register
+    if register is None:
+        register = build_register(text)
+    cls = period_at(register, offset)
+    if cls != UNRESOLVED:
+        return cls, 'register'
+
+    # 4. never fills
+    return UNRESOLVED, 'unresolved'

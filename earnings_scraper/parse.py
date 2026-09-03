@@ -15,6 +15,8 @@ Two rules inherited from the model's error classes:
 
 import re
 
+from . import period as _period
+
 # --- number helpers -----------------------------------------------------------
 
 _SCALE = {
@@ -1132,7 +1134,11 @@ def parse_margins(text):
             if val is None or not (0 <= val <= 100):
                 continue
             basis = _norm_basis((m.group(1) or '').strip())
-            cand = dict(value=val, basis=basis, raw=m.group(0).strip())
+            # ★ OFFSET, not the sentence. The register resolves scope
+            # from a position, and a position cannot be widened into
+            # the wrong header the way a text window can.
+            cand = dict(value=val, basis=basis, raw=m.group(0).strip(),
+                        offset=m.start())
             # ★ KEEP BOTH BASES. Collapsing to the non-GAAP "best" discarded the
             # GAAP figure entirely, so a GAAP-declared row could not be served
             # and nothing downstream could tell whether the release offered
@@ -1277,6 +1283,11 @@ def parse_release(item):
         len(parsed['guidance']),
         len(parsed['margins']),
     ])
+    # ★ KEY 1 needs a POSITION, so the joined text and its period
+    # register ride along. Built once here rather than re-scanning an
+    # 84 KB document per row.
+    parsed['text'] = text
+    parsed['periodRegister'] = _period.build_register(text)
     return parsed
 
 

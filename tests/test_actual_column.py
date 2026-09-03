@@ -13,7 +13,7 @@ and SNOW 85,211 from BUS. Every value below was filled correctly BY HAND from
 this same text, so nothing here is a "the data isn't in the PR" problem.
 
 ★ STEP STATUS. This file is the acceptance test for all five spec steps, but
-only STEP 1 (unit/scale guard) is implemented. Expectations owned by steps 2-4
+STEP 1 (scale guard) and STEP 2 (period register) are implemented. Expectations owned by steps 2-4
 are marked TODO: they print their current state and do NOT fail the build,
 because a test that goes red for work that has not started yet trains you to
 ignore it -- the same reasoning that made EXPIRED its own category.
@@ -65,6 +65,8 @@ CASES = [
 ]
 
 #: which steps are implemented. Only these produce hard failures.
+#: step 2 (period) is wired for MARGINS only, so its row-level cases are
+#: hard while the metric cases stay TODO.
 DONE_STEPS = {0, 1}
 
 
@@ -192,6 +194,86 @@ def main():
         check('%-5s overall NOT EMITTED on a PR-only run' % t,
               card.get('overall') is None, card.get('overall'), step=0)
 
+
+    print('')
+    print('=== KEY 1: the period scope REGISTER (step 2) ===')
+    from earnings_scraper import period as PD
+    import re as _re
+    hpe_body = io.open(os.path.join(FIX, 'HPE-2026-09-02.txt'),
+                       encoding='utf-8').read()
+    snow_body = io.open(os.path.join(FIX, 'SNOW-2026-09-02.txt'),
+                        encoding='utf-8').read()
+
+    # ★ The register, not a window. Neither bad value carries a marker in its
+    # own span: HPE's inherits "Fiscal 2027 Outlook Framework" and SNOW's
+    # inherits "For the third quarter of fiscal 2027, the company expects:".
+    hreg = PD.build_register(hpe_body)
+    sreg = PD.build_register(snow_body)
+    check('HPE  register found the outlook headings', len(hreg) >= 4,
+          len(hreg), step=1)
+    check('SNOW register found the guide headers', len(sreg) >= 3, len(sreg),
+          step=1)
+
+    for body, reg, pat, want, label in (
+            (hpe_body, hreg, r'to be in the range of 14%', PD.GUIDE_NEXT_Q,
+             'HPE 14% is GUIDED'),
+            (snow_body, sreg, r'operating margin2 of 15\.5%', PD.GUIDE_NEXT_Q,
+             'SNOW 15.5% is the Q3 GUIDE'),
+            (hpe_body, hreg, r'Non-GAAP\(1\) of 16\.2%', PD.REPORTED,
+             'HPE 16.2% is REPORTED'),
+            (hpe_body, hreg, r'Non-GAAP\(1\) of 40\.4%', PD.REPORTED,
+             'HPE 40.4% is REPORTED')):
+        mm = _re.search(pat, body)
+        cls, src = PD.classify_at(body, mm.start(), fragment=mm.group(0),
+                                  register=reg)
+        check('%-32s -> %s (via %s)' % (label, want, src), cls == want, cls,
+              step=1)
+
+    # ★ THE REGRESSION THAT MATTERS. Both reported values carry a TRAILING
+    # "up NNN basis points from the prior-year period". An eager prior-period
+    # rule would demote them and blank the column the guard exists to protect.
+    for body, reg, pat, label in (
+            (hpe_body, hreg, r'Non-GAAP\(1\) of 16\.2%', '16.2%'),
+            (hpe_body, hreg, r'Non-GAAP\(1\) of 40\.4%', '40.4%')):
+        mm = _re.search(pat, body)
+        cls, _src = PD.classify_at(body, mm.start(), fragment=mm.group(0),
+                                   register=reg)
+        check('    %s still fills a CURRENT_Q row despite its YoY clause'
+              % label, PD.may_fill('CURRENT_Q', cls), cls, step=1)
+
+    print('')
+    print('=== step 2 targets, end to end ===')
+    for t, idx, must_not in (('HPE', 15, 14.0), ('SNOW', 8, 15.5)):
+        card, _ = cards[t]
+        row = card['keyKPIs'][idx]
+        got = row.get('actual')
+        check('%-5s [%2d] refuses %g on PERIOD' % (t, idx, must_not),
+              got is None, got, step=1)
+        check('    and names the mismatch',
+              'period mismatch' in (row.get('ungradedReason') or ''),
+              (row.get('ungradedReason') or '')[:38], step=1)
+
+    print('')
+    print('=== step 3, AVGO [1]: ISOLATED, duplicate check DISABLED ===')
+    # ★ Order-dependent luck is not a control. With the duplicate pass off,
+    # 34,800 -- the Q4 TOTAL revenue guide -- fills the Q4 AI SEMI guide row
+    # and renders NUKE-BEAT on a ★★★ hero. Both values are GUIDE_NEXT_Q, so
+    # KEY 1 cannot discriminate them; this needs KEY 2 (modifier tokens).
+    _orig = S.duplicate_actuals
+    S.duplicate_actuals = lambda rows: {}
+    try:
+        iso, _e = card_for(model, 'AVGO', 'AVGO-2026Q3')
+    finally:
+        S.duplicate_actuals = _orig
+    row1 = iso['keyKPIs'][1]
+    print('     [ 1] %s' % (row1.get('name') or '')[:52])
+    print('          actual=%s verdict=%s' % (row1.get('actual'),
+                                              row1.get('vsBogey')))
+    check('AVGO [1] must not take 34800 without the duplicate check',
+          row1.get('actual') != 34800.0,
+          '%s / %s' % (row1.get('actual'), row1.get('vsBogey')), step=2)
+    check('    (both values are GUIDE_NEXT_Q, so KEY 1 cannot fix this)',
+          True, 'needs KEY 2', step=0)
     print('')
     print('%d failure(s), %d TODO (steps 2-5 not implemented)'
           % (FAIL[0], TODO[0]))
