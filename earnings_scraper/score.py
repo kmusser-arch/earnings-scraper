@@ -33,6 +33,7 @@ import re
 
 from . import basis as basis_mod
 from . import modifiers as modifiers_mod
+from . import quotes as quotes_mod
 from . import period as period_mod
 from . import config, gate, plausibility, units
 from .parse import pct_delta, verdict_for
@@ -606,6 +607,15 @@ def is_operating_margin_row(name):
     return bool(_OPM_NAME.search(name or ''))
 
 
+#: decoration that must never become a qualifier. PHRASES, not positions.
+_DECOR_PHRASE = re.compile(
+    r'\bTHE\s+HERO\b|\bTHE\s+EVENT\b|\bTHE\s+KPI(?:\s+IN\s+FOCUS)?\b'
+    r'|\bTHE\s+TRADE\b|\bHIGHEST\s+VALUE\b|\bNOISE\b'
+    r'|\bREVERSE\s+POLARITY\b|\bIN\s+FOCUS\b|\bINVERTED\s+ROW\b'
+    r'|\bWHERE\s+UPSIDE\s+LIVES\b|\bTHE\s+SECOND\s+GATE\b'
+    r'|\bDERIVED\b|\bPENDING\b', re.I)
+
+
 def row_qualifiers(name):
     """Tokens that make this row a SPECIFIC metric rather than the headline one.
 
@@ -613,6 +623,17 @@ def row_qualifiers(name):
     A row with qualifiers can only be filled by a figure parsed for THAT
     qualifier -- never by the headline total, and never by a broader fallback.
     """
+    # ★ KNOWN DECORATION PHRASES ONLY. "— THE HERO" and "— HIGHEST VALUE"
+    # inject `hero`, `highest`, `value` into the qualifier set, so a segment
+    # lookup demands words a table can never contain -- SNOW's product revenue
+    # is in the table at 1491.861 and was missed solely because `hero` was also
+    # required.
+    #
+    # NOT a blanket em-dash strip: measured over 33 affected rows, several
+    # suffixes carry REAL qualifiers ("Custom Silicon Ramp — Trainium / Maia",
+    # "pipeline color — UALink / NVLink"), and dropping those leaves an empty
+    # core set, which is a subset of everything.
+    name = _DECOR_PHRASE.sub(' ', name or '')
     base = re.sub(r'\([^)]*\)', ' ', name or '')          # drop unit parens
     base = base.replace('\u2605', ' ')                     # drop stars
     toks = {t for t in _TOKEN_RE.findall(base.lower())}
@@ -766,6 +787,13 @@ def hero_scope_matches(hero_name, row_name):
     every empty-scope hero onto every other empty-scope row.
     """
     if hero_scope(hero_name) != hero_scope(row_name):
+        return False
+    # ★ THE SAME MODIFIER RULE AS KEY 2, applied here too. hero_scope strips
+    # decoration and generic tokens, which makes "AI Semi Revenue" and "Non-AI
+    # Semi Revenue" scope-identical -- the exact collision KEY 2 exists to
+    # split. One rule, applied everywhere it applies.
+    from . import modifiers as _mod
+    if _mod.disqualify(hero_name, row_name):
         return False
     h, r = hero_metric_kind(hero_name), hero_metric_kind(row_name)
     # A name with no recognisable metric constrains nothing, so it is not used
@@ -1645,6 +1673,61 @@ def build_kpi_rows(parsed, entry):
             'read at a glance, but it is EXCLUDED from every category score: a '
             'confident verdict on an unvalidated number is the original bug.'
             % why)
+
+    # ★★ QUOTE PASS — LAST, AND STILL FILTERED.
+    #
+    # Runs after every branch and after the scale / KEY 2 / period post-passes,
+    # so it sees only rows nothing else could fill. That is what makes it
+    # lowest precedence, per precedenceMustTrackReliability: a CEO naming a
+    # figure is maximally SPECIFIC and less RELIABLE than a reconciliation
+    # table, because executives round and tables do not (SNOW: quote "$1.49
+    # billion" vs table 1,491.9, 0.94% apart).
+    #
+    # Being last does NOT make it privileged: KEY 1, KEY 2 and the scale guard
+    # all still apply to a quote candidate.
+    _qtext = parsed.get('text') or ''
+    _qreg = parsed.get('periodRegister')
+    if _qtext:
+        for i, row in enumerate(rows):
+            # ★ ONLY A HELD VALUE CLOSES A ROW. A row whose earlier candidate
+            # was DISQUALIFIED is still open: excluding a candidate must not
+            # exclude its slot, or filter-then-rank is inverted at the row
+            # level. AVGO [1] disqualifies 34,800 on `ai` and must still be
+            # free to take the legitimate 21.7 from the quote.
+            #
+            # A scale-unvalidated row DOES hold a value (shown as SCALE?), so
+            # overwriting it would discard what the trader is meant to see.
+            if row.get('actual') is not None or row.get('scaleSuspect'):
+                continue
+            nm = row.get('name') or ''
+            want_pct = declared_unit(nm) == '%'
+            pre = (entry.get('keyKPIs') or [None] * len(rows))[i] or {}
+            exp = _row_expected(pre)
+            rper = row.get('rowPeriod') or _classify_period(
+                nm, entry.get('quarter'))
+            for cand in quotes_mod.for_row(_qtext, nm, want_pct=want_pct):
+                cls, csrc = period_mod.classify_at(
+                    _qtext, cand['offset'], fragment=cand['sentence'],
+                    register=_qreg)
+                if not period_mod.may_fill(rper, cls):
+                    continue
+                if modifiers_mod.disqualify(nm, cand['sentence']):
+                    continue
+                val = cand['value_musd']
+                if scale_refusal(nm, val, exp, '$M' if not want_pct else None):
+                    continue
+                row['actual'] = val
+                row['actualUnit'] = None if want_pct else '$M'
+                row['extractionSource'] = 'quote'
+                row['periodRead'] = cls
+                row['candidateLabel'] = cand['sentence']
+                row['ungradedReason'] = None
+                row['vsConsNote'] = (
+                    'parsed from an EXECUTIVE QUOTE (%s, %s) \u2014 lowest '
+                    'precedence: filled only because no table or prose source '
+                    'carried it. Quotes are ROUNDED, so a table figure always '
+                    'wins.' % (cand['raw'], cls))
+                break
 
     for i, tok in unit_undeclared(rows).items():
         rows[i]['actual'] = None

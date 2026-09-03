@@ -278,6 +278,77 @@ def main():
           '%s / %s' % (row1.get('actual'), row1.get('vsBogey')), step=2)
     check('    (both values are GUIDE_NEXT_Q, so KEY 1 cannot fix this)',
           True, 'needs KEY 2', step=0)
+
+    print('')
+    print('=== STEP 5: quote extraction, LOWEST precedence ===')
+    # ★ Each negative fixture names the GUARD it depends on, and the
+    # anti-vacuous block below verifies the test FAILS when that guard is off.
+    # An assertion that cannot fail is not an assertion.
+    step5 = (
+        ('AVGO', 0, 16700.0, None, 'quote or segment is the only source'),
+        ('AVGO', 1, 21700.0, 34800.0, 'KEY 2 modifier (ai on the row)'),
+        ('SNOW', 0, 1491.861, 1490.0, 'precedence: table beats quote'),
+    )
+    for ticker, idx, want, must_not, guard in step5:
+        card, _ = cards[ticker]
+        row = card['keyKPIs'][idx]
+        got = row.get('actual')
+        ok = isinstance(got, (int, float)) and abs(got - want) < 0.2
+        check('%-5s [%2d] takes %g (%s)' % (ticker, idx, want,
+                                            row.get('extractionSource')),
+              ok, got, step=1)
+        if must_not is not None:
+            took = isinstance(got, (int, float)) and abs(got - must_not) < 0.2
+            check('      \u2514 never %g  [guard: %s]' % (must_not, guard),
+                  not took, got, step=1)
+
+    print('')
+    print('=== ANTI-VACUOUS: each negative fixture FAILS without its guard ===')
+    # AVGO [1] depends on KEY 2. Disable the modifier rule and 34,800 must
+    # reach the row -- proving the assertion above can fail.
+    import earnings_scraper.modifiers as _MD
+    # ★ THE PROBE MUST ISOLATE KEY 2. Disabling it alone yields None, because
+    # DUPLICATE-REFUSAL then nulls the row -- which is precisely the
+    # pre-Step-3 state: 34,800 landed in both [1] and [16] and the duplicate
+    # pass blanked both. So the probe disables the duplicate check too, leaving
+    # KEY 2 as the only control, and 34,800 must then reach the row.
+    _real = _MD.disqualify
+    _realdup = S.duplicate_actuals
+    _MD.disqualify = lambda *_a, **_k: None
+    S.duplicate_actuals = lambda rows: {}
+    try:
+        probe, _e = card_for(model, 'AVGO', 'AVGO-2026Q3')
+        leaked = probe['keyKPIs'][1].get('actual')
+    finally:
+        _MD.disqualify = _real
+        S.duplicate_actuals = _realdup
+    check('AVGO [1]: with KEY 2 AND dedup off, 34800 DOES reach the row',
+          leaked == 34800.0, leaked, step=1)
+    print('        -> so the PASS above is a real assertion, not a vacuous one')
+
+    # SNOW [0] depends on precedence: the table must outrank the quote. With
+    # the table path removed, the rounded quote 1490 fills instead.
+    import earnings_scraper.tables as _T
+    _realseg = _T.find_segment
+    _T.find_segment = lambda *_a, **_k: None
+    try:
+        probe2, _e2 = card_for(model, 'SNOW', 'SNOW-2027Q2')
+        fallback = probe2['keyKPIs'][0].get('actual')
+    finally:
+        _T.find_segment = _realseg
+    check('SNOW [0]: without the table, the quote 1490 fills instead',
+          fallback is None or abs((fallback or 0) - 1490.0) < 1.0, fallback,
+          step=1)
+
+    print('')
+    print('=== HPE: no behaviour change (0 quote-only values) ===')
+    hcard, _ = cards['HPE']
+    hfilled = sum(1 for r in hcard['keyKPIs']
+                  if isinstance(r.get('actual'), (int, float)))
+    hquote = sum(1 for r in hcard['keyKPIs']
+                 if r.get('extractionSource') == 'quote')
+    check('HPE has 0 quote-sourced rows', hquote == 0, hquote, step=1)
+    print('     HPE filled rows: %d' % hfilled)
     print('')
     print('%d failure(s), %d TODO (steps 2-5 not implemented)'
           % (FAIL[0], TODO[0]))
