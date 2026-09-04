@@ -165,6 +165,14 @@ def main():
     # in the same unit with nothing to say which is the quarter. The headerless
     # case is asserted separately below, so this is the fixture becoming
     # realistic rather than the rule becoming weaker.
+    #
+    # ⚠ HONEST LIMIT: AMD's REAL release is NOT in the corpus -- source text is
+    # held for AVGO, HPE, SNOW, APP, SNDK and WDC only. So this header is
+    # MODELLED on the four vertical layouts that were measured (SNOW, APP,
+    # SNDK, HPE all state 'Ended' phrases) and has NOT been checked against an
+    # AMD document. Until one is pulled, the assertion below -- that a
+    # headerless two-column row refuses -- is the only one here describing an
+    # observed shape rather than a plausible one.
     tbl = ('(In millions, except percentages)\n'
            'Three Months Ended March 29,\n2026\n2025\n'
            'Data Center segment revenue\n$\n5,775\n4,573\n'

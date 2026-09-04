@@ -220,7 +220,11 @@ def verified_value(lines, label_index):
         # a single-column row states one period and cannot be mis-picked
         return cells[0][0], cells[0][1], None
 
-    got = vtables.column_map(lines, label_index, len(cells))
+    # ★ THE CELLS GO IN, SO THE REFUSAL CAN NAME THEM. verified_value
+    # already holds the whole row; not passing it was the difference between a
+    # refusal a trader can act on and one that only says the parser gave up.
+    got = vtables.column_map(lines, label_index, len(cells),
+                             values=[c[0] for c in cells])
     if got.get('valueIndex') is not None:
         i = got['valueIndex']
         return cells[i][0], cells[i][1], None
@@ -237,6 +241,18 @@ def verified_value(lines, label_index):
     return None, False, ('column unverified: %s; %s'
                          % (got.get('note') or 'no header',
                             closure.get('note') or 'no stated delta'))
+
+
+def refused_candidates(lines, label_index):
+    """The declined candidate list for a row, for callers that want it apart
+    from the note."""
+    from . import vtables
+    cells = row_value_cells(lines, label_index)
+    if len(cells) < 2:
+        return None
+    got = vtables.column_map(lines, label_index, len(cells),
+                             values=[c[0] for c in cells])
+    return got.get('candidates')
 
 
 def _first_value(lines, label_index):

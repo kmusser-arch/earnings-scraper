@@ -292,6 +292,43 @@ def _classify(months, year, month, record_quarter, record_year, q_months):
     return UNRESOLVED
 
 
+def fmt_num(v):
+    """A cell as a trader reads it: thousands separated, no trailing zeros."""
+    if v is None:
+        return '?'
+    if isinstance(v, float) and v == int(v) and abs(v) >= 1000:
+        return '{:,.0f}'.format(v)
+    if isinstance(v, float):
+        return ('{:,.4f}'.format(v)).rstrip('0').rstrip('.')
+    return '{:,}'.format(v)
+
+
+def render_candidates(values, classes=None, provisional=True):
+    """'12,213 [REPORTED?] | 10,678 [SEQUENTIAL?] | 9,136 [PRIOR_YEAR_Q?]'
+
+    ★★ THE CANDIDATES ARE THE CONTENT OF THE REFUSAL. The message being sent
+    is 'I could not prove which of these is the quarter', so a version that
+    omits the list omits everything actionable and leaves only 'gave up'.
+
+    ★ Classes render with a trailing '?' when the mapping did NOT close --
+    printing an unproven class as fact would be asserting a correctness the
+    refusal itself denies.
+    """
+    if not values:
+        return None
+    mark = '?' if provisional else ''
+    out = []
+    for i, v in enumerate(values):
+        cls = None
+        if classes and i < len(classes):
+            cls = classes[i]
+        if cls:
+            out.append('%s [%s%s]' % (fmt_num(v), cls, mark))
+        else:
+            out.append(fmt_num(v))
+    return ' | '.join(out)
+
+
 def cardinality_ok(n_leaves, n_values):
     """Do the header leaves and the value cells line up exactly?
 
@@ -308,14 +345,22 @@ def cardinality_ok(n_leaves, n_values):
     return n_leaves == n_values
 
 
-def column_map(lines, label_idx, value_count, record_quarter=None,
-               record_year=None, quarter_months=3):
+def _column_map_inner(lines, label_idx, value_count, record_quarter=None,
+                      record_year=None, quarter_months=3):
     """Period class per value cell of a vertically exploded row.
 
-    Returns dict(classes, valueIndex, leaves, note). `valueIndex` is the index
-    of the single REPORTED, non-change, amount-bearing leaf, or None with a
-    `note` saying why the row was refused.
+    Returns dict(classes, valueIndex, leaves, note, candidates). `valueIndex`
+    is the index of the single REPORTED, non-change, amount-bearing leaf, or
+    None with a `note` saying why the row was refused.
+
+    ★★ EVERY REFUSAL NAMES THE CANDIDATES IT DECLINED. Pass `values` and the
+    note becomes a hand-check instead of a dead end -- the refusal is ABOUT
+    those numbers, so omitting them omits the message.
     """
+    # ★ ONE DECORATION POINT. Threading the candidate list through eleven
+    # separate return statements is the twelve-elif problem again -- so the
+    # refusals are built as they were and the candidates are attached once,
+    # by the wrapper below.
     cells = _absorb_window_dates(_join_wrapped(header_cells(lines, label_idx)))
     runs = _strata(cells)
 
@@ -560,3 +605,34 @@ def delta_closure(lines, label_idx, values, window=DELTA_WINDOW):
                         note=None)
     return dict(valueIndex=None, value=None, evidence=evidence,
                 note='closure produced a value not present in the row')
+
+
+def column_map(lines, label_idx, value_count, record_quarter=None,
+               record_year=None, quarter_months=3, values=None):
+    """column_map, with every REFUSAL carrying the candidates it declined.
+
+    ★★★ THE FAILURE MODE OF A CORRECT REFUSAL IS A TRADER WHO STOPS READING
+    REFUSALS. 'cell count mismatch: 3 header leaves vs 4 values' is true and
+    unusable; the same refusal followed by
+    'candidates 12,213 [REPORTED?] | 10,678 [SEQUENTIAL?] | 9,136
+    [PRIOR_YEAR_Q?]' is a four-second hand-check on a hero that would
+    otherwise be lost.
+
+    ★ ONE DECORATION POINT, not eleven return statements. Every previous
+    attempt to add a cross-cutting property to a multi-branch function in this
+    codebase left a branch behind.
+    """
+    got = _column_map_inner(lines, label_idx, value_count,
+                            record_quarter=record_quarter,
+                            record_year=record_year,
+                            quarter_months=quarter_months)
+    if got.get('valueIndex') is not None or not values:
+        got.setdefault('candidates', None)
+        return got
+    cand = render_candidates(values, got.get('classes'))
+    got['candidates'] = cand
+    if cand and got.get('note'):
+        got['note'] = '%s — candidates %s' % (got['note'], cand)
+    elif cand:
+        got['note'] = 'candidates %s' % cand
+    return got

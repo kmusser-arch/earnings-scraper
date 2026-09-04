@@ -1325,6 +1325,40 @@ def apply_provenance_notes(rows, entry):
             row['provenanceSource'] = hero.get('provenanceSource')
 
 
+def fmt_candidate(value, unit=None):
+    """The refused value, printed the way a trader reads it."""
+    if value is None:
+        return None
+    if isinstance(value, float):
+        txt = ('%.4f' % value).rstrip('0').rstrip('.')
+    else:
+        txt = str(value)
+    return '%s%s' % (txt, (' ' + unit) if unit else '')
+
+
+def refused(row, reason, candidate=None, unit=None):
+    """Record a refusal that RENDERS THE VALUE IT REFUSED.
+
+    ★★★ '⛔ NOT GRADED' is unusable at 4:15pm. The candidate turns a refusal
+    from a dead end into a hand-check, and the failure mode being guarded
+    against is not a wrong number -- it is a trader who stops reading
+    refusals at all.
+
+    ★ Candidate FIRST, reason second: the value is the actionable half and the
+    reason is the justification. A refusal with no candidate (nothing was
+    found) keeps the bare reason -- inventing a placeholder would put noise
+    in the one field that has to stay trustworthy.
+    """
+    txt = fmt_candidate(candidate, unit)
+    if txt is None:
+        row['ungradedReason'] = reason
+        return row
+    row['refusedCandidate'] = candidate
+    row['refusedCandidateUnit'] = unit
+    row['ungradedReason'] = 'candidate %s — %s' % (txt, reason)
+    return row
+
+
 def build_kpi_rows(parsed, entry):
     """actuals.keyKPIs, index-aligned 1:1 with preEarnings.keyKPIs.
 
@@ -1347,6 +1381,7 @@ def build_kpi_rows(parsed, entry):
         # ★ What the scraper actually READ for this row, so a grade can never
         # be mistaken for a reading that never happened.
         src = 'not-found'
+        refused_candidate, refused_unit = None, None
         # Set only when the figure came from a ROUNDED prose statement, so its
         # precision can be weighed against the clearance margin.
         seg_precision = None
@@ -1579,7 +1614,18 @@ def build_kpi_rows(parsed, entry):
                             register=parsed.get('periodRegister'))
                     if _pcls is not None and not period_mod.may_fill(
                             period, _pcls):
+                        # ★ THE CANDIDATE IS IN SCOPE HERE and was being
+                        # thrown away one line later. 'period mismatch: found
+                        # GUIDE_NEXT_Q, row wants REPORTED' tells the trader
+                        # the classification and withholds the number it
+                        # classified.
+                        _cand = (margins.get(which) or {}).get('value')
                         note = period_mod.refusal_note(period, _pcls)
+                        if _cand is not None:
+                            note = ('candidate %s — %s'
+                                    % (fmt_candidate(_cand, '%'), note))
+                            refused_candidate = _cand
+                            refused_unit = '%'
                         src = 'period-refused'
                         periodRead = _pcls
                         actual = None
@@ -1732,6 +1778,11 @@ def build_kpi_rows(parsed, entry):
             scaleRejected=None,
             scaleSuspect=False,
             sourceIncomplete=False,
+            # ★ A REFUSAL RENDERS THE VALUE IT REFUSED. Declared here so the
+            # field is never absent -- a renderer that has to test for a
+            # missing key will eventually forget to.
+            refusedCandidate=refused_candidate,
+            refusedCandidateUnit=refused_unit,
             modifierRejected=None,
             zeroReported=False,
         ))
@@ -1810,6 +1861,8 @@ def build_kpi_rows(parsed, entry):
         if not why:
             continue
         row['modifierRejected'] = row['actual']
+        row['refusedCandidate'] = row.get('actual')
+        row['refusedCandidateUnit'] = row.get('actualUnit')
         row['actual'] = None
         row['pctVsCons'] = None
         row['pctVsBogey'] = None
@@ -1835,6 +1888,8 @@ def build_kpi_rows(parsed, entry):
             rows[i]['actual'] = None
             rows[i]['vsBogey'] = 'POLARITY'
             rows[i]['extractionSource'] = 'polarity-refused'
+            rows[i]['refusedCandidate'] = rows[i].get('actual')
+            rows[i]['refusedCandidateUnit'] = rows[i].get('actualUnit')
         else:
             rows[i]['scaleRejected'] = rows[i]['actual']
             rows[i]['vsBogey'] = 'SCALE?'
@@ -1915,6 +1970,8 @@ def build_kpi_rows(parsed, entry):
         rows[i]['vsCons'] = 'N/A'
         rows[i]['vsBogey'] = '\u2014'
         rows[i]['extractionSource'] = 'unit-undeclared'
+        rows[i]['refusedCandidate'] = rows[i].get('actual')
+        rows[i]['refusedCandidateUnit'] = rows[i].get('actualUnit')
         rows[i]['ungradedReason'] = (
             'unit: the row declares its scale as %r and this build cannot '
             'resolve it \u2014 a unitless magnitude grades correctly only by '
@@ -1934,6 +1991,8 @@ def build_kpi_rows(parsed, entry):
         rows[i]['vsCons'] = 'N/A'
         rows[i]['vsBogey'] = '—'
         rows[i]['extractionSource'] = 'duplicate-refused'
+        rows[i]['refusedCandidate'] = rows[i].get('actual')
+        rows[i]['refusedCandidateUnit'] = rows[i].get('actualUnit')
         rows[i]['ungradedReason'] = (
             'duplicate: %s appeared in %d rows \u2014 one figure in two rows '
             'is a matcher, not a reading' % (val, n))
