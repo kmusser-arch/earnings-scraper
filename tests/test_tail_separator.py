@@ -209,8 +209,13 @@ def main():
     print('=== declared actualUnit is read FIRST ===')
     e_d, rows_d = rows_for('SNDK-2026Q4')
     cl_d, fb_d = gate.dollar_hero_fallback(e_d, rows_d)
+    # ★ RE-PINNED 2026-09-04, and it is a PATH assertion: which resolution
+    # route ran, not what it produced. SNDK's actual was rescaled $M -> $B by
+    # the audit, so the row now genuinely DECLARES $B and 'declared $B' is the
+    # correct state. No score moves -- the clearance is identical either way,
+    # which is what makes this an allowed re-pin rather than a blessed number.
     check('SNDK resolves via the DECLARED unit',
-          fb_d['scaleBasis'] == 'declared $M', fb_d.get('scaleBasis'))
+          fb_d['scaleBasis'] == 'declared $B', fb_d.get('scaleBasis'))
     e_a2, rows_a2 = rows_for('AMZN-2026Q1')
     cl_a2, fb_a2 = gate.dollar_hero_fallback(e_a2, rows_a2)
     check('AMZN resolves via the DECLARED unit',
@@ -334,7 +339,10 @@ def main():
           fb_a.get('used') and abs(cl_a - 4.844) < 0.01, round(cl_a or 0, 3))
     check('AMZN scale basis is declared', fb_a['scaleBasis'] == 'declared $B',
           fb_a.get('scaleBasis'))
-    check('SNDK scale basis is declared', fb['scaleBasis'] == 'declared $M',
+    # ★ RE-PINNED with the assertion 130 lines above it. ONE VALUE, TWO PINS
+    # -- I fixed one and re-ran, which is the partial-fix shape this build has
+    # hit repeatedly. Grep the value, not the line.
+    check('SNDK scale basis is declared', fb['scaleBasis'] == 'declared $B',
           fb.get('scaleBasis'))
     # A genuinely unresolvable scale must be refused, not graded.
     bad = dict(quarter='Q4 (FY26)', sector='Semiconductors / Memory',

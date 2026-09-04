@@ -20,6 +20,7 @@ and would pass any test that only inspects pipeline output.
 """
 
 import os
+import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -125,14 +126,27 @@ def main():
     fw = gate.framework_from(model)
     txt = SC.render_record(model, model.record_by_id('APP-2026Q2'), fw)
     rows = [l for l in txt.splitlines() if '($B)' in l and 'metric' not in l]
-    want = [('2Q Revenue', '1.924', 'MISS'),
-            ('2Q Adj EBITDA', '1.614', 'MISS'),
-            ('3Q Revenue Guide', '2.07', 'MISS'),
-            ('3Q Adj EBITDA Guide', '1.725', 'MISS')]
+    # ★ TOLERANCE, NOT AN EXACT PIN. These were pinned as rendered strings --
+    # '1.924' -- and the 2026-09-04 $M->$B rescale made the stored actual
+    # 1.923686, so the render became '1.9237' and four assertions broke on a
+    # repair that changed no score. An exact pin on a rendered float re-breaks
+    # on the next rescale and teaches nothing.
+    #
+    # ★★ WHAT THIS TEST IS ACTUALLY ABOUT is the row NOT rendering a raw
+    # thousand-fold magnitude, which the assertion below states directly. The
+    # per-row check now asserts the MAGNITUDE within tolerance and the verdict
+    # exactly -- the verdict is the part a wrong unit would flip.
+    want = [('2Q Revenue', 1.9237, 'MISS'),
+            ('2Q Adj EBITDA', 1.6138, 'MISS'),
+            ('3Q Revenue Guide', 2.07, 'MISS'),
+            ('3Q Adj EBITDA Guide', 1.725, 'MISS')]
     for label, value, verdict in want:
         line = next((l for l in rows if label in l), '')
-        check('%-22s renders %-6s and %s' % (label, value, verdict),
-              value in line and verdict in line, line.strip()[-46:])
+        nums = [float(t.replace(',', '')) for t in re.findall(
+            r'-?\d[\d,]*\.?\d*', line)]
+        near = any(abs(n - value) < 0.01 for n in nums)
+        check('%-22s renders ~%-8s and %s' % (label, value, verdict),
+              near and verdict in line, line.strip()[-46:])
     check('no row on this card renders a raw thousand-fold magnitude',
           not any(',' in l.split()[-2] if len(l.split()) > 2 else False
                   for l in rows), 'checked %d rows' % len(rows))

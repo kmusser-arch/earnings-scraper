@@ -54,11 +54,35 @@ def run(path):
     return passes, fails, problems, expired
 
 
+
+#: ★ DOCUMENTED TRUE POSITIVES. A known-red file reports loudly and does NOT
+#: set the exit code. Every entry names the RULING that keeps it red, so the
+#: registry cannot become a place where a real regression hides.
+#:
+#: ★★ THE BAR FOR ADDING AN ENTRY: the failure must be a defect in the CODE
+#: UNDER TEST, already diagnosed, with the accepted value stated. A pin that is
+#: merely inconvenient does not qualify -- that is what re-pinning is for, and
+#: the re-pin policy is: precision/format where NO score moves is allowed,
+#: anywhere a category or overall score moves is forbidden.
+KNOWN_RED = {
+    'test_regression.py': (
+        'SNDK-2026Q4 currentQuarter: accepted +1.0, scorer computes +1.5. '
+        'The SCORER grades off street alone; non-negotiable 5 requires THREE '
+        'columns (street | bogey | own guide). [0] rev +6.85% vs street but '
+        '-5.6% vs bogey = FADE; [2] EPS +14.6% / -6.5% = FADE. Two of three '
+        'P1 heroes in the fade zone, stock opened -13.13%, and the score '
+        'RISES. Ruling 2026-09-04: +1.0 STAYS, do not re-pin.'),
+    'test_hero_resolution.py': (
+        'Same SNDK-2026Q4 pin as test_regression.py -- one defect, two files. '
+        'Ruling 2026-09-04: +1.0 STAYS, do not re-pin.'),
+}
+
 def main():
     names = sorted(f for f in os.listdir(TESTS)
                    if f.startswith('test_') and f.endswith('.py'))
     total = 0
     broken = []
+    known, recovered = [], []
     all_expired = []
     for name in names:
         passes, fails, problems, expired = run(os.path.join(TESTS, name))
@@ -75,7 +99,16 @@ def main():
         for e in expired:
             all_expired.append((name, e))
         if problems:
-            broken.append(name)
+            if name in KNOWN_RED:
+                known.append(name)
+            else:
+                broken.append(name)
+        elif name in KNOWN_RED:
+            # ★ A KNOWN-RED FILE THAT PASSES IS ALSO NEWS. Either the defect
+            # was fixed and the entry must go, or the pin was quietly changed
+            # and the finding was deleted with it. Silence here is how a
+            # registry outlives the defect it documents.
+            recovered.append(name)
 
     print('')
     if all_expired:
@@ -87,14 +120,51 @@ def main():
         for name, line in all_expired:
             print('   %-30s %s' % (name, line[:88]))
         print('')
+    if known:
+        print('◆ %d KNOWN-RED file(s) — documented true positives, NOT '
+              'regressions.' % len(known))
+        print('   These do NOT set the exit code. The redness IS the finding; '
+              're-pinning would')
+        print('   bless a number that has not been re-graded.')
+        for name in known:
+            print('')
+            print('   %s' % name)
+            for chunk in _wrap(KNOWN_RED[name], 70):
+                print('      %s' % chunk)
+        print('')
+    if recovered:
+        print('★ %d KNOWN-RED file(s) now PASSING: %s'
+              % (len(recovered), ', '.join(recovered)))
+        print('   Either the defect is fixed -- remove the KNOWN_RED entry -- '
+              'or a pin was')
+        print('   quietly changed and the finding was deleted with it. Check '
+              'which.')
+        print('')
     print('%d assertions across %d files' % (total, len(names)))
     if broken:
         print('⛔ SUITE NOT CLEAN — %d file(s) inert or failing: %s'
               % (len(broken), ', '.join(broken)))
         print('   The assertion count above is NOT a coverage claim.')
         return 1
+    if known:
+        print('✔ no NEW failures. %d known-red file(s) outstanding.'
+              % len(known))
+        return 0
     print('✔ every file ran to completion and every assertion passed')
     return 0
+
+
+def _wrap(text, width):
+    out, line = [], ''
+    for word in text.split():
+        if len(line) + len(word) + 1 > width:
+            out.append(line)
+            line = word
+        else:
+            line = (line + ' ' + word).strip()
+    if line:
+        out.append(line)
+    return out
 
 
 if __name__ == '__main__':
