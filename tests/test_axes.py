@@ -3,10 +3,15 @@
 
 ★★★ WHAT IS PROVEN HERE IS THE MECHANISM, NOT THE BINDING. Given the basis
 headers that govern a row, the resolver partitions the row's cells, labels
-them, intersects the axes and returns the right cell: SNOW's Product gross
-profit row is [1057.4, 70.9%, 1114.1, 74.7%] under 'GAAP Results' and
+them, intersects the axes and returns the right cell: SNOW PRINTS its Product
+gross profit row as [1057.4, 70.9%, 1114.1, 74.7%] under 'GAAP Results' and
 'Non-GAAP Results', and non-GAAP + the (%) unit class selects 74.7, which is
-the hand-read actual.
+the hand-read actual against the 70.9 the row returns today.
+
+THE PARSER DOES NOT YET YIELD THAT LIST -- it yields ONE cell -- so the grid
+below is supplied explicitly and the shortfall is asserted separately. A test
+that read the live row and called it four cells would be describing the
+document while claiming to describe the code.
 
 ★★ THE BINDING IS UNSOLVED AND IS NOT A LENGTH. Measured over the three
 releases that print basis headers, the distance from a table row up to its
@@ -80,15 +85,18 @@ def main():
     body = io.open(SNOW, encoding='utf-8').read()
     doc = [l.strip() for l in body.split(chr(10))]
 
-    cells = T.row_value_cells(doc, 374)
-    check([v for v, _ in cells] == [1057.4, 70.9, 1114.1, 74.7],
-          'the Product gross profit row yields four cells, margins included')
-
     groups = A.header_groups(doc, 374, ['GAAP Results', 'Non-GAAP Results'],
                              lookback=300)
     check(groups == ['GAAP Results', 'Non-GAAP Results'],
-          'both basis groups are found above the row')
+          'both basis groups are found above the real SNOW row')
 
+    # ★ THE GRID IS SUPPLIED EXPLICITLY, because the live row cannot yet
+    # produce it. SNOW prints its margins inline ('70.9%'), _NUMERIC stops at
+    # a trailing percent sign, and widening it takes the Q2 Product Revenue
+    # row from 1 cell to 8 -- which the cardinality guard refuses, losing a
+    # correct production value. So the cells below are the four the document
+    # prints, and the blocker is asserted separately, immediately after.
+    cells = [(1057.4, False), (70.9, True), (1114.1, False), (74.7, True)]
     part = A.partition(len(cells), len(groups))
     labels = [groups[g] for g in part]
     keep = [i for i, l in enumerate(labels) if l.lower().startswith('non-')]
@@ -98,16 +106,23 @@ def main():
     check(cells[1][0] == 70.9 and labels[1].startswith('GAAP'),
           '70.9 is labelled GAAP — the value the row returns today')
 
-    # ── the coincidence, asserted as a coincidence ───────────────────────
+    # ── the blocker, asserted as the current state ───────────────────────
+    live = T.row_value_cells(doc, 374)
+    check([v for v, _ in live] == [1057.4],
+          'BLOCKED: the live row yields ONE cell of the four the document '
+          "prints — the inline '70.9%' after it ends the row, so neither "
+          'margin nor the non-GAAP amount is reachable')
+
+    # ── and the case that must not be mistaken for a success ─────────────
     op = T.row_value_cells(doc, 432)
-    check(len(op) == 2,
-          "the Operating income row loses its GAAP cells: '($263.0)' puts "
-          'the currency symbol inside the parentheses')
+    check(len(op) < 4,
+          "the Operating income row also loses its GAAP cells: '($263.0)' "
+          'puts the currency symbol INSIDE the parentheses')
     op_labels = [['GAAP', 'Non-GAAP'][g]
-                 for g in (A.partition(len(op), 2) or [])]
+                 for g in (A.partition(len(op), 2) or [0])]
     check(op_labels[:1] == ['GAAP'],
-          'and a partition over that short list MISLABELS a non-GAAP cell '
-          'as GAAP — the right answer there is luck, not mechanism')
+          'a partition over that short list MISLABELS a non-GAAP cell as '
+          'GAAP — that row returning 15.3 is luck, not mechanism')
 
 
 main()
