@@ -105,12 +105,38 @@ def refusal_of(got):
     return why[:400]
 
 
+def _printed_digits(v):
+    """Significant digits in the value AS PRINTED, via its shortest repr."""
+    t = repr(float(v))
+    if t.endswith('.0'):
+        t = t[:-2]
+    return extract.sig_digits(t)
+
+
 def agrees(hand, machine):
-    """None when there is nothing to compare, else the comparison."""
+    """None when there is nothing to compare, else the comparison.
+
+    ★ DECIDED BY ROUNDING CONSISTENCY, NOT BY A TOLERANCE. Two values agree
+    when they agree within half the last significant digit of the COARSER
+    printing -- a property of how the issuer printed them rather than a
+    constant someone chose.
+
+    A TOLERANCE CANNOT DO THIS JOB. ORCL prints "between $1.83 and $1.91 in
+    constant currency and between $1.85 and $1.93 in USD", so the row has two
+    legitimate midpoints one percent apart, and unit, period and basis are
+    identical across them. Currency variants differ by ~1% and GAAP against
+    non-GAAP by 20-40%, so any tolerance wide enough to absorb rounding is
+    wide enough to absorb a currency substitution. The old max(0.02, 0.6%)
+    passed 1.89 against 1.87 as agreement -- a false green on the column
+    whose only job is visible disagreement.
+
+    BOTH SIDES MUST ALREADY BE IN THE SAME FRAME; see agrees_on_card.
+    """
     if not isinstance(hand, (int, float)) or \
             not isinstance(machine, (int, float)):
         return None
-    return bool(abs(hand - machine) <= max(0.02, abs(hand) * 0.006))
+    return bool(extract.same_number(float(hand), _printed_digits(hand),
+                                    float(machine), _printed_digits(machine)))
 
 
 def agrees_on_card(card_actual, machine_stored, spec):

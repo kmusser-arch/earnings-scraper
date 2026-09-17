@@ -63,6 +63,19 @@ def main():
     check(PAR.agrees_on_card(None, 1.0, b_spec) is None,
           'nothing to compare returns None, never False')
 
+    # A TOLERANCE CANNOT SEE A CURRENCY SUBSTITUTION. ORCL prints "between
+    # $1.83 and $1.91 in constant currency and between $1.85 and $1.93 in
+    # USD" -- two legitimate midpoints 1% apart, identical in unit, period
+    # and basis. max(0.02, 0.6%) passed them as AGREEMENT: a false green on
+    # the column whose only job is visible disagreement.
+    check(PAR.agrees(1.89, 1.87) is False,
+          'USD 1.89 and constant-currency 1.87 DISAGREE — a 1% currency '
+          'variant is not rounding')
+    check(PAR.agrees(2.974, 2.97) is True,
+          'but 2.974 and 2.97 still agree — one number at two precisions')
+    check(PAR.agrees(84.0, 83.95) is True,
+          'and 84.0 against 83.95 agrees, at the coarser printing')
+
     # ── it must not touch `actual` ───────────────────────────────────────
     card, entry, body = card_for(model, 'HPE', 'HPE-2026Q3')
     rows = card['keyKPIs']
