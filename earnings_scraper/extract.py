@@ -700,6 +700,9 @@ def value_for(text, row, window=260, record=None):
                             denomination=_d[0] if _d else None,
                             denominationPhrase=_d[1] if _d else None,
                             denominationFinding=finding,
+                            unitUnverified=(_d is None
+                                            and declared in _MUSD),
+                            # a table cell has no magnitude word of its own
                             pos=lp, lpos=lp,
                             unit=doc_unit(spec), specState=state,
                             label=c.get('label'), role='level',
@@ -719,6 +722,12 @@ def value_for(text, row, window=260, record=None):
                 denomination=best.get('denomination'),
                 denominationPhrase=best.get('denominationPhrase'),
                 denominationFinding=finding,
+                # NEITHER THE HEADER NOR THE NUMBER SAID. A prose figure
+                # carries its own magnitude word ('$2.97 billion') and is
+                # scaled by it; only a bare cell under no declaration has
+                # nothing but documentUnit behind it.
+                unitUnverified=(best.get('musd') is None
+                                and declared in _MUSD),
                 sigDigits=best.get('sigDigits'),
                 coveredPrintings=best.get('coveredPrintings'),
                 pos=best.get('gpos'), lpos=best.get('lpos'),
