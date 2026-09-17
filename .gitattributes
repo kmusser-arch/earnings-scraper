@@ -1,0 +1,12 @@
+# A CAPTURED PRESS RELEASE IS EVIDENCE. GIT MUST NOT EDIT IT.
+#
+# core.autocrlf is true on this machine, so git rewrites line endings on
+# checkout for anything it considers text. The extractor's line-ending bug
+# was invisible for the whole build because the READER normalised CRLF away;
+# a corpus whose bytes change on clone reintroduces exactly that, one layer
+# lower, and tests/test_crlf.py would then assert a property of the checkout
+# rather than of the wire.
+#
+# -text: store and check out these files byte for byte, on every machine.
+tests/fixtures/releases/** -text
+earnings_scraper/state/pending/** -text
