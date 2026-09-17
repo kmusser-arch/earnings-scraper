@@ -459,6 +459,24 @@ def _record_period(record):
     return (q if isinstance(q, int) else None,
             y if isinstance(y, int) else None)
 
+
+def _cell_unit_ok(is_pct, spec):
+    """Does a table cell's shape match the unit the row declares?
+
+    A percentage cell cannot fill a $ row and a magnitude cell cannot fill a
+    (%) row. The prose path has always enforced this through _unit_ok; the
+    column path did not, which only stayed harmless while the rows whose
+    first cell is a percentage produced no cells at all.
+    """
+    want = unit_class((spec or {}).get('documentUnit')
+                      or (spec or {}).get('unit'))
+    if want == '%':
+        return bool(is_pct)
+    if want == '$':
+        return not is_pct
+    return True
+
+
 def column_value(text, spec, label_pos, record=None):
     """The REPORTED-column cell of the table row at `label_pos`, or None.
 
@@ -496,7 +514,7 @@ def column_value(text, spec, label_pos, record=None):
     # keeps finding. ORCL HORIZONTAL, ADBE VERTICAL, on all 19 TABLE rows.
     if (spec or {}).get('tableLayout') == 'HORIZONTAL':
         h = tables.h_column_value(lines, idx, rq, ry)
-        if h and h.get('value') is not None:
+        if h and h.get('value') is not None and _cell_unit_ok(False, spec):
             return dict(value=h['value'], pct=False,
                         columnIndex=h.get('columnIndex'),
                         columnClasses=h.get('columnClasses'))
@@ -508,6 +526,12 @@ def column_value(text, spec, label_pos, record=None):
                              values=[c[0] for c in cells])
     i = got.get('valueIndex')
     if i is None or i >= len(cells):
+        return None
+    # THE SELECTED CELL MUST PASS THE ROW'S UNIT CLASS. The prose candidates
+    # are filtered by _unit_ok and the column path was not, so a $ row could
+    # take a percentage cell -- which is exactly what allowing inline percent
+    # cells would have handed the two APP rows.
+    if not _cell_unit_ok(cells[i][1], spec):
         return None
     return dict(value=cells[i][0], pct=cells[i][1], columnIndex=i,
                 columnClasses=got.get('classes'))

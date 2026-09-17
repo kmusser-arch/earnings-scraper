@@ -63,7 +63,14 @@ _LABELS = [
         r'share$', re.I)),
 ]
 
-_NUMERIC = re.compile(r'^\$?\s*\(?(-?[\d,]+(?:\.\d+)?)\)?$')
+#: AN ATTACHED PERCENT SIGN DOES NOT END THE ROW. SNOW writes '70.9%'
+#: inline; the bare-'%'-on-its-own-line path below is APP's layout.
+#: Reading only the second convention stopped SNOW's rows before the
+#: margins, so the cells the spec selects on did not exist.
+#: NOTE: the parentheses stay OUTSIDE the capture group -- that is the
+#: pinned polarity defect (tests/test_paren_polarity.py), not an
+#: oversight, and it is not fixed here.
+_NUMERIC = re.compile(r'^\$?\s*\(?(-?[\d,]+(?:\.\d+)?)\)?\s*%?\s*\)?$')
 _PERCENT_ONLY = re.compile(r'^%$')
 _SKIPPABLE = re.compile(r'^[\s\t$(]*$')
 
@@ -193,7 +200,7 @@ def row_value_cells(lines, label_index, limit=12):
         while k < len(lines) and _SKIPPABLE.match(lines[k]):
             k += 1
         is_pct = k < len(lines) and bool(_PERCENT_ONLY.match(lines[k]))
-        if not is_pct and cell.endswith('%'):
+        if not is_pct and cell.rstrip().rstrip(')').endswith('%'):
             is_pct = True
         out.append((val, is_pct))
         j += 1
