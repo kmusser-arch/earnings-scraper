@@ -50,10 +50,26 @@ def cell_value(text):
 
 def main():
     # ── the pin Kyle specified ───────────────────────────────────────────
+    # ★★★ TWO DIFFERENT BUGS LIVE IN ONE CONSTRUCT, and the pin originally
+    # covered only the first:
+    #     (263.0)   parses and DROPS THE SIGN        -> +263.0
+    #     ($263.0)  FAILS TO PARSE ENTIRELY          -> None
+    # The second is the form SNOW actually prints, and it is what made its
+    # Operating income row return the right answer for the wrong reason: the
+    # GAAP cells vanished from the list, both survivors were non-GAAP, the
+    # partition mislabelled one as GAAP, and the unit class carried it.
+    # A dropped cell is not a milder version of a dropped sign -- it silently
+    # renumbers every column after it.
     cases = [
         ('(263.0)', -263.0, 'a parenthesised figure is negative'),
-        ('$(263.0)', -263.0, 'the currency symbol does not change the sign'),
+        ('($263.0)', -263.0,
+         'CURRENCY INSIDE THE PARENS — the form SNOW prints; today this does '
+         'not parse at all and the cell disappears from the row'),
+        ('$(263.0)', -263.0, 'currency outside the parens, same value'),
         ('(1,234)', -1234.0, 'thousands separators inside parentheses'),
+        ('(17.0%)', -17.0,
+         'a parenthesised percentage — SNOW prints its GAAP operating margin '
+         'this way, and it is a MINUS 17 percent margin'),
     ]
     for text, want, why in cases:
         got = cell_value(text)

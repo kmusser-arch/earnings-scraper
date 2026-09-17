@@ -76,8 +76,14 @@ KNOWN_RED = {
         'Same SNDK-2026Q4 pin as test_regression.py -- one defect, two files. '
         'Ruling 2026-09-04: +1.0 STAYS, do not re-pin.'),
     'test_paren_polarity.py': (
-        'tables._NUMERIC puts the parentheses OUTSIDE its capture group, so '
-        "'(263.0)' reads +263.0 where accounting convention means -263.0. "
+        'TWO defects in one construct. (a) tables._NUMERIC puts the '
+        "parentheses OUTSIDE its capture group, so '(263.0)' reads +263.0 "
+        'where accounting convention means -263.0. (b) It expects the '
+        "currency symbol BEFORE the paren, so '($263.0)' -- the form SNOW "
+        'actually prints -- FAILS TO PARSE and the cell VANISHES from the '
+        'row, silently renumbering every column after it. (b) is what made '
+        "SNOW's Operating income row return the right answer for the wrong "
+        'reason. A dropped cell is not a milder dropped sign. '
         'Measured report-only over all 8 releases: 902 parenthesised '
         'printings in the corpus, 2 at a position any of the 77 extractable '
         'rows resolves to, and ZERO with a dropped sign against the answer '

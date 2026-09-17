@@ -35,25 +35,59 @@ from . import period as _period
 #: a header line is a SHORT line that is only about the axis. The 1,400-char
 #: methodology paragraph names both bases a dozen times and is not a header.
 MAX_HEADER_CHARS = 48
-DEFAULT_LOOKBACK = 60
+
+#: A SENTENCE CLOSES THE TABLE. Table interiors carry only short cells,
+#: labels and column headers; the line that introduces a table is prose. Eight
+#: words is not a bound on DISTANCE -- it classifies a LINE, which is the
+#: difference between a close and a length. Observed: SNOW's boundary line
+#: runs 14 words, its longest real column header 3.
+PROSE_WORDS = 8
+
+#: the search still cannot run past the document, and a row near the top has
+#: no table above it at all
+DEFAULT_LOOKBACK = 4000
 
 
 def _norm(s):
     return ' '.join((s or '').split()).strip().lower()
 
 
+def is_table_boundary(line):
+    """Does this line CLOSE the table above the row being read?
+
+    A sentence does. A cell, a row label and a column header do not. This is
+    the close the corpus demanded: header distance runs from 63 to 16,537
+    lines, so no count works, and a blank-line run closes inside SNOW's own
+    tables because it puts six blanks between a label and its value.
+    """
+    t = (line or '').strip()
+    if not t:
+        return False
+    return len(t.split()) >= PROSE_WORDS
+
+
 def header_groups(lines, label_idx, headers, lookback=DEFAULT_LOOKBACK):
-    """Distinct axis headers standing above this row, in document order.
+    """Distinct axis headers standing above this row, within its OWN table.
 
     Matched LONGEST FIRST: 'Non-GAAP' contains 'GAAP', and taking the shorter
     one would label the non-GAAP group GAAP -- the exact inversion this axis
     exists to prevent.
+
+    Bounded by is_table_boundary walking UPWARD: a basis header governs the
+    table it sits above and nothing past it.
     """
     if not headers:
         return []
     ranked = sorted(headers, key=len, reverse=True)
-    found = []
     lo = max(0, label_idx - lookback)
+    # ★ FIND THE CLOSE FIRST, THEN SEARCH INSIDE IT. Walking up from the row
+    # to the first sentence is what bounds the search; the lookback is only
+    # a guard against running off the document.
+    for k in range(label_idx - 1, lo - 1, -1):
+        if is_table_boundary(lines[k] if k < len(lines) else ''):
+            lo = k + 1
+            break
+    found = []
     for k in range(lo, label_idx):
         line = lines[k] if k < len(lines) else ''
         if not line or len(line) > MAX_HEADER_CHARS:
