@@ -288,10 +288,87 @@ def _first_value(lines, label_index):
 #: a HORIZONTAL table row: a text label, then two or more numeric columns on
 #: the SAME line. AVGO's segment table is written this way; the five other
 #: releases measured carry ZERO such rows, which is what bounds this reader.
+#: ★ THE CURRENCY SYMBOL IS DETACHED FROM ITS NUMBER. ORCL prints
+#: '$         11,607' -- nine spaces -- and the old `\$?\s?` allowed one.
+#: Zero of three ORCL rows matched, so the horizontal reader existed and
+#: could not read the horizontal release.
+#: ★ POSSESSIVE GAPS. Widening the currency gap to `\s*` inside a
+#: repeated group anchored at `$` made the engine try every split of the
+#: whitespace between every cell -- catastrophic backtracking, and the
+#: sweep hung past 120s on the first release. `*+` forbids the retry.
 _H_ROW = re.compile(
-    r'^\s*([A-Za-z][A-Za-z /&\'\-\.]{2,40}?)\s{2,}'
-    r'((?:[+\-]?\(?\$?\s?[\d,]+(?:\.\d+)?\)?\s*%?\s*){2,})$')
-_H_NUM = re.compile(r'([+\-]?)\(?\$?\s?([\d,]+(?:\.\d+)?)\)?\s*(%?)')
+    r'^[ \t]*([A-Za-z][A-Za-z0-9 /&\'\-\.\(\)]{2,44}?)[ \t]{2,}'
+    r'((?:[+\-]?\(?\$?[ \t]*+[\d,]+(?:\.\d+)?\)?[ \t]*+%?\)?[ \t]*+){2,})$')
+#: ★ THE CLOSING PAREN MAY FOLLOW THE PERCENT SIGN: '(3 %)'. And a
+#: parenthesised figure is NEGATIVE -- reading it as +3 turns a decline
+#: into a gain on a row that looks well-formed.
+_H_NUM = re.compile(
+    r'([+\-]?)(\()?\$?[ \t]*([\d,]+(?:\.\d+)?)\)?[ \t]*(%?)(\))?')
+
+
+
+def h_row_cells(line):
+    """(label, [(value, is_pct), ...]) for a HORIZONTAL table row, or None.
+
+    ★ Space-aligned rows put the label and every column on ONE line, so the
+    vertical reader -- which walks DOWN for the next cell -- finds the next
+    label instead and returns nothing. Two of the eight releases are laid out
+    this way, and they are the two with the worst tie counts.
+    """
+    m = _H_ROW.match((line or '').rstrip())
+    if not m:
+        return None
+    out = []
+    for sign, lparen, num, pct, rparen in _H_NUM.findall(m.group(2)):
+        try:
+            v = float(num.replace(',', ''))
+        except ValueError:
+            return None
+        # ★ PARENTHESES MEAN NEGATIVE. '(3 %)' is a 3% DECLINE.
+        neg = sign == '-' or (lparen and rparen)
+        out.append((-v if neg else v, pct == '%'))
+    return (m.group(1).strip(), out) if out else None
+
+
+def h_column_value(lines, idx, record_quarter=None, record_year=None):
+    """The REPORTED-column cell of the horizontal row at `lines[idx]`.
+
+    ★★ NEVER BY INDEX. ORCL's supplemental grid runs FY26 Q1/Q2/Q3/Q4/TOTAL
+    then FY27 Q1 -- the fifth column is a YEAR TOTAL, not a quarter -- and the
+    reconciliations are RAGGED, fewer cells than the header declares. So the
+    column is chosen by HEADER TEXT via period.column_classes, the same
+    authority the vertical reader uses, and a count mismatch REFUSES.
+    """
+    from . import period as _period
+    got = h_row_cells(lines[idx] if idx < len(lines) else '')
+    if not got:
+        return None
+    label, cells = got
+    values = [(v, p) for v, p in cells if not p]      # drop share columns
+    if not values:
+        return None
+
+    classes = None
+    for k in range(idx - 1, max(-1, idx - 40), -1):
+        cc = _period.column_classes(lines[k], record_quarter, record_year)
+        if cc and any(c in ('REPORTED', 'PRIOR_PERIOD') for c in cc):
+            classes = [c for c in cc if c is not None]
+            break
+    if not classes:
+        return dict(value=None, note='no period header above this row',
+                    cells=[v for v, _ in values])
+    if len(classes) != len(values):
+        # ★ RAGGED ROW: refuse rather than map a short list onto a long one.
+        return dict(value=None, cells=[v for v, _ in values],
+                    note='ragged row: header declares %d period(s), row '
+                         'supplies %d value cell(s)'
+                         % (len(classes), len(values)))
+    for i, c in enumerate(classes):
+        if c == 'REPORTED':
+            return dict(value=values[i][0], columnIndex=i, columnClasses=classes,
+                        cells=[v for v, _ in values], note=None)
+    return dict(value=None, cells=[v for v, _ in values],
+                note='no REPORTED column in the header')
 
 
 def find_segment_horizontal(text, tokens, record_quarter=None,
@@ -463,7 +540,7 @@ def _row_numbers(line):
     if not m:
         return None, []
     out = []
-    for sign, num, _pct in _H_NUM.findall(m.group(2)):
+    for sign, _lp, num, _pct, _rp in _H_NUM.findall(m.group(2)):
         try:
             v = float(num.replace(',', ''))
         except ValueError:
