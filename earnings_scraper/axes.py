@@ -66,6 +66,32 @@ def is_table_boundary(line):
     return len(t.split()) >= PROSE_WORDS
 
 
+
+#: ★ A FALLBACK NOBODY CHOSE IS A DEFAULT, and a default that happens to be
+#: right today is the shape of every silent failure in this build. When no
+#: boundary is found the search runs to the lookback edge -- HPE's table
+#: interiors run past 400 lines with no sentence in them -- so that case is
+#: NAMED and REPORTED rather than taken quietly.
+CLOSE_NONE = 'NO BOUNDARY FOUND: the search ran to the lookback edge, so the '              'scope is a LENGTH and not a close'
+
+
+def close_above(lines, label_idx, lookback=None):
+    """(first line inside the row's own table, what closed it).
+
+    The second element is CLOSE_NONE when nothing closed the search -- that
+    is the fallback, and callers must be able to see that they are standing
+    on it.
+    """
+    if lookback is None:
+        lookback = DEFAULT_LOOKBACK
+    lo = max(0, label_idx - lookback)
+    for k in range(label_idx - 1, lo - 1, -1):
+        line = lines[k] if k < len(lines) else ''
+        if is_table_boundary(line):
+            return k + 1, line.strip()[:70]
+    return lo, CLOSE_NONE
+
+
 def header_groups(lines, label_idx, headers, lookback=DEFAULT_LOOKBACK):
     """Distinct axis headers standing above this row, within its OWN table.
 
@@ -79,14 +105,7 @@ def header_groups(lines, label_idx, headers, lookback=DEFAULT_LOOKBACK):
     if not headers:
         return []
     ranked = sorted(headers, key=len, reverse=True)
-    lo = max(0, label_idx - lookback)
-    # ★ FIND THE CLOSE FIRST, THEN SEARCH INSIDE IT. Walking up from the row
-    # to the first sentence is what bounds the search; the lookback is only
-    # a guard against running off the document.
-    for k in range(label_idx - 1, lo - 1, -1):
-        if is_table_boundary(lines[k] if k < len(lines) else ''):
-            lo = k + 1
-            break
+    lo, _closed_by = close_above(lines, label_idx, lookback)
     found = []
     for k in range(lo, label_idx):
         line = lines[k] if k < len(lines) else ''
@@ -183,9 +202,16 @@ def resolve(lines, label_idx, cells, axes_spec, record_quarter=None,
                     if i < len(assign) and assign[i] == want_period}
             trace.append((kind, assign, sorted(keep)))
         elif kind in ('BASIS', 'RANGE'):
+            _lo, closed_by = close_above(lines, label_idx)
             groups = header_groups(lines, label_idx, ax.get('headers'))
+            if closed_by == CLOSE_NONE:
+                # LOUD: the scope of this axis was bounded by a number, not
+                # by anything the issuer printed.
+                trace.append((kind, CLOSE_NONE, None))
             if len(groups) < 2:
-                trace.append((kind, 'headers not found above the row', None))
+                trace.append((kind, 'headers not found above the row'
+                              + (' [' + CLOSE_NONE + ']'
+                                 if closed_by == CLOSE_NONE else ''), None))
                 continue
             part = partition(n, len(groups))
             if part is None:

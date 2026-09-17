@@ -31,6 +31,7 @@ import math
 import re
 
 from . import registry
+from . import tables as _tables
 
 #: a number with its optional currency and unit words
 _NUM = re.compile(
@@ -569,6 +570,14 @@ def value_for(text, row, window=260, record=None):
                             spec.get('spanStartAfter'))
     excludes = section_spans(src, spec.get('excludeSections'))
 
+    #: whereKind ROUTING IS NOT ENFORCED HERE, AND THAT IS MEASURED.
+    #: Skipping prose hits on TABLE-only rows costs MATCH 18 -> 12; skipping
+    #: them only when a real table row exists still costs 18 -> 14. 23 of the
+    #: 46 TABLE-only rows have NO parseable table row at any label hit,
+    #: because their value genuinely lives in a sentence -- 'Adobe expects
+    #: fourth quarter revenue of $6.80 to $6.85 billion' -- while the spec
+    #: says TABLE. The spec and the document disagree; until that is
+    #: reconciled, honouring whereKind loses values we already read.
     picked, seen, rejected, fenced = [], [], [], 0
     for start, end, lab in hits:
         if registry.disqualified(src, start, spec):
@@ -582,6 +591,9 @@ def value_for(text, row, window=260, record=None):
         if excludes and in_any(start, excludes):
             fenced += 1
             continue
+        # whereKind IS A DECLARED ROUTING VALUE, not documentation. A row that
+        # says its value lives in a table does not want the sentence that
+        # merely mentions the label.
         # ★★ FOR A TABULAR ROW THE WINDOW IS THE SPAN. The section is already
         # closed by a terminator the issuer printed, so a second bound is a
         # guess -- and every guess I made here was wrong: 260 chars, 3

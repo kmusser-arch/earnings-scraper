@@ -113,6 +113,16 @@ def main():
           "prints — the inline '70.9%' after it ends the row, so neither "
           'margin nor the non-GAAP amount is reachable')
 
+    # ── the fallback is NAMED, because a default nobody chose is the ─────
+    #    shape of every silent failure in this build
+    lo, closed = A.close_above(doc, 374)
+    check(closed != A.CLOSE_NONE and 'following table' in closed.lower(),
+          'the close names the sentence that bounded it: %r' % (closed[:46],))
+    lo2, closed2 = A.close_above(['x', 'y', 'Row label'], 2)
+    check(closed2 == A.CLOSE_NONE,
+          'with no sentence above it, the scope is reported as a LENGTH and '
+          'not a close — measured at 17 of 352 table hits, every one on HPE')
+
     # ── and the case that must not be mistaken for a success ─────────────
     op = T.row_value_cells(doc, 432)
     check(len(op) < 4,
