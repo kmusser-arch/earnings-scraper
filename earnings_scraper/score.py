@@ -37,6 +37,7 @@ from . import modifiers as modifiers_mod
 from .period import REPORTED as REPORTED_CLS
 from . import quotes as quotes_mod
 from . import period as period_mod
+from . import parallel as _parallel
 from . import config, gate, plausibility, units
 from .parse import pct_delta, verdict_for
 
@@ -2801,6 +2802,19 @@ def score_release(parsed, entry, model, evidence=None):
     parsed['recordId'] = entry.get('id') or entry.get('recordId') or ''
     parsed['recordQuarter'] = entry.get('quarter') or ''
     kpi_rows = build_kpi_rows(parsed, entry)
+
+    # ★ THE MACHINE READ, BESIDE THE CARD'S OWN — never instead of it. This
+    # writes scraperRead / extractionKind / refusalReason and cannot modify
+    # `actual`, cannot change a grade, and cannot raise: an extractor failure
+    # becomes a refusalReason on that one row. Replacement was measured and
+    # rejected (27% of its values disagree with the hand read, against 18%
+    # for the path already on the card), so the column exists to make the
+    # disagreement visible and to accumulate an OUT-OF-SAMPLE rate on live
+    # prints -- the only number that can move 27%.
+    try:
+        _parallel.attach(kpi_rows, entry, parsed.get('text') or '')
+    except Exception:
+        pass
 
     cq = grade_current_quarter(parsed, entry, kpi_rows, model, evidence)
     nq = grade_next_q(parsed, entry, model, kpi_rows)

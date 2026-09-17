@@ -249,6 +249,11 @@ class Model:
         return dict(
             ticker=ticker,
             recordId=rec.get('id'),
+            # THE DERIVED PERIOD TRAVELS WITH THE ENTRY. `quarter` spells
+            # itself fifteen ways and `year` three; re-parsing them at the
+            # point of use is what made one field mean three things.
+            fiscalQuarter=rec.get('fiscalQuarter'),
+            fiscalYear=rec.get('fiscalYear'),
             company=rec.get('company') or '',
             sector=rec.get('sector') or '',
             quarter=rec.get('quarter') or '',
