@@ -748,8 +748,12 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
                 picked.append(c)
 
     if not seen:
+        # THE FILTER READS documentUnit; the message read spec['unit'], which
+        # is None on all 78 rows. So every unit refusal said 'declared unit
+        # None' and looked like an inert filter. The filter was never inert --
+        # the MESSAGE named a field nobody writes.
         why = 'label found, no candidate matched the declared unit %r' % (
-            (spec or {}).get('unit'))
+            doc_unit(spec) or None)
         if fenced:
             why += ' (%d hit(s) outside the row\'s own section)' % fenced
         if rejected:
