@@ -538,7 +538,54 @@ def column_value(text, spec, label_pos, record=None):
                 columnClasses=got.get('classes'))
 
 
+
+def _lands_in_table(src, hit):
+    """Does this label hit sit on a line that parses as a table row?"""
+    lines = getattr(_lands_in_table, '_cache', None)
+    key = id(src)
+    if not lines or lines[0] != key:
+        lines = (key, [l.strip() for l in src.split(chr(10))])
+        _lands_in_table._cache = lines
+    idx = src.count(chr(10), 0, hit[0])
+    return bool(_tables.row_value_cells(lines[1], idx))
+
+
 def value_for(text, row, window=260, record=None):
+    """The row's value, taking whereKind as a PREFERENCE ORDER.
+
+    The declared kind is tried first and the rest only if it yields nothing.
+    `extractionKind` on the result says which one answered, so a value taken
+    from the fallback is never mistaken for one taken from the declared kind.
+    """
+    spec = registry.spec_for(row)
+    kinds = registry.where_kind(spec) or []
+    # ★ A RANGE ROW IS NEVER A PLAIN CELL READ. requiresRangePair rows must
+    # resolve to an ADJACENT low/high pair and return the MIDPOINT, which is
+    # the range arm's job; the table pass returns single cells and took
+    # ADBE's Q4 guide to 6.35, the high, instead of 6.325. Preferring the
+    # table must not bypass the shape the row declares.
+    prefers_table = ('TABLE' in kinds
+                     and 'RANGE' not in kinds
+                     and not spec.get('requiresRangePair')
+                     and not ('PROSE' in kinds or 'WRAPPED' in kinds
+                              or 'HEADLINE' in kinds or 'QUOTE' in kinds))
+    if prefers_table:
+        got = _value_for_pass(text, row, window, record,
+                              hit_pred=_lands_in_table)
+        if got is not None and got.get('value') is not None:
+            got['extractionKind'] = 'TABLE'
+            return got
+    got = _value_for_pass(text, row, window, record)
+    if got is None:
+        got = dict(value=None, candidates=[],
+                   why='no label hit survived the row\'s filters')
+    if got.get('value') is not None:
+        got['extractionKind'] = 'FALLBACK' if prefers_table else (
+            kinds[0] if kinds else None)
+    return got
+
+
+def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
     """The extracted value for one card row, or a refusal.
 
     Returns dict(value, unit, why, candidates, label, specState).
@@ -559,6 +606,10 @@ def value_for(text, row, window=260, record=None):
                            or 'HEADLINE' in kinds) else text
 
     hits = registry.label_hits(src, spec)
+    if hit_pred is not None:
+        hits = [h for h in hits if hit_pred(src, h)]
+        if not hits:
+            return None          # this PASS has nothing; the caller falls on
     if not hits:
         return dict(value=None, specState=state, candidates=[],
                     why='no documentLabel found in this text')
@@ -579,6 +630,9 @@ def value_for(text, row, window=260, record=None):
     #: says TABLE. The spec and the document disagree; until that is
     #: reconciled, honouring whereKind loses values we already read.
     picked, seen, rejected, fenced = [], [], [], 0
+    # THE PREFERRED PASS READS WITH THE TABLE READER, not the prose scanner.
+    table_pass = hit_pred is not None
+    doc_lines = [l.strip() for l in src.split(chr(10))] if table_pass else []
     for start, end, lab in hits:
         if registry.disqualified(src, start, spec):
             rejected.append((lab, registry.disqualified(src, start, spec)))
@@ -586,6 +640,23 @@ def value_for(text, row, window=260, record=None):
         # ★ a row that names its section must be INSIDE it
         if anchors and not in_any(start, anchors):
             fenced += 1
+            continue
+        if table_pass:
+            # THE CELLS ARE THE CANDIDATES. row_value_cells already reads the
+            # bare-'%'-on-its-own-line convention that defeats prose
+            # adjacency, so the unit test uses the cell's own flag.
+            cells = _tables.row_value_cells(
+                doc_lines, src.count(chr(10), 0, start))
+            for ci, (cv, cp) in enumerate(cells):
+                if not _cell_unit_ok(cp, spec):
+                    continue
+                cand = dict(value=cv, value_musd=None, pct=cp,
+                            unit='%' if cp else '', role='level',
+                            pos=0, gpos=start, lpos=start, cellIndex=ci,
+                            raw=('%g%%' % cv) if cp else ('%g' % cv),
+                            label=lab)
+                seen.append(cand)
+                picked.append(cand)
             continue
         # ★ and must never be inside an excluded one
         if excludes and in_any(start, excludes):
@@ -713,7 +784,12 @@ def value_for(text, row, window=260, record=None):
     pool = collapse_precision(pool)
 
     vals = {round(c['value'], 6) for c in pool}
-    if len(vals) > 1 and spec.get('columnSelect') and 'TABLE' in kinds:
+    # columnAxes REPLACED columnSelect; both are written today, and a
+    # reader that asks only for the older name goes quiet the moment
+    # the newer one stands alone.
+    if len(vals) > 1 and (spec.get('columnSelect')
+                          or spec.get('columnAxes')) \
+            and 'TABLE' in kinds:
         # ★★ THE TIE IS BETWEEN COLUMNS OF ONE ROW, NOT BETWEEN ROWS. Ask the
         # header which cell is the reporting period; unit, role, period and
         # basis are identical across them by construction.

@@ -171,7 +171,15 @@ def _date_of(text):
     return None
 
 
-def header_cells(lines, label_idx, back=900):
+#: THE CLOSE IS THE PROSE STOP BELOW; THIS IS ONLY A GUARD against
+#: running off the document. It was 900 and HPE's header sits 905
+#: lines above its row, so the guard -- not the issuer's boundary --
+#: was deciding, and the refusal said 'no period header' when the
+#: header was there.
+HEADER_GUARD = 4000
+
+
+def header_cells(lines, label_idx, back=HEADER_GUARD):
     """Header cells above a row label, nearest first reversed to document order.
 
     Stops at the previous DATA row -- a run of numeric cells means the table
@@ -198,6 +206,7 @@ def header_cells(lines, label_idx, back=900):
         if len(text) > PROSE_CHARS and kind != 'noise':
             break
         out.append((k, text, kind))
+        _last_k = k
     out.reverse()
     return out
 
