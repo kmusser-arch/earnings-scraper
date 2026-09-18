@@ -38,8 +38,8 @@ _TO_MUSD = {'$B': 1000.0, '$M': 1.0, '$K': 0.001}
 
 KINDS = ('TABLE', 'PROSE', 'WRAPPED', 'RANGE', 'HEADLINE')
 
-FIELDS = ('scraperRead', 'extractionKind', 'currencyTaken', 'refusalReason',
-          'agreesWithActual', 'extractedAt')
+FIELDS = ('scraperRead', 'extractionKind', 'currencyTaken', 'candidateCount',
+          'refusalReason', 'agreesWithActual', 'extractedAt')
 
 
 def _now():
@@ -212,6 +212,12 @@ def attach(kpi_rows, entry, text):
         # qualifier the row never declared is a SPEC GAP, and it is only
         # visible if the reading says which currency it used.
         out_row['currencyTaken'] = got.get('currencyTaken') or 'REPORTED'
+        # ★ HOW MANY CANDIDATES A FILTER ACTUALLY CHOSE BETWEEN. A tie
+        # produces a refusal you can see; a LONE candidate produces a filled
+        # cell with no signal at all, and until now nothing counted those.
+        # candidateCount 1 with seenCount 1 means no filter could run.
+        out_row['candidateCount'] = got.get('candidateCount')
+        out_row['seenCount'] = got.get('seenCount')
         out_row['refusalReason'] = None
         out_row['agreesWithActual'] = agrees_on_card(
             out_row.get('actual'), sr, spec)

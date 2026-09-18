@@ -971,6 +971,13 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
                         label=c.get('label'), role='level',
                         basisRead=_basis_want,
                         columnClasses=got_s.get('groups'),
+                        # ★ THE STACKED READER SELECTED AMONG ITS CELLS, not
+                        # among the prose candidates. Reporting len(seen) here
+                        # filed the two SNOW rows this reader just FIXED as
+                        # 'nothing looked' -- the instrument mismeasuring the
+                        # very selection it was built to record.
+                        candidateCount=len(got_s.get('cells') or []) or 1,
+                        seenCount=max(len(got_s.get('cells') or []), len(seen)),
                         currencyTaken=c.get('currency') or REPORTED,
                         pos=lp, lpos=lp,
                         candidates=[x['raw'] for x in seen], why=None,
@@ -1009,6 +1016,9 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
                             # currency it took; a blank here would read as
                             # 'not applicable' on a row where it applies.
                             currencyTaken=(c.get('currency') or REPORTED),
+                            candidateCount=len({round(x['value'], 6)
+                                                for x in pool}),
+                            seenCount=len(seen),
                             unitUnverified=(_d is None
                                             and declared in _MUSD),
                             # a table cell has no magnitude word of its own
@@ -1041,5 +1051,10 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
                 coveredPrintings=best.get('coveredPrintings'),
                 pos=best.get('gpos'), lpos=best.get('lpos'),
                 currencyTaken=best.get('currency') or REPORTED,
+                # ★ HOW MANY DISTINCT VALUES DID A FILTER HAVE TO CHOOSE
+                # BETWEEN? 1 means none did, and the answer is unverified by
+                # construction however right it happens to be.
+                candidateCount=len({round(c['value'], 6) for c in pool}),
+                seenCount=len(seen),
                 candidates=[c['raw'] for c in seen], why=None,
                 rejected=rejected)
