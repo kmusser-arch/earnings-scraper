@@ -321,9 +321,15 @@ def select(lines, label_idx, spec, guard=GUARD, is_boundary=None):
         alive, _t = keep, trace.append('basis=%s' % want_basis)
 
     if want_cur:
+        # ★ SILENCE IS NOT CONFLICT. A grid that names no currency is showing
+        # the reported figure -- the same rule the prose path uses, where a
+        # single qualifier marks the exception and the unqualified figure is
+        # REPORTED. ORCL's supplemental grid carries no currency header at
+        # all, and requiring an explicit 'in USD' there rejected every column
+        # of the table holding 19,345.
         keep = [i for i in alive
-                if (column_currency(cells[i][2]) or 'REPORTED') == want_cur
-                or (want_cur == 'REPORTED'
+                if column_currency(cells[i][2]) in (None, want_cur)
+                or (want_cur in ('USD', 'REPORTED')
                     and column_currency(cells[i][2]) is None)]
         if not keep:
             return dict(value=None, description=[c[2] for c in cells],
