@@ -155,10 +155,14 @@ def agrees_on_card(card_actual, machine_stored, spec):
     if not isinstance(card_actual, (int, float)) or \
             not isinstance(machine_stored, (int, float)):
         return None
+    # ★ COMPARE IN THE STORED UNIT, NOT IN $M. Scaling 2.97 up to 2970.0
+    # turns 3 printed digits into 4 and makes the rounding rule reject a
+    # matching pair. The card's $M value comes DOWN into the frame both
+    # numbers were printed in; the machine value is left as printed.
     f = _TO_MUSD.get((spec.get('storedUnit')
                       or spec.get('documentUnit') or '').strip())
-    machine = machine_stored * f if f else machine_stored
-    return agrees(card_actual, machine)
+    card = card_actual / f if f else card_actual
+    return agrees(card, machine_stored)
 
 
 def attach(kpi_rows, entry, text):

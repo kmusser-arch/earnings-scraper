@@ -550,6 +550,64 @@ def _lands_in_table(src, hit):
     return bool(_tables.row_value_cells(lines[1], idx))
 
 
+
+#: THE ISSUERS' OWN PHRASES. 'cc' is NOT here: two characters against a
+#: six-character whole-token floor, and n=0 in the corpus. A release that
+#: uses it reaches the undeclared-and-ambiguous path and refuses.
+_CURRENCY_RE = {
+    'USD': re.compile(r'in\s+U\.?S\.?\s*(?:D|dollars)\b|in\s+USD\b', re.I),
+    'CONSTANT_CURRENCY': re.compile(r'(?:in\s+)?constant\s+currency', re.I),
+}
+
+
+def currency_marks(window):
+    """[(start, end, currency)] for every qualifier in the window, in order."""
+    out = []
+    for cur, rx in _CURRENCY_RE.items():
+        for m in rx.finditer(window or ''):
+            out.append((m.start(), m.end(), cur))
+    out.sort()
+    return out
+
+
+def currency_segment(window, spec):
+    """(segment, offset, why) — the slice of `window` the row's currency owns.
+
+    THE QUALIFIER TRAILS THE VALUE, 29 times to 4 in this corpus, so the
+    governed segment runs from the PREVIOUS qualifier up to the declared one.
+    For "between $1.83 and $1.91 in constant currency and between $1.85 and
+    $1.93 in USD" a USD row gets " and between $1.85 and $1.93 " and a
+    constant-currency row gets "between $1.83 and $1.91 ".
+
+    Returns why != None when the row must REFUSE.
+    """
+    marks = currency_marks(window)
+    want = (spec or {}).get('currencyBasis')
+    if not marks:
+        return window, 0, None                 # nothing to disambiguate
+    kinds = {c for _s, _e, c in marks}
+    if not want:
+        if len(kinds) > 1:
+            # ★★★ REFUSE, NAMING BOTH PRINTINGS. No default is safe: the same
+            # ORCL release wants USD on its EPS guide and CONSTANT CURRENCY on
+            # its cloud growth guide.
+            return None, 0, ('the document prints this figure in %s and the '
+                             'row declares no currencyBasis'
+                             % ' and '.join(sorted(kinds)))
+        return window, 0, None                 # only one currency in play
+    hit = None
+    for i, (st, en, cur) in enumerate(marks):
+        if cur == want:
+            hit = i
+            break
+    if hit is None:
+        return None, 0, ('the row declares currencyBasis %s and the document '
+                         'qualifies this figure only as %s'
+                         % (want, ' and '.join(sorted(kinds))))
+    lo = marks[hit - 1][1] if hit > 0 else 0
+    return window[lo:marks[hit][0]], lo, None
+
+
 def value_for(text, row, window=260, record=None):
     """The row's value, taking whereKind as a PREFERENCE ORDER.
 
@@ -630,6 +688,7 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
     #: says TABLE. The spec and the document disagree; until that is
     #: reconciled, honouring whereKind loses values we already read.
     picked, seen, rejected, fenced = [], [], [], 0
+    cur_refusals = []
     # THE PREFERRED PASS READS WITH THE TABLE READER, not the prose scanner.
     table_pass = hit_pred is not None
     doc_lines = [l.strip() for l in src.split(chr(10))] if table_pass else []
@@ -706,6 +765,15 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
                 win_base += k + len(bp)
             elif not label_states_basis:
                 continue
+        # ★ CURRENCY, THE SIXTH AXIS. Sliced here so the range arm and the
+        # candidate loop both read a window this row's currency owns.
+        _seg, _off, _cwhy = currency_segment(win, spec)
+        if _seg is None:
+            cur_refusals.append(_cwhy)
+            continue
+        if _off or _seg != win:
+            win = _seg
+            win_base += _off
         if spec.get('requiresRangePair'):
             pair = range_pair(win, spec)
             if pair is None and spec.get('rangeColumns'):
@@ -752,6 +820,10 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
         # is None on all 78 rows. So every unit refusal said 'declared unit
         # None' and looked like an inert filter. The filter was never inert --
         # the MESSAGE named a field nobody writes.
+        if cur_refusals:
+            return dict(value=None, specState=state, candidates=[],
+                        why='CURRENCY: %s' % cur_refusals[0],
+                        rejected=rejected)
         why = 'label found, no candidate matched the declared unit %r' % (
             doc_unit(spec) or None)
         if fenced:
