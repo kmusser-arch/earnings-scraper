@@ -32,6 +32,7 @@ import re
 
 from . import registry
 from . import tables as _tables
+from . import axes as _axes
 
 #: a number with its optional currency and unit words
 _NUM = re.compile(
@@ -514,6 +515,26 @@ def column_value(text, spec, label_pos, record=None):
     # second authority on one condition, which is the defect this build
     # keeps finding. ORCL HORIZONTAL, ADBE VERTICAL, on all 19 TABLE rows.
     if (spec or {}).get('tableLayout') == 'HORIZONTAL':
+        # ★ THE 2-D GRID, READ BY COLUMN POSITION. The issuer draws the
+        # columns with a rule line and every cell falls inside one, so period
+        # x basis x currency cross without an index anywhere. ORCL's fifth
+        # column is a FY total and AVGO's fourth is the non-GAAP quarter;
+        # only the header can tell them apart.
+        from . import hgrid as _hg
+        _sel = _hg.select(lines, idx, spec, is_boundary=_axes.is_table_boundary)
+        if _sel.get('value') is not None:
+            _raw = str(_sel['value'])
+            _pct = '%' in _raw
+            _num = re.sub(r'[^0-9.\-]', '', _raw.replace('(', '-'))
+            try:
+                _v = float(_num)
+            except ValueError:
+                _v = None
+            if _v is not None and _cell_unit_ok(_pct, spec):
+                return dict(value=_v, pct=_pct, columnIndex=None,
+                            columnClasses=_sel.get('description'))
+            return None
+        return None
         h = tables.h_column_value(lines, idx, rq, ry)
         if h and h.get('value') is not None and _cell_unit_ok(False, spec):
             return dict(value=h['value'], pct=False,
