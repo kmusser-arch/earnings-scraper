@@ -327,10 +327,20 @@ def select(lines, label_idx, spec, guard=GUARD, is_boundary=None):
         # REPORTED. ORCL's supplemental grid carries no currency header at
         # all, and requiring an explicit 'in USD' there rejected every column
         # of the table holding 19,345.
-        keep = [i for i in alive
-                if column_currency(cells[i][2]) in (None, want_cur)
-                or (want_cur in ('USD', 'REPORTED')
-                    and column_currency(cells[i][2]) is None)]
+        named = [i for i in alive if column_currency(cells[i][2])]
+        if named:
+            # THE GRID NAMES CURRENCIES, so an unqualified column is not a
+            # candidate: ORCL's Cloud row prints '% Increase in US $' beside
+            # '% Increase in Constant Currency', and accepting the silent
+            # columns too put the level columns back in the running.
+            keep = [i for i in named
+                    if column_currency(cells[i][2]) == want_cur]
+        else:
+            # SILENCE IS NOT CONFLICT. A grid naming no currency at all is
+            # showing the reported figure -- the same rule the prose path
+            # uses. ORCL's supplemental grid has no currency header, and
+            # demanding an explicit 'in USD' rejected every column of it.
+            keep = list(alive) if want_cur in ('USD', 'REPORTED') else []
         if not keep:
             return dict(value=None, description=[c[2] for c in cells],
                         why='CURRENCY %s: no column on this row is that '
