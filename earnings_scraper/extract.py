@@ -541,6 +541,20 @@ def column_value(text, spec, label_pos, record=None):
                         columnIndex=h.get('columnIndex'),
                         columnClasses=h.get('columnClasses'))
         return None
+    # ★ THE STACKED SHAPE, where the row's cells are stacked BELOW its label
+    # one per line and a basis group owns each half. Engaged only where the
+    # row declares a basis: SNDK's guide rows resolve correctly through the
+    # prose path today and their label hits land on the ACTUALS block, so a
+    # stacked read there would replace 10,550 with 5,950 -- a prior-year cell.
+    _want_basis = (spec or {}).get('basis') or next(
+        (a.get('want') for a in ((spec or {}).get('columnAxes') or {})
+         .get('axes', []) if (a.get('axis') or '').upper() == 'BASIS'), None)
+    if _want_basis and (spec or {}).get('basisLocation') != 'ROW_LABEL':
+        from . import sgrid as _sg
+        _st = _sg.select(lines, idx, spec)
+        if _st.get('value') is not None and _cell_unit_ok(_st.get('pct'), spec):
+            return dict(value=_st['value'], pct=_st.get('pct'),
+                        columnIndex=None, columnClasses=_st.get('groups'))
     cells = tables.row_value_cells(lines, idx)
     if len(cells) < 2:
         return None
@@ -925,6 +939,42 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
             finding = ('documentUnit %s, but the governing header says %s: %s'
                        % (declared, d[0], c['denominationPhrase']))
     pool = collapse_precision(pool)
+
+    # ★★★ A BASIS ROW CONSULTS THE BASIS-AWARE READER EVEN WHEN NOTHING TIES.
+    # SNOW's gross-margin row yields exactly ONE prose candidate, 70.9 -- the
+    # GAAP figure -- so no tie ever formed and the column path was never
+    # asked. A single candidate is not evidence of the right candidate; it is
+    # evidence that only one reader looked.
+    _basis_want = (spec or {}).get('basis') or next(
+        (a.get('want') for a in ((spec or {}).get('columnAxes') or {})
+         .get('axes', []) if (a.get('axis') or '').upper() == 'BASIS'), None)
+    # ★ ONLY WHERE THE BASIS IS A COLUMN GROUP. HPE and ADBE carry the basis
+    # in the ROW LABEL itself -- 'Non-GAAP gross profit margin' -- so there is
+    # no group to partition and the label has already done the work. Running
+    # the stacked reader there took HPE's Q3 adjusted gross margin from 40.4,
+    # its hand read, to 38.1 out of the nine-month block.
+    _basis_where = (spec or {}).get('basisLocation')
+    if _basis_want and pool and _basis_where != 'ROW_LABEL':
+        from . import sgrid as _sg
+        _doc = [l.strip() for l in src.split(chr(10))]
+        for c in pool:
+            lp = c.get('lpos')
+            if lp is None:
+                continue
+            got_s = _sg.select(_doc, src.count(chr(10), 0, lp), spec)
+            if got_s.get('value') is None:
+                continue
+            if not _cell_unit_ok(got_s.get('pct'), spec):
+                continue
+            return dict(value=got_s['value'], value_musd=None,
+                        unit=doc_unit(spec), specState=state,
+                        label=c.get('label'), role='level',
+                        basisRead=_basis_want,
+                        columnClasses=got_s.get('groups'),
+                        currencyTaken=c.get('currency') or REPORTED,
+                        pos=lp, lpos=lp,
+                        candidates=[x['raw'] for x in seen], why=None,
+                        rejected=rejected)
 
     vals = {round(c['value'], 6) for c in pool}
     # columnAxes REPLACED columnSelect; both are written today, and a
