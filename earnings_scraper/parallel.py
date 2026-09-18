@@ -38,7 +38,7 @@ _TO_MUSD = {'$B': 1000.0, '$M': 1.0, '$K': 0.001}
 
 KINDS = ('TABLE', 'PROSE', 'WRAPPED', 'RANGE', 'HEADLINE')
 
-FIELDS = ('scraperRead', 'extractionKind', 'refusalReason',
+FIELDS = ('scraperRead', 'extractionKind', 'currencyTaken', 'refusalReason',
           'agreesWithActual', 'extractedAt')
 
 
@@ -192,6 +192,7 @@ def attach(kpi_rows, entry, text):
             # A PARALLEL COLUMN MUST NEVER TAKE DOWN A PRINT.
             out_row['scraperRead'] = None
             out_row['extractionKind'] = None
+            out_row['currencyTaken'] = None
             out_row['refusalReason'] = ('extractor raised %s: %s'
                                         % (type(exc).__name__, exc))[:400]
             out_row['agreesWithActual'] = None
@@ -200,12 +201,17 @@ def attach(kpi_rows, entry, text):
         if sr is None:
             out_row['scraperRead'] = None
             out_row['extractionKind'] = None
+            out_row['currencyTaken'] = None
             out_row['refusalReason'] = refusal_of(got)
             out_row['agreesWithActual'] = None
             refusals += 1
             continue
         out_row['scraperRead'] = sr
         out_row['extractionKind'] = kind_of(got, spec, text, lines)
+        # ALWAYS RECORD WHICH CURRENCY WAS TAKEN. A figure read under a
+        # qualifier the row never declared is a SPEC GAP, and it is only
+        # visible if the reading says which currency it used.
+        out_row['currencyTaken'] = got.get('currencyTaken') or 'REPORTED'
         out_row['refusalReason'] = None
         out_row['agreesWithActual'] = agrees_on_card(
             out_row.get('actual'), sr, spec)

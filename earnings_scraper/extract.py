@@ -552,12 +552,22 @@ def _lands_in_table(src, hit):
 
 
 #: THE ISSUERS' OWN PHRASES. 'cc' is NOT here: two characters against a
-#: six-character whole-token floor, and n=0 in the corpus. A release that
-#: uses it reaches the undeclared-and-ambiguous path and refuses.
+#: six-character whole-token floor, and n=0 in the corpus.
 _CURRENCY_RE = {
     'USD': re.compile(r'in\s+U\.?S\.?\s*(?:D|dollars)\b|in\s+USD\b', re.I),
     'CONSTANT_CURRENCY': re.compile(r'(?:in\s+)?constant\s+currency', re.I),
 }
+
+#: the contrast the issuer builds to mark the exception: "13% growth, OR 12%
+#: in constant currency". The qualified alternative starts at this word.
+#: ★ 'and' IS NOT HERE. It belongs to the RANGE grammar -- "between $1.83
+#: and $1.91" -- and using it as a contrast marker cut ORCL's range in half,
+#: leaving '$1.93' where '$1.85 and $1.93' was needed. Which axis owns the
+#: token, asked of the data: the range owns 'and', the contrast owns 'or'.
+_CONTRAST = re.compile(r'(?<![A-Za-z])(?:or|versus|vs\.?|compared\s+to)'
+                       r'(?![A-Za-z])', re.I)
+
+REPORTED = 'REPORTED'
 
 
 def currency_marks(window):
@@ -570,42 +580,76 @@ def currency_marks(window):
     return out
 
 
-def currency_segment(window, spec):
-    """(segment, offset, why) — the slice of `window` the row's currency owns.
+def currency_spans(window):
+    """[(start, end, currency)] — the VALUE regions each qualifier governs.
 
-    THE QUALIFIER TRAILS THE VALUE, 29 times to 4 in this corpus, so the
-    governed segment runs from the PREVIOUS qualifier up to the declared one.
-    For "between $1.83 and $1.91 in constant currency and between $1.85 and
-    $1.93 in USD" a USD row gets " and between $1.85 and $1.93 " and a
-    constant-currency row gets "between $1.83 and $1.91 ".
-
-    Returns why != None when the row must REFUSE.
+    THE QUALIFIER TRAILS THE VALUE, measured 29 to 4 in this corpus, so a
+    governed region runs from the contrast word that introduces it (or the
+    previous qualifier) up to the qualifier itself. Everything outside every
+    region is REPORTED.
     """
     marks = currency_marks(window)
+    spans = []
+    prev_end = 0
+    for st, en, cur in marks:
+        lo = prev_end
+        seg = (window or '')[prev_end:st]
+        last = None
+        for m in _CONTRAST.finditer(seg):
+            last = m
+        if last is not None:
+            lo = prev_end + last.end()
+        spans.append((lo, st, cur))
+        prev_end = en
+    return spans
+
+
+def currency_of(spans, pos):
+    """Which currency governs a position — REPORTED when no region covers it."""
+    for lo, hi, cur in spans:
+        if lo <= pos < hi:
+            return cur
+    return REPORTED
+
+
+def currency_mask(window, spec):
+    """(masked window, why) — regions this row's currency does NOT own, blanked.
+
+    MASKED, NOT SLICED: the blanks are the same length as what they replace,
+    so every offset in the window stays valid. Slicing moves the frame, and a
+    frame moved by hand is what put every header lookup on the dateline.
+    """
+    spans = currency_spans(window)
     want = (spec or {}).get('currencyBasis')
-    if not marks:
-        return window, 0, None                 # nothing to disambiguate
-    kinds = {c for _s, _e, c in marks}
+    if not spans:
+        return window, None                    # nothing qualified: REPORTED
+    kinds = {c for _lo, _hi, c in spans}
     if not want:
         if len(kinds) > 1:
-            # ★★★ REFUSE, NAMING BOTH PRINTINGS. No default is safe: the same
-            # ORCL release wants USD on its EPS guide and CONSTANT CURRENCY on
-            # its cloud growth guide.
-            return None, 0, ('the document prints this figure in %s and the '
-                             'row declares no currencyBasis'
-                             % ' and '.join(sorted(kinds)))
-        return window, 0, None                 # only one currency in play
-    hit = None
-    for i, (st, en, cur) in enumerate(marks):
-        if cur == want:
-            hit = i
-            break
-    if hit is None:
-        return None, 0, ('the row declares currencyBasis %s and the document '
-                         'qualifies this figure only as %s'
-                         % (want, ' and '.join(sorted(kinds))))
-    lo = marks[hit - 1][1] if hit > 0 else 0
-    return window[lo:marks[hit][0]], lo, None
+            # ★ BOTH PRINTED AND NEITHER DECLARED. No default is safe: one
+            # ORCL release wants USD on its EPS guide and CONSTANT CURRENCY
+            # on its cloud growth guide.
+            return None, ('the document prints this figure in %s and the row '
+                          'declares no currencyBasis'
+                          % ' and '.join(sorted(kinds)))
+        # ★ A SINGLE QUALIFIER IS NOT AMBIGUOUS. The issuer marked the
+        # exception with a contrast; the unqualified figure is REPORTED.
+        return window, None
+    chars = list(window)
+    if want == REPORTED:
+        for lo, hi, _cur in spans:
+            for i in range(lo, min(hi, len(chars))):
+                chars[i] = ' '
+        return ''.join(chars), None
+    if want not in kinds:
+        return None, ('the row declares currencyBasis %s and the document '
+                      'qualifies this figure only as %s'
+                      % (want, ' and '.join(sorted(kinds))))
+    keep = [(lo, hi) for lo, hi, cur in spans if cur == want]
+    for i, _ch in enumerate(chars):
+        if not any(lo <= i < hi for lo, hi in keep):
+            chars[i] = ' '
+    return ''.join(chars), None
 
 
 def value_for(text, row, window=260, record=None):
@@ -765,15 +809,14 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
                 win_base += k + len(bp)
             elif not label_states_basis:
                 continue
-        # ★ CURRENCY, THE SIXTH AXIS. Sliced here so the range arm and the
-        # candidate loop both read a window this row's currency owns.
-        _seg, _off, _cwhy = currency_segment(win, spec)
-        if _seg is None:
+        # ★ CURRENCY, THE SIXTH AXIS. Masked, never sliced: the offsets in
+        # this window are already load-bearing.
+        _cspans = currency_spans(win)
+        _masked, _cwhy = currency_mask(win, spec)
+        if _masked is None:
             cur_refusals.append(_cwhy)
             continue
-        if _off or _seg != win:
-            win = _seg
-            win_base += _off
+        win = _masked
         if spec.get('requiresRangePair'):
             pair = range_pair(win, spec)
             if pair is None and spec.get('rangeColumns'):
@@ -796,6 +839,8 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
             picked.append(dict(value=mid, value_musd=None, pct=False,
                                unit='', role='level', pos=end, gpos=end,
                                lpos=start, raw='%s-%s' % (lo, hi), label=lab,
+                               currency=((spec or {}).get('currencyBasis')
+                                         or currency_of(_cspans, 0)),
                                rangeLow=lo, rangeHigh=hi))
             continue
         for c in candidates(win, spec):
@@ -805,7 +850,8 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
             # and source-absolute in the range arm above -- one field, two
             # frames, and column_value silently read line 0 of the document.
             c = dict(c, label=lab, gpos=win_base + c.get('pos', 0),
-                     lpos=start)
+                     lpos=start,
+                     currency=currency_of(_cspans, c.get('pos', 0)))
             seen.append(c)
             # 'to' is the LEVEL. Without this, RPO returns 209.
             # AND IN A TABLE THE HEADER IS THE GRAMMAR. A cell carries no
@@ -888,6 +934,10 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
                             denomination=_d[0] if _d else None,
                             denominationPhrase=_d[1] if _d else None,
                             denominationFinding=finding,
+                            # EVERY path that returns a VALUE records which
+                            # currency it took; a blank here would read as
+                            # 'not applicable' on a row where it applies.
+                            currencyTaken=(c.get('currency') or REPORTED),
                             unitUnverified=(_d is None
                                             and declared in _MUSD),
                             # a table cell has no magnitude word of its own
@@ -919,5 +969,6 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
                 sigDigits=best.get('sigDigits'),
                 coveredPrintings=best.get('coveredPrintings'),
                 pos=best.get('gpos'), lpos=best.get('lpos'),
+                currencyTaken=best.get('currency') or REPORTED,
                 candidates=[c['raw'] for c in seen], why=None,
                 rejected=rejected)
