@@ -32,6 +32,7 @@ import re
 
 from . import registry
 from . import tables as _tables
+from . import period as _period_mod
 from . import axes as _axes
 
 #: a number with its optional currency and unit words
@@ -687,6 +688,49 @@ def currency_mask(window, spec):
     return ''.join(chars), None
 
 
+
+_SENTENCE_END = re.compile(r'(?<=[.:;])\s|\n\s*\n')
+
+
+def _governing_sentence(text, pos):
+    """The clause that GOVERNS a candidate, not the span that contains it.
+
+    period.classify_candidate is explicit about needing the enclosing sentence
+    or bullet: SNOW's guide value carries no marker inside its own span, which
+    is exactly why the row reads the wrong number.
+    """
+    if not isinstance(pos, int) or not text:
+        return ''
+    lo = 0
+    for m in _SENTENCE_END.finditer(text, 0, pos):
+        lo = m.end()
+    m = _SENTENCE_END.search(text, pos)
+    hi = m.start() if m else min(len(text), pos + 400)
+    return text[lo:hi]
+
+
+def guidance_contamination(text, cand, spec, quarter=None):
+    """Why a REPORTED row may not take this candidate, or None.
+
+    ★ ONE DIRECTION ONLY, and it is the one that fails. A REPORTED row taking
+    a value out of a guidance sentence is measured at 1 occurrence and 0 false
+    positives across the corpus; the reverse -- a guide row reading a reported
+    sentence -- costs two correct values to catch nothing, because the
+    classifier misreads both of those sentences.
+    """
+    want = (spec or {}).get('period')
+    if {'FY_GUIDE': 'GUIDE_FY'}.get(want, want) != _period_mod.REPORTED:
+        return None
+    frag = _governing_sentence(text, cand.get('gpos'))
+    if not frag:
+        return None
+    klass = _period_mod.classify_candidate(frag, quarter)
+    if klass in (_period_mod.GUIDE_FY, _period_mod.GUIDE_NEXT_Q):
+        return ('the row is REPORTED and this figure sits in a %s sentence: %r'
+                % (klass, ' '.join(frag.split())[:90]))
+    return None
+
+
 def value_for(text, row, window=260, record=None):
     """The row's value, taking whereKind as a PREFERENCE ORDER.
 
@@ -1035,6 +1079,15 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
                     why='%d candidates tie on unit and role — refusing: %s'
                         % (len(vals), ', '.join(c['raw'] for c in pool[:6])))
     best = pool[0]
+    # ★ THE DECLARED PERIOD IS CONSULTED, NOT MERELY AVAILABLE AS A
+    # TIE-BREAKER. A single candidate formed no tie, so nothing ever asked
+    # whether SNOW's 36% came from the CFO's FULL-YEAR guidance sentence.
+    _contam = guidance_contamination(src, best, spec,
+                                     (record or {}).get('fiscalQuarter'))
+    if _contam:
+        return dict(value=None, specState=state,
+                    candidates=[c['raw'] for c in seen],
+                    why='PERIOD: %s' % _contam, rejected=rejected)
     return dict(value=best['value'], value_musd=best.get('musd'),
                 unit=(spec or {}).get('unit'), specState=state,
                 label=best['label'], role=best['role'],
