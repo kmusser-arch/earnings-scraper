@@ -43,7 +43,17 @@ _SECTIONS = (
     ('income statement', re.compile(
         r'CONDENSED\s+CONSOLIDATED\s+STATEMENTS?\s+OF\s+OPERATIONS'
         r'|CONSOLIDATED\s+STATEMENTS?\s+OF\s+OPERATIONS'
-        r'|STATEMENTS?\s+OF\s+INCOME', re.I)),
+        r'|STATEMENTS?\s+OF\s+INCOME'
+        # ★ ISSUERS TITLE THE SAME STATEMENT THREE WAYS: Operations (ORCL,
+        # SNOW), Income (ADBE) and EARNINGS (HPE). The last was missing, so
+        # an 83,827-char UNTRUNCATED HPE capture reported 'MISSING: income
+        # statement' and the banner told a trader that rows from that
+        # section CANNOT FILL -- the degrade-loudly mechanism degrading
+        # loudly about nothing, which is the one failure it cannot afford.
+        # The statement was there, under a name the checker did not know.
+        # AVGO still reports it missing and is right: its income statement
+        # is in the continuation that was never captured.
+        r'|STATEMENTS?\s+OF\s+EARNINGS', re.I)),
     ('balance sheet', re.compile(
         r'CONDENSED\s+CONSOLIDATED\s+BALANCE\s+SHEETS?'
         r'|CONSOLIDATED\s+BALANCE\s+SHEETS?', re.I)),
