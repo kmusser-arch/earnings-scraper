@@ -64,7 +64,10 @@ NOT_A_PERIOD = None
 _WINDOW = re.compile(
     r'\b(three|six|nine|twelve)\s+months?\s+ended\b'
     r'|\b(quarter)\s+ended\b'
-    r'|\b(?:fiscal\s+)?(year)\s+ended\b', re.I)
+    # ★ THE PLURAL. WDC heads its annual columns 'Years Ended', so the
+    # singular-only pattern classified the whole second tier as 'other'
+    # and the crossing was invisible rather than unhandled.
+    r'|\b(?:fiscal\s+)?(year)s?\s+ended\b', re.I)
 _MONTHS = {'three': 3, 'six': 6, 'nine': 9, 'twelve': 12,
            'quarter': 3, 'year': 12}
 
@@ -208,6 +211,46 @@ def header_cells(lines, label_idx, back=HEADER_GUARD):
         out.append((k, text, kind))
         _last_k = k
     out.reverse()
+    return out
+
+
+
+#: '<Month> <day>,' with the year on the NEXT line -- incomplete on its face
+_DATE_HEAD = re.compile(
+    r'^(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?\s+'
+    r'\d{1,2}\s*,\s*$', re.I)
+
+
+def _join_split_dates(cells):
+    """Join 'July 3,' + '2026' into one leaf.
+
+    ★ THE GAP IS NOT WHAT MAKES IT INCOMPLETE. _join_wrapped merges
+    continuation cells by a measured gap, which is right for SNOW's 'Amount as
+    a' / '% of Revenue'; here the tell is the trailing comma. WDC's four
+    columns produced EIGHT leaves and the cardinality guard refused the row as
+    ragged when it was merely wrapped.
+    """
+    out = []
+    i = 0
+    while i < len(cells):
+        idx, text, kind = cells[i]
+        # ★ A WRAPPED DATE IS ADJACENT. APP heads its columns
+        #     Quarter Ended / June 30,  ·  Six Months Ended / June 30,
+        #     2026 · 2025 · 2026 · 2025
+        # so the month/day belongs to a TIER and the years are the column
+        # leaves, four lines below. Joining across that gap merged two
+        # different strata and turned four leaves into three -- the fix
+        # breaking a table it was never about. A continuation sits on the
+        # NEXT line, not somewhere below.
+        if (i + 1 < len(cells) and _DATE_HEAD.match(text or '')
+                and _YEAR_ONLY.match(cells[i + 1][1] or '')
+                and cells[i + 1][0] - idx <= 2):
+            out.append((idx, '%s %s' % (text.rstrip(', '),
+                                        cells[i + 1][1].strip()), 'date'))
+            i += 2
+            continue
+        out.append((idx, text, kind))
+        i += 1
     return out
 
 
@@ -370,7 +413,8 @@ def _column_map_inner(lines, label_idx, value_count, record_quarter=None,
     # separate return statements is the twelve-elif problem again -- so the
     # refusals are built as they were and the candidates are attached once,
     # by the wrapper below.
-    cells = _absorb_window_dates(_join_wrapped(header_cells(lines, label_idx)))
+    cells = _absorb_window_dates(_join_wrapped(_join_split_dates(
+        header_cells(lines, label_idx))))
     runs = _strata(cells)
 
     # ★ THE NEAREST WINDOW RUN GOVERNS. Crossing data rows can collect an
