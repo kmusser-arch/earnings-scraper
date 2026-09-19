@@ -69,6 +69,45 @@ def body_of(path):
         return ''
 
 
+
+#: a release names its issuer in an exchange-qualified form near the top
+_BODY_TICKER = re.compile(
+    r'\((?:NASDAQ|NYSE|NYSE\s+American|OTC|AMEX)[:\s]+\s*([A-Z]{1,6})\s*\)',
+    re.I)
+
+#: how much of the body to read for the issuer's own ticker
+TICKER_WINDOW = 4000
+
+
+def body_ticker(body):
+    """Exchange-qualified tickers the body names, as a set.
+
+    Empty when the body names none -- a continuation page begins mid-table
+    and names nothing, which is not a disagreement.
+    """
+    return {m.group(1).upper()
+            for m in _BODY_TICKER.finditer((body or '')[:TICKER_WINDOW])}
+
+
+def issuer_disagrees(path, body):
+    """The reason this part must not join, or None.
+
+    ★ THE BODY IS THE ONLY INDEPENDENT WITNESS. One capture in the set is
+    filed as AAPL, resolved by the WIRE as AAPL, and carries a Western
+    Digital release -- so primary_instruments cannot be the check, because
+    primary_instruments is the field that is wrong.
+    """
+    got = parse_name(path)
+    if not got:
+        return None
+    ticker = got[2].upper()
+    named = body_ticker(body)
+    if named and ticker not in named:
+        return ('filename claims %s and the body names %s'
+                % (ticker, '/'.join(sorted(named))))
+    return None
+
+
 def siblings(path):
     """Every pending file for the SAME ticker and date, in wire order.
 
@@ -99,6 +138,23 @@ def join(path, separator='\n'):
     paths = siblings(path)
     bodies = [(p, body_of(p)) for p in paths]
     bodies = [(p, b) for p, b in bodies if b]
+
+    # ★ THE BODY'S ISSUER MUST MATCH THE FILENAME'S TICKER. The join keys on
+    # the filename; a capture whose body names a different issuer would be
+    # joined into the wrong release, and one such capture exists in the set.
+    rejected = []
+    kept = []
+    for p, b in bodies:
+        why = issuer_disagrees(p, b)
+        if why:
+            rejected.append((os.path.basename(p), why))
+        else:
+            kept.append((p, b))
+    if rejected and not kept:
+        return dict(text='', parts=[], joined=0, truncated=True, marker=None,
+                    missing=[], rejectedParts=rejected,
+                    note='every part was refused: %s' % rejected[0][1])
+    bodies = kept
     if not bodies:
         return dict(text='', parts=[], joined=0, truncated=True,
                     marker=None, missing=[], note='no readable body')
@@ -110,6 +166,7 @@ def join(path, separator='\n'):
     if len(per) == 1:
         p, b, a = per[0]
         return dict(text=b, parts=[os.path.basename(p)], joined=1,
+                    rejectedParts=rejected,
                     truncated=bool(a.get('truncated')),
                     marker=a.get('marker'), missing=a.get('missing') or [],
                     note=None)
@@ -133,5 +190,6 @@ def join(path, separator='\n'):
             'part %d ended with %r and the parts are not known to abut'
             % (len(per), 1, any_marker)) if any_marker else None
     return dict(text=text, parts=[os.path.basename(p) for p, _b, _a in per],
+                rejectedParts=rejected,
                 joined=len(per), truncated=truncated, marker=any_marker,
                 missing=after.get('missing') or [], note=note)
