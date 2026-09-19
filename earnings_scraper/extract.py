@@ -786,6 +786,23 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
     src = dewrap(text) if ('WRAPPED' in kinds or 'PROSE' in kinds
                            or 'HEADLINE' in kinds) else text
 
+    # ★★★ A DERIVED ROW IS NOT IN THE DOCUMENT. HPE prints a Net Revenue
+    # block and an Earnings block and NO margin row, so reading cannot
+    # succeed -- the fence and the label are both right and the block holds
+    # dollars. The spec has said so since 17 September via `derived` and
+    # `sourceRows`; nothing read either field until now.
+    if (spec or {}).get('derived') and (spec or {}).get('sourceRows'):
+        from . import derived as _derived
+        _d = _derived.derive(src, row, record) or {}
+        if _d.get('value') is not None:
+            return dict(value=_d['value'], value_musd=None,
+                        unit=doc_unit(spec), specState=state,
+                        label=(spec.get('sourceRows') or [None])[0],
+                        role='derived', derivedFrom=_d.get('derivedFrom'),
+                        candidateCount=2, seenCount=2,
+                        currencyTaken=REPORTED, candidates=[], why=None,
+                        rejected=[])
+
     hits = registry.label_hits(src, spec)
     if hit_pred is not None:
         hits = [h for h in hits if hit_pred(src, h)]

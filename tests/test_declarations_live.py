@@ -67,10 +67,17 @@ def main():
          'Q3 Non-GAAP EPS', 1,
          "HPE's dividend guard still fires — 0.1425 in an EPS row is the "
          'founding case of the actual-column spec'),
+        # ★ ADBE's 'GAAP:' disqualifier is now ORPHANED, and that is asserted
+        # rather than deleted. It guarded the TARGETS-block label 'Earnings
+        # per share', which was removed on 19 September for having 4 hits and
+        # 0 inside its fence. The guard survived the label it existed for --
+        # the pairs pattern again, from the other end: removing one half
+        # leaves the other reporting success, because a disqualifier with
+        # nothing to disqualify simply never fires.
         ('ADBE-2026Q3', os.path.join(PEND, '20260910-160500-ADBE.json'),
-         'raw', 'Q4 Adj EPS Guide', 2,
-         "ADBE's 'GAAP:' guard still fires twice — the line prefix that "
-         'separates 4.65 from 6.30'),
+         'raw', 'Q4 Adj EPS Guide', 0,
+         "ADBE's 'GAAP:' guard is ORPHANED — the label it guarded was "
+         'removed, so it now fires on nothing'),
     ]
 
     for rid, path, kind, frag, want, msg in cases:
