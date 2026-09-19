@@ -9,9 +9,11 @@ at ~140 characters, mid-sentence, before any figures appear.
 """
 
 import json
+import threading
 import os
 import time
 
+from . import backfill
 from . import config, detect, gate, parse, revisions, score, scorecard
 
 
@@ -26,6 +28,11 @@ class Listener:
         # the first card after a crash is worse than a duplicate.
         self.revisions = revisions.RevisionLog()
         self.popup = popup
+        #: the canonical backfill is a NETWORK dependency in the
+        #: process that makes the card. It runs after delivery and
+        #: fails as a no-op, but it is named here so it can be
+        #: turned off without editing the emit path.
+        self.backfill_enabled = True
         self.on_card = on_card
         self.verbose = verbose
         self.log_hits = log_hits
@@ -250,14 +257,65 @@ class Listener:
             self._emit(card, item)
 
     def _emit(self, card, item):
-        if self.log_hits:
-            self._persist(card, item)
+        path = self._persist(card, item) if self.log_hits else None
         if self.popup is not None:
             self.popup.submit(card)
         if self.on_card is not None:
             self.on_card(card)
         if self.verbose:
             self._print_summary(card)
+        # ★ LAST, AND ONLY LAST. Everything above has already reached the
+        # trader; the network is touched after the card exists and cannot
+        # delay it.
+        self._backfill_async(card, item, path)
+
+    def _backfill_async(self, card, item, path):
+        """Fetch the canonical release and fill blanks, off the card's path.
+
+        A daemon thread so a hung socket cannot hold the listener open, and
+        every exception is swallowed: the contract is that failure is a no-op
+        and the card is unchanged.
+        """
+        if not self.backfill_enabled:
+            return
+        body = (item or {}).get('body') or ''
+        go, _why = backfill.should_fetch(body)
+        if not go:
+            return
+        entry = self.entries.get(card.get('ticker'))
+        if not entry:
+            return
+
+        def _run():
+            try:
+                attempt = backfill.backfill(card.get('keyKPIs') or [],
+                                            entry, body)
+                self.stats['backfill'] = self.stats.get('backfill', 0) + 1
+                if attempt.get('filled'):
+                    print('   · canonical backfill filled %d row(s) in %sms: '
+                          '%s' % (attempt['filled'], attempt.get('elapsedMs'),
+                                  ', '.join(attempt.get('rows') or [])))
+                else:
+                    print('   · canonical backfill %s in %sms (card '
+                          'unchanged)' % (attempt.get('outcome'),
+                                          attempt.get('elapsedMs')))
+                # ★ THE SAME FILE. A new sidecar would be a new timestamp on
+                # the same ticker, which the continuation join reads as a
+                # CONTINUATION PAGE -- the backfill would manufacture a
+                # sibling and splice a card's own re-read onto its release.
+                if path and os.path.exists(path):
+                    with open(path, encoding='utf-8') as fh:
+                        blob = json.load(fh)
+                    blob['card'] = card
+                    blob['backfillAttempt'] = attempt
+                    with open(path, 'w', encoding='utf-8') as fh:
+                        json.dump(blob, fh, indent=1, ensure_ascii=False,
+                                  default=str)
+            except Exception as exc:                     # noqa: BLE001
+                print('[listener] backfill no-op: %r' % exc)
+
+        threading.Thread(target=_run, daemon=True,
+                         name='backfill-%s' % card.get('ticker')).start()
 
     # --- side outputs ---------------------------------------------------------
 
@@ -275,8 +333,10 @@ class Listener:
             with open(path, 'w', encoding='utf-8') as fh:
                 json.dump(dict(card=card, rawItem=item), fh, indent=1,
                           ensure_ascii=False, default=str)
+            return path
         except OSError as exc:
             print('[listener] could not persist sidecar: %r' % exc)
+        return None
 
     def _print_summary(self, card):
         """Print the rendered card verbatim. This method formats nothing."""
