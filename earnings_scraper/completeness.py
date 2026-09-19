@@ -86,6 +86,52 @@ _ROW_SECTION = (
 )
 
 
+
+#: the marker each wire prints at the head of the release body
+_DATELINE = re.compile(
+    r'--\s*\(\s*BUSINESS\s+WIRE\s*\)\s*--'
+    r'|/\s*PRNewswire[^/]*/'
+    r'|\(\s*GLOBE\s+NEWSWIRE\s*\)', re.I)
+
+#: how far in the dateline may sit before the text above it counts as content
+#: rather than as a stray leading fragment
+DATELINE_WINDOW = 1200
+
+
+def dateline(body):
+    """(offset, marker) of the wire's dateline, or (None, None).
+
+    A release runs [headline][sub-headline block][dateline][body]. The
+    dateline is therefore the boundary: text above it is the block the issuer
+    uses for what it wants noticed, and a body beginning BELOW it has had
+    that block cut.
+    """
+    m = _DATELINE.search(body or '', 0, DATELINE_WINDOW)
+    return (m.start(), m.group(0)) if m else (None, None)
+
+
+def sub_headline_state(body):
+    """What the capture can prove about the block above the dateline.
+
+    ★ THREE STATES, AND THE MIDDLE ONE IS THE ONE THAT MATTERS.
+        CAPTURED        the dateline sits below some text -- the block is here
+        ABSENT          no dateline at all -- the body starts at the lede and
+                        everything above it, block included, was never captured
+        AT_DATELINE     the body starts exactly at the dateline, so a block
+                        above it would be absent and we cannot tell whether
+                        one existed
+    A row that refuses for want of text nobody captured is not an extraction
+    failure, and this is what lets the counter tell those apart.
+    """
+    off, marker = dateline(body)
+    if off is None:
+        return 'ABSENT', None
+    above = (body or '')[:off].strip()
+    if len(above) >= 24:
+        return 'CAPTURED', above[-120:]
+    return 'AT_DATELINE', marker
+
+
 def assess(text, is_earnings=True):
     """Completeness of an ingested body.
 
@@ -96,6 +142,7 @@ def assess(text, is_earnings=True):
     tail = body.rstrip()
     m = _CONTINUES.search(tail[-80:]) if tail else None
     missing = [name for name, pat in _SECTIONS if not pat.search(body)]
+    sub_state, sub_text = sub_headline_state(body)
     short = is_earnings and len(body) < LENGTH_FLOOR
 
     reasons = []
@@ -111,10 +158,23 @@ def assess(text, is_earnings=True):
     # ★ The MARKER is decisive on its own. The floor and the section check are
     # corroboration -- a genuinely short but complete release should not be
     # condemned by length alone, so it takes two signals without a marker.
+    # ★ A CAPTURE CAN REPORT ITSELF COMPLETE AND STILL BE MISSING TEXT THE
+    # RELEASE CARRIES. missing=[] means 'every section I know how to NAME is
+    # here', not 'the whole document is here'. ADBE's capture is untruncated,
+    # missing=[], ends at the source URL -- and the release's two sub-headline
+    # bullets, one of them a hero, are nowhere in it.
+    if sub_state == 'ABSENT':
+        reasons.append('the body begins below the dateline: any sub-headline '
+                       'block the issuer printed was NOT captured, and rows '
+                       'sourced from it cannot fill')
+
     truncated = bool(m) or (short and len(missing) >= 2)
     return dict(complete=not truncated, truncated=truncated,
                 marker=(m.group(0).strip() if m else None),
                 chars=len(body), missing=missing, short=short,
+                # reported, not merely computed: a state that reaches no
+                # caller is the same defect as a cell that reaches no HTML
+                subHeadlineBlock=sub_state, subHeadlineText=sub_text,
                 reasons=reasons)
 
 
