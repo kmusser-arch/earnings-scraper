@@ -288,6 +288,52 @@ _RANGE_PAIR = re.compile(
     re.I)
 
 
+#: '$4.1B +/- $100M', '$4.00 +/- $0.15' -- a CENTRE and a TOLERANCE, which
+#: the separator grammar above cannot see at all: there is no 'to', no dash
+#: between two figures, and the two halves are not both ends of the range.
+_PLUS_MINUS = re.compile(
+    r'\$?\s*(?P<c>[\d,]+(?:\.\d+)?)\s*(?P<cu>B|M|K|billion|million|thousand)?\b'
+    r'\s*(?:\+/-|±|\+\s*/\s*-)\s*'
+    r'\$?\s*(?P<t>[\d,]+(?:\.\d+)?)\s*(?P<tu>B|M|K|billion|million|thousand)?\b',
+    re.I)
+
+_PM_SCALE = {'b': 1000.0, 'billion': 1000.0, 'm': 1.0, 'million': 1.0,
+             'k': 0.001, 'thousand': 0.001}
+_PM_BASE = {'$B': 1000.0, '$M': 1.0, '$K': 0.001}
+
+
+def plus_minus_pair(window, spec=None):
+    """(low, high) from a CENTRE +/- TOLERANCE expression, or None.
+
+    ★★★ THE TWO HALVES CARRY THEIR OWN SCALES. WDC prints
+    '$4.1B +/- $100M' on a row that declares documentUnit $M: a centre in
+    BILLIONS and a tolerance in MILLIONS, inside one printed cell. Returning
+    4.1 would be read as $4.1M -- one condition, two names, with the seam
+    inside a single cell rather than between two modules. So each half is
+    converted through ITS OWN suffix into the unit the ROW declares.
+
+    ★★ ONLY CONSULTED WHERE THE ROW DECLARES rangeForm PLUS_MINUS. The corpus
+    holds exactly two such expressions, both in WDC's guidance table, and a
+    bare '4.1 +/- 100' with no suffix on either half is refused rather than
+    guessed -- a tolerance whose scale is unknown is not a narrower range, it
+    is an unknown one.
+    """
+    m = _PLUS_MINUS.search(window or '')
+    if not m:
+        return None
+    cf = _PM_SCALE.get((m.group('cu') or '').lower())
+    tf = _PM_SCALE.get((m.group('tu') or '').lower())
+    if cf is None or tf is None:
+        return None
+    base = _PM_BASE.get((doc_unit(spec) or '').strip(), 1.0)
+    try:
+        c = float(m.group('c').replace(',', '')) * cf / base
+        t = float(m.group('t').replace(',', '')) * tf / base
+    except (TypeError, ValueError):
+        return None
+    return round(c - t, 6), round(c + t, 6)
+
+
 def range_pair(window, spec=None):
     """(low, high) from an anchored range, or None.
 
@@ -914,7 +960,16 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
             continue
         win = _masked
         if spec.get('requiresRangePair'):
-            pair = range_pair(win, spec)
+            # ★ THE DECLARED FORM IS TRIED FIRST. WDC's revenue guide prints
+            # '$4.1B +/- $100M' and the dash grammar walks straight past it to
+            # '$390M - $400M' -- the OPERATING EXPENSES row -- and reports
+            # candidateCount 1, rejected [], why None. Complete confidence
+            # while holding the midpoint of a different row's range.
+            pair = None
+            if (spec.get('rangeForm') or '').strip().upper() == 'PLUS_MINUS':
+                pair = plus_minus_pair(win, spec)
+            if pair is None:
+                pair = range_pair(win, spec)
             if pair is None and spec.get('rangeColumns'):
                 # ★ WHERE THE ISSUER LABELS THE COLUMNS, THE PAIR IS ADJACENT
                 # AND UNSEPARATED: '$ 6.30  $ 6.35' under 'Low | High'. A
