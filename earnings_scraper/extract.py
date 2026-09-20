@@ -474,9 +474,25 @@ def column_pair(text, spec, window=900):
 #: THE ISSUERS' OWN WORDS, collected from the corpus -- 38 declarations over
 #: 7 of 8 releases. AVGO wraps the phrase across three lines, so the tail
 #: must be allowed to cross a newline.
+#: ★★★ THE PARENTHESES WERE LOAD-BEARING AND ONLY ONE MODULE THOUGHT SO.
+#: tables._SCALE_HEADER has always written the paren as OPTIONAL; this pattern
+#: required it. HPE prints every one of its 18 denomination headers BARE --
+#: 'July 31, 2025 In millions, except per share amounts' -- so it has ZERO
+#: parenthesised headers and this reader saw none of them. One condition, two
+#: names, and the module that could see the header was not the one that
+#: needed it: HPE's free cash flow came back as 958 with documentUnit $B,
+#: which is 958 BILLION dollars, while 'In millions' sat 694 chars above it.
+#: ★★ AND THE RELAXATION HAS ONE FALSE POSITIVE TO REFUSE. Making the paren
+#: optional lets the pattern match the SUBSTRING 'in millions)' inside ADBE's
+#: '(Shares in millions)' -- a SHARE COUNT, which would then denominate every
+#: dollar row beneath it. The lookbehinds refuse that: the phrase must start a
+#: word and must not follow 'shares'.
+#: Measured: 18 newly found headers, all HPE, 0 share-header false positives,
+#: 1 row moves (958.0 -> 0.958) and no row that matches today changes.
 _DENOM_RE = re.compile(
-    r'\(\s*(?:\$\s*)?(?:in|amounts\s+in|dollars\s+in)\s+'
-    r'(thousand|million|billion)s?\b[^)]*\)', re.I)
+    r'(?<![A-Za-z])(?<!shares\s)(?<!Shares\s)'
+    r'\(?\s*(?:\$\s*)?(?:in|amounts\s+in|dollars\s+in)\s+'
+    r'(thousand|million|billion)s?\b[^)\n]{0,40}\)?', re.I)
 _DENOM_SCALE = {'thousand': '$K', 'million': '$M', 'billion': '$B'}
 _MUSD = {'$K': 0.001, '$M': 1.0, '$B': 1000.0}
 
