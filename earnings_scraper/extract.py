@@ -334,6 +334,62 @@ def plus_minus_pair(window, spec=None):
     return round(c - t, 6), round(c + t, 6)
 
 
+#: Grammar that joins a label to its own figures. Transparent to the walk-back
+#: below: 'between' and 'of' are not competing labels.
+_CONNECTIVE = set(
+    'of to be between and or at approximately about totaling total is was '
+    'were in the a an for from with expects expected expect range'.split())
+
+#: A cell holding no words: a placeholder, a bare symbol, a footnote marker.
+_PLACEHOLDER_CELL = re.compile(
+    r'^(?:n/?a|nm|--?|\u2014|\u2013|~|\$|%|\(\d+\))$', re.I)
+
+
+def _core_words(text):
+    """The words of a cell with pure grammar and digits removed."""
+    t = re.sub(r'[^a-z0-9]+', ' ', (text or '').lower()).strip()
+    return ' '.join(w for w in t.split()
+                    if w and not w.isdigit() and w not in _CONNECTIVE)
+
+
+def belongs_to_label(window, at, spec):
+    """Does the pair at `at` sit on the row the LABEL matched?
+
+    ★★★ A RANGE WITH NO LABEL IS STILL A RANGE. WDC's revenue row anchored on
+    the right sentence and came back holding the midpoint of the OPERATING
+    EXPENSES range, reporting candidateCount 1, rejected [], why None. The
+    anchor was right and the pair was well formed; nothing asked whether they
+    belong to each other. That is the pairs defect at the value level.
+
+    ★★ THE WINDOW ALREADY OPENS AT THE LABEL, so reaching its start is the
+    STRONGEST belonging, not the weakest -- the pair sits on the label that
+    opened the window. Only a cell that still carries words once grammar is
+    stripped is a rival.
+
+    ★ MEASURED BOUNDARY: this refuses a CORRECT pair where ONE PROSE SENTENCE
+    CARRIES TWO METRICS. SNOW writes 'Product revenue of $1,588 million to
+    $1,593 million, representing 37% to 38% year-over-year growth', and from
+    the growth pair the walk-back sees the revenue figures as a rival. That is
+    why the row must OPT IN: declared on the two WDC rows it was built for,
+    1 gain and 0 losses; applied to every range row, it would break SNOW.
+    """
+    for cell in reversed(re.split(r'[|\n\r\t]+', window[:at])):
+        cell = cell.strip().strip(':').strip()
+        if not cell or _PLACEHOLDER_CELL.match(cell):
+            continue
+        if not re.search(r'[A-Za-z]{2}', cell):
+            continue
+        core = _core_words(cell)
+        if not core:
+            continue
+        for lab in (spec or {}).get('documentLabels') or []:
+            lc = _core_words(lab)
+            if lc and (core == lc or core in lc or lc in core):
+                return True
+        return False
+    return True
+
+
 def range_pair(window, spec=None):
     """(low, high) from an anchored range, or None.
 
@@ -352,6 +408,12 @@ def range_pair(window, spec=None):
         if want == '%' and not got_pct:
             continue
         if want == '$' and not got_dol:
+            continue
+        # ★ AND THE PAIR MUST BELONG TO THE ROW THE LABEL MATCHED. Opt-in:
+        # the rows that declare it are the ones whose guidance table puts
+        # another row's range inside the same window.
+        if (spec or {}).get('rangeMustBelongToLabel') and not belongs_to_label(
+                window or '', m.start(), spec):
             continue
         break
     else:
