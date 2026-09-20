@@ -75,26 +75,6 @@ KNOWN_RED = {
     'test_hero_resolution.py': (
         'Same SNDK-2026Q4 pin as test_regression.py -- one defect, two files. '
         'Ruling 2026-09-04: +1.0 STAYS, do not re-pin.'),
-    'test_paren_polarity.py': (
-        'TWO defects in one construct. (a) tables._NUMERIC puts the '
-        "parentheses OUTSIDE its capture group, so '(263.0)' reads +263.0 "
-        'where accounting convention means -263.0. (b) It expects the '
-        "currency symbol BEFORE the paren, so '($263.0)' -- the form SNOW "
-        'actually prints -- FAILS TO PARSE and the cell VANISHES from the '
-        'row, silently renumbering every column after it. (b) is what made '
-        "SNOW's Operating income row return the right answer for the wrong "
-        'reason. A dropped cell is not a milder dropped sign. '
-        'Measured report-only over all 8 releases: 902 parenthesised '
-        'printings in the corpus, 2 at a position any of the 77 extractable '
-        'rows resolves to, and ZERO with a dropped sign against the answer '
-        'key -- both of those 2 are detector false positives, one of them '
-        "the FOOTNOTE MARKER '(1)'. Ruling 2026-09-17: do NOT wire a negate "
-        'at n=0; PIN it, because n=0 on today\'s coverage is not n=0 on next '
-        "month's -- MATCH went 7 -> 18 in three days, into the tables where "
-        'parenthesised negatives live. A polarity inversion reads as a '
-        'well-formed number and no magnitude band or tie count can catch it. '
-        'The fix must also decide the footnote case, so it is a change, not '
-        'a one-line edit.'),
 }
 
 def main():

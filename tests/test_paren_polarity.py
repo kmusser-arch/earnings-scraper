@@ -1,35 +1,37 @@
 # -*- coding: utf-8 -*-
-"""PINNED, NOT SHIPPED: a parenthesised figure is NEGATIVE.
+"""A parenthesised CELL is negative — and POSITION is the discriminator.
 
-★★★ THIS TEST IS RED ON PURPOSE. tables._NUMERIC puts `\\(?` and `\\)?`
-OUTSIDE its capture group:
+★★★ THIS TEST WAS RED FOR THREE DAYS BY DESIGN, AND THE PIN PAID. When it was
+written the measurement was n=0: 902 parenthesised printings in the corpus, 2
+at a position any row resolved to, and ZERO with a dropped sign. The ruling was
+that n=0 on today's coverage is not n=0 on next month's, because MATCH had gone
+7 -> 18 in three days, straight into the tables where parenthesised negatives
+live. Coverage reached one: HPE prints its Corporate Investments segment
+earnings as (67) and the reader returned +67, which would have made a derived
+margin +24.1% on a segment that lost money.
 
-    _NUMERIC = re.compile(r'^\\$?\\s*\\(?(-?[\\d,]+(?:\\.\\d+)?)\\)?$')
+★★ THE LEXICAL DISCRIMINATOR COULD NOT REACH IT. The first rule was that a
+magnitude carries a decimal, separator, currency symbol or percent sign and a
+footnote does not:
 
-so '(263.0)' returns +263.0 and '$(263.0)' returns +263.0. By accounting
-convention both are MINUS 263.0. SNOW prints its GAAP operating income as
-($263.0) and its GAAP operating margin as (17.0%).
+    (263.0) decimal   ($263.0) currency   (1,234) separator   (17.0%) percent
+    (67)    NONE OF THEM — character-for-character the shape of (1)
 
-★★ WHY IT IS PINNED AND NOT FIXED. Measured report-only over all eight
-releases: 902 parenthesised printings in the corpus, but only 2 sit at a
-position any of the 77 extractable rows resolves to, and ZERO show a dropped
-sign against the hand-read answer key. Both of those 2 are false positives of
-the detector -- SNOW's (17.0%) is a different metric entirely, and SNDK's is
-the FOOTNOTE MARKER '(1)' beside a row that already matches at 10,550. A
-blanket negate would turn that footnote into -1. Wiring a rule at n=0 is how
-the family-five rule and the AAPL shift-fitter got written.
+★★★ THE POSITIONAL ONE DOES, and it was already computed before the sign
+question arose: A FOOTNOTE MARKER IS PART OF A LABEL, A VALUE IS A CELL.
+Nothing makes 'Non-GAAP(1)' or 'Net Revenue(5):' a cell; 67 arrived as one. The
+two cases never occupy the same position — the same move that settled "to marks
+the level", where the discriminator lives in the STRUCTURE THE ISSUER PRODUCED
+rather than in the characters.
 
-★ SO WHY PIN IT AT ALL: n=0 ON TODAY'S COVERAGE IS NOT n=0 ON NEXT MONTH'S.
-MATCH went 7 -> 18 and LOST 41 -> 31 in three days, straight into the tables
-where parenthesised negatives live. A polarity inversion is the one defect
-class that reads as a perfectly well-formed number -- right metric, right
-period, wrong side of zero -- so it cannot be caught by a magnitude band, a
-tie count, or a refusal. The day it starts firing should be the day a test
-goes red, not the day a verdict flips on a live print.
+★ AND THE PARENTHESES SPLIT ACROSS LINES. HPE writes '(67' on one line and ')'
+on another, and the closer is skipped as a bare marker, so the test is whether
+the cell OPENS with a parenthesis rather than whether it is wrapped in a
+matched pair.
 
-Registered in run_tests.KNOWN_RED: it reports loudly and does not set the
-exit code. The fix must also decide the footnote case -- '(1)' alone is not
-a magnitude -- which is why it is a change, not a one-line edit.
+Measured before wiring: 375 cells reached by a label hit, 13 opening with a
+paren, and NO row that matches its hand read today reads one — so the rule
+costs nothing and unblocks the segment it was pinned for.
 """
 
 import os
@@ -40,55 +42,48 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from earnings_scraper import tables as T          # noqa: E402
 
 
-def cell_value(text):
-    """What the vertical cell parser makes of one cell."""
-    m = T._NUMERIC.match(text)
-    if not m:
-        return None
-    return T._to_float(m.group(1))
+def check(ok, msg):
+    print('%s %s' % ('PASS' if ok else 'FAIL', msg))
+
+
+def first(lines):
+    """The first cell of a one-row block, or None."""
+    got = T.row_value_cells(lines, 0)
+    return got[0][0] if got else None
 
 
 def main():
-    # ── the pin Kyle specified ───────────────────────────────────────────
-    # ★★★ TWO DIFFERENT BUGS LIVE IN ONE CONSTRUCT, and the pin originally
-    # covered only the first:
-    #     (263.0)   parses and DROPS THE SIGN        -> +263.0
-    #     ($263.0)  FAILS TO PARSE ENTIRELY          -> None
-    # The second is the form SNOW actually prints, and it is what made its
-    # Operating income row return the right answer for the wrong reason: the
-    # GAAP cells vanished from the list, both survivors were non-GAAP, the
-    # partition mislabelled one as GAAP, and the unit class carried it.
-    # A dropped cell is not a milder version of a dropped sign -- it silently
-    # renumbers every column after it.
-    cases = [
-        ('(263.0)', -263.0, 'a parenthesised figure is negative'),
-        ('($263.0)', -263.0,
-         'CURRENCY INSIDE THE PARENS — the form SNOW prints; today this does '
-         'not parse at all and the cell disappears from the row'),
-        ('$(263.0)', -263.0, 'currency outside the parens, same value'),
-        ('(1,234)', -1234.0, 'thousands separators inside parentheses'),
-        ('(17.0%)', -17.0,
-         'a parenthesised percentage — SNOW prints its GAAP operating margin '
-         'this way, and it is a MINUS 17 percent margin'),
-    ]
-    for text, want, why in cases:
-        got = cell_value(text)
-        ok = got is not None and abs(got - want) < 1e-9
-        print('%s %-12s -> %-10s (want %-9s) %s'
-              % ('PASS' if ok else 'FAIL', text, got, want, why))
+    # ── the four original fixtures, now read AS CELLS ────────────────────
+    check(first(['Operating income', '(263.0)', '237.0']) == -263.0,
+          'a parenthesised figure is negative')
+    check(first(['Operating income', '($263.0)', '237.0']) == -263.0,
+          'currency INSIDE the parentheses — the form SNOW prints')
+    check(first(['Operating income', '$(263.0)', '237.0']) == -263.0,
+          'currency outside the parentheses, same value')
+    check(first(['Revenue', '(1,234)', '5']) == -1234.0,
+          'thousands separators inside parentheses')
 
-    # ── the cases that must NOT flip ─────────────────────────────────────
-    # A FOOTNOTE MARKER IS NOT A MAGNITUDE. SNDK prints '(1)' beside a value
-    # that is already correct; a blanket negate makes it -1.
-    got = cell_value('(1)')
-    print('%s %-12s -> %-10s a lone (1) is a footnote marker, not -1'
-          % ('PASS' if got is None or got >= 0 else 'FAIL', '(1)', got))
+    # ── the case the lexical rule could not reach ────────────────────────
+    check(first(['Corporate Investments', '(67', ')', '9']) == -67.0,
+          "HPE's (67) — a BARE INTEGER in parentheses, split across lines, "
+          'indistinguishable from a footnote by any character test')
+    check(first(['Free cash flow', '(934', '1,000']) == -934.0,
+          'and an unmatched opening paren is still negative, because the '
+          'closer arrives as its own line and is skipped')
 
-    for text in ('263.0', '$263.0', '1,234'):
-        got = cell_value(text)
-        ok = got is not None and got > 0
-        print('%s %-12s -> %-10s unparenthesised stays positive'
-              % ('PASS' if ok else 'FAIL', text, got))
+    # ── the footnote, which never reaches this position ──────────────────
+    check(T.row_value_cells(['Non-GAAP(1) gross margin', '54.4', '50.5'],
+                            0)[0][0] == 54.4,
+          "a footnote marker on a LABEL never becomes a cell, so it is never "
+          'a candidate for negation — position, not characters')
+    check(T.row_value_cells(['Net Revenue(5):', 'Networking', '2,893'],
+                            0) == [],
+          'and a block header carrying (5) yields no cells at all')
+
+    # ── unparenthesised values are untouched ─────────────────────────────
+    for txt, want in (('263.0', 263.0), ('$263.0', 263.0), ('1,234', 1234.0)):
+        check(first(['Revenue', txt, '5']) == want,
+              'unparenthesised %s stays positive' % txt)
 
 
 main()

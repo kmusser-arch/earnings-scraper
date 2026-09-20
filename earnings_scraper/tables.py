@@ -73,7 +73,11 @@ _LABELS = [
 #: NOTE: the parentheses stay OUTSIDE the capture group -- that is the
 #: pinned polarity defect (tests/test_paren_polarity.py), not an
 #: oversight, and it is not fixed here.
-_NUMERIC = re.compile(r'^\$?\s*\(?(-?[\d,]+(?:\.\d+)?)\)?$')
+#: ★ EITHER ORDER. SNOW prints '($263.0)' with the currency symbol
+#: INSIDE the parentheses; the pattern accepted only '$(263.0)', so that
+#: cell did not parse at all and VANISHED from the row -- silently
+#: renumbering every column after it, which is worse than a dropped sign.
+_NUMERIC = re.compile(r'^\(?\s*\$?\s*\(?\s*(-?[\d,]+(?:\.\d+)?)\s*\)?$')
 _PERCENT_ONLY = re.compile(r'^%$')
 _SKIPPABLE = re.compile(r'^[\s\t$(]*$')
 
@@ -205,6 +209,20 @@ def row_value_cells(lines, label_index, limit=12):
         is_pct = k < len(lines) and bool(_PERCENT_ONLY.match(lines[k]))
         if not is_pct and cell.endswith('%'):
             is_pct = True
+        # ★★★ A PARENTHESISED CELL IS NEGATIVE, AND POSITION IS THE
+        # DISCRIMINATOR. The lexical test -- a magnitude carries a decimal,
+        # separator, currency symbol or percent sign -- cannot reach HPE's
+        # '(67)', which is character-for-character the shape of the footnote
+        # marker '(1)'. But a FOOTNOTE IS PART OF A LABEL and a VALUE IS A
+        # CELL: nothing makes 'Non-GAAP(1)' or 'Net Revenue(5):' a cell,
+        # while 67 arrived here as one. The two never occupy this position.
+        #
+        # ★ AND THE PARENTHESES SPLIT ACROSS LINES. HPE prints '(67' on one
+        # line and ')' on another, and the closer is skipped above as a bare
+        # marker -- so the test is whether the cell OPENS with a paren, not
+        # whether it is wrapped in a matched pair.
+        if cell.lstrip().startswith('(') or cell.lstrip().startswith('$('):
+            val = -abs(val)
         out.append((val, is_pct))
         j += 1
     return out
