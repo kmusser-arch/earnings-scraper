@@ -43,11 +43,41 @@ _NUM = re.compile(
 
 #: ★ THE PREPOSITION CARRIES THE MEANING. 'to' is the level; 'up/from' is the
 #: change. Measured on ORCL: "up $209 billion year-over-year to $664 billion".
-_LEVEL_PREP = re.compile(r'\b(?:to|of|was|were|at|reached|totall?ed|climbed'
-                         r'\s+to|grew\s+to|increased\s+to)\s*$', re.I)
-_DELTA_PREP = re.compile(r'\b(?:up|down|rose|fell|grew|declined|increased|'
-                         r'decreased|from|versus|vs\.?|compared\s+to|'
-                         r'year-over-year|y/y)\s*$', re.I)
+#: ★★★ 'of' IS BOTH, AND THE DISCRIMINATOR IS THE WORD IT ATTACHES TO.
+#:      'guidance of approximately $34.8 billion'   of -> LEVEL
+#:      'an increase of 93 percent'                 of -> DELTA
+#: As a bare token 'of' sat in the LEVEL list, and the level test runs first,
+#: so every delta construction ending in 'of' was classified a level: AVGO's
+#: revenue guide returned 93.0 -- the growth rate -- for a $B row. REORDERING
+#: THE TESTS ONLY INVERTS WHICH CONSTRUCTION LOSES; binding 'of' to its head
+#: noun makes the order stop mattering. Same move as 'to marks the level'.
+#: ★★ THE HEDGE IS THE OTHER HALF. 'approximately' was in NEITHER vocabulary,
+#: so 'guidance of approximately $34.8' ended with the hedge and never reached
+#: its own 'of' -- 34.8 came back role=None and the prose path dropped it.
+#: A level preposition firing on a delta, and a hedge word hiding a level.
+#: ★ AND IT REMOVES 18 SPURIOUS LEVELS NEITHER OF US WAS LOOKING FOR: bare
+#: 'of' made YEARS into level candidates -- 'fourth quarter of fiscal 2027'
+#: and 'Reform Act of 1995' both yielded a level. A head that is not a metric
+#: now yields no role at all.
+#: Measured over 8 releases: 87 of-before-figure constructions, 7 with a
+#: change head; MATCH 33 -> 34, MISMATCH 3 -> 2, nothing lost.
+_LEVEL_HEAD = (r'(?:guidance|revenue|revenues|total|totals|margin|margins|eps|'
+               r'income|earnings|loss|losses|flow|flows|backlog|arr|rpo|'
+               r'bookings|dividend|dividends|range|ranges|rate|rates|price|'
+               r'prices|value|expenses|expenditures|costs?|sales|sale|'
+               r'operations|proceeds|balance|amount|adjustments|accounts|'
+               r'transactions)')
+_DELTA_HEAD = r'(?:increase|increases|decrease|decreases|growth|decline|declines)'
+#: A hedge is transparent: it modifies the figure, it does not re-role it.
+_HEDGE = r'(?:approximately|about|around|roughly|nearly|~)'
+
+_LEVEL_PREP = re.compile(
+    r'\b(?:' + _LEVEL_HEAD + r'\s+of|to|was|were|at|reached|totall?ed|'
+    r'climbed\s+to|grew\s+to|increased\s+to)\s*(?:' + _HEDGE + r'\s*)?$', re.I)
+_DELTA_PREP = re.compile(
+    r'\b(?:' + _DELTA_HEAD + r'\s+of|up|down|rose|fell|grew|declined|'
+    r'increased|decreased|from|versus|vs\.?|compared\s+to|'
+    r'year-over-year|y/y)\s*(?:' + _HEDGE + r'\s*)?$', re.I)
 
 _SCALE = {'billion': 1000.0, 'bn': 1000.0, 'b': 1000.0,
           'million': 1.0, 'mm': 1.0, 'm': 1.0,
