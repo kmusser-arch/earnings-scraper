@@ -74,6 +74,11 @@ _HEDGE = r'(?:approximately|about|around|roughly|nearly|~)'
 _LEVEL_PREP = re.compile(
     r'\b(?:' + _LEVEL_HEAD + r'\s+of|to|was|were|at|reached|totall?ed|'
     r'climbed\s+to|grew\s+to|increased\s+to)\s*(?:' + _HEDGE + r'\s*)?$', re.I)
+#: the issuer's own prior-period markers, shared with period.py so the
+#: two readers cannot drift apart on what a comparison looks like
+_PRIOR_MARK = _period_mod._PRIOR
+_CLAUSE_BREAK = re.compile(r'[.;:]\s')
+
 _DELTA_PREP = re.compile(
     r'\b(?:' + _DELTA_HEAD + r'\s+of|up|down|rose|fell|grew|declined|'
     r'increased|decreased|from|versus|vs\.?|compared\s+to|'
@@ -181,6 +186,26 @@ def candidates(window, spec):
             role = 'level'
         elif _DELTA_PREP.search(back):
             role = 'delta'
+        # ★★★ A PRINTED PRIOR MARKER OUTRANKS A NEARER LEVEL PREPOSITION.
+        # Proximity is a heuristic; a marker the issuer printed is evidence,
+        # and where they disagree the printed signal wins. SNOW writes
+        # 'up from previous guidance of $5,840 million': 'guidance of' sits
+        # nearer the number than 'up from' and won on distance alone, so the
+        # row returned the PREVIOUS guidance.
+        #
+        # ★★ BUT ONLY WITHIN THE SAME CLAUSE. Measured over the corpus, the
+        # unbounded form flips 27 level candidates and 14 of them take their
+        # marker from the PREVIOUS SENTENCE -- HPE's 'up 112.2% from the
+        # prior-year period. Data Center Networking was $382 million' would
+        # make 382, a hand-read MATCH, unfillable. A marker only governs a
+        # number it precedes with no sentence break between them, which is
+        # the positional discipline period.py already states.
+        if role == 'level':
+            _last = None
+            for _pm in _PRIOR_MARK.finditer(back):
+                _last = _pm
+            if _last is not None and not _CLAUSE_BREAK.search(back[_last.end():]):
+                role = 'delta'
         musd = None
         if not is_pct:
             mult = _SCALE.get(unit)
