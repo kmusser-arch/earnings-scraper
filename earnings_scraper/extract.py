@@ -92,33 +92,93 @@ _SCALE = {'billion': 1000.0, 'bn': 1000.0, 'b': 1000.0,
 _ROW_UNIT = {'$B': 0.001, '$M': 1.0, '$K': 1000.0, '$': None, '%': None}
 
 
+def dewrap_mapped(text):
+    """(dewrapped text, segment map) — joins wrapped bullets AND stays locatable.
+
+    ★★★ DEWRAPPED OFFSETS ARE NOT DOCUMENT OFFSETS. Joining lines and
+    stripping indentation shifts every position, and `pos` was being recorded
+    in this shifted space then persisted as the value's LOCATION. AVGO's Q4
+    guide figure sits at 1635 in the document and was recorded at 1541, which
+    is a sentence earlier -- inside the CEO's Q3 remark. Provenance off by a
+    sentence degrades every column that exists to make disagreement visible.
+
+    The map is [(out_start, orig_start, length)] per emitted run; to_original
+    translates back by binary search.
+    """
+    src = text or ''
+    out_parts, segs = [], []
+    buf = []          # [(stripped, orig_start)]
+    pos = 0           # running offset in the ORIGINAL text
+    out_len = 0
+
+    def flush():
+        nonlocal out_len
+        if not buf:
+            return
+        for n, (piece, o_start) in enumerate(buf):
+            if n:
+                out_parts.append(' ')
+                out_len += 1
+            segs.append((out_len, o_start, len(piece)))
+            out_parts.append(piece)
+            out_len += len(piece)
+        buf.clear()
+
+    for raw in src.splitlines(True):
+        line = raw.rstrip('\r\n')
+        nl = len(raw) - len(line)
+        stripped = line.strip()
+        if not stripped:
+            flush()
+            out_parts.append('\n')
+            out_len += 1
+            pos += len(raw)
+            continue
+        lead = len(line) - len(line.lstrip())
+        o_start = pos + lead
+        if stripped.startswith('--') or stripped.startswith('*'):
+            flush()
+            if out_parts and out_parts[-1] != '\n':
+                out_parts.append('\n')
+                out_len += 1
+        buf.append((stripped, o_start))
+        pos += len(raw)
+        del nl
+    flush()
+    return ''.join(out_parts), segs
+
+
+def to_original(segs, pos):
+    """A dewrapped offset back to its position in the source document."""
+    if not segs or not isinstance(pos, int):
+        return pos
+    lo, hi = 0, len(segs) - 1
+    best = segs[0]
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        if segs[mid][0] <= pos:
+            best = segs[mid]
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    out_start, orig_start, length = best
+    delta = pos - out_start
+    if delta > length:
+        delta = length
+    return orig_start + delta
+
+
 def dewrap(text):
-    """Join a hard-wrapped bullet into one line, preserving offsets loosely.
+    """Join a hard-wrapped bullet into one line.
 
     ★ A bullet that wraps is still one sentence. ORCL's RPO label and its
     number are on different lines, and every sentence-scoped matcher in this
     package was blind to that.
+
+    Offsets in the result are NOT document offsets -- use dewrap_mapped and
+    to_original where the position is going to be recorded.
     """
-    out, buf = [], []
-    for raw in (text or '').splitlines():
-        line = raw.rstrip()
-        if not line.strip():
-            if buf:
-                out.append(' '.join(buf))
-                buf = []
-            out.append('')
-            continue
-        stripped = line.strip()
-        # a new bullet or a short label line starts a new logical line
-        if stripped.startswith('--') or stripped.startswith('*'):
-            if buf:
-                out.append(' '.join(buf))
-            buf = [stripped]
-        else:
-            buf.append(stripped)
-    if buf:
-        out.append(' '.join(buf))
-    return '\n'.join(out)
+    return dewrap_mapped(text)[0]
 
 
 #: ★ THE WINDOW STOPS AT ITS OWN SENTENCE. A 260-char window past
@@ -910,6 +970,28 @@ def guidance_contamination(text, cand, spec, quarter=None):
     return None
 
 
+
+def _range_offset(window, low, high):
+    """Where the range's LOW endpoint is printed inside `window`, or None.
+
+    ★ A RANGE ROW RECORDED ITS POSITION AT THE LABEL. On AVGO's Q4 guide the
+    figure sits a sentence after the label, inside a CEO quote, so anything
+    reading the governing clause at that position read the wrong sentence.
+    The value's location must be the value's location.
+    """
+    for val in (low, high):
+        if val is None:
+            continue
+        for txt in ('%g' % val, '%.1f' % val, '%.2f' % val,
+                    '{:,.0f}'.format(val) if abs(val) >= 1000 else None):
+            if not txt:
+                continue
+            j = (window or '').find(txt)
+            if j >= 0:
+                return j
+    return None
+
+
 def value_for(text, row, window=260, record=None):
     """The row's value, taking whereKind as a PREFERENCE ORDER.
 
@@ -962,8 +1044,18 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
             'NEEDS_REMAP' else 'no extraction spec on this row'))
 
     kinds = registry.where_kind(spec)
-    src = dewrap(text) if ('WRAPPED' in kinds or 'PROSE' in kinds
-                           or 'HEADLINE' in kinds) else text
+    if ('WRAPPED' in kinds or 'PROSE' in kinds or 'HEADLINE' in kinds):
+        src, _segs = dewrap_mapped(text)
+    else:
+        src, _segs = text, None
+
+    def _to_doc(p):
+        # ★ POSITIONS THAT LEAVE THIS FUNCTION ARE PROVENANCE. Internally the
+        # matchers work in `src`; only the recorded location has to point
+        # into the document the caller holds. AVGO's Q4 figure is at 1635 in
+        # the document and 1533 in dewrapped space, and 1533 reads as the
+        # CEO's PREVIOUS sentence.
+        return to_original(_segs, p) if (_segs and isinstance(p, int)) else p
 
     # ★★★ A DERIVED ROW IS NOT IN THE DOCUMENT. HPE prints a Net Revenue
     # block and an Earnings block and NO margin row, so reading cannot
@@ -1112,16 +1204,20 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
             if pair is None:
                 continue
             lo, hi = pair
+            # ★ THE VALUE'S LOCATION IS THE VALUE'S LOCATION, not the label's.
+            _roff = _range_offset(win, lo, hi)
+            _rpos = (win_base + _roff) if _roff is not None else end
             for v in (lo, hi):
                 seen.append(dict(value=v, value_musd=None, pct=False,
-                                 unit='', role='level', pos=end, gpos=end,
-                                 lpos=start, raw=str(v), label=lab))
+                                 unit='', role='level', pos=_rpos,
+                                 gpos=_rpos, lpos=start, raw=str(v),
+                                 label=lab))
             # ★ THE MIDPOINT IS WHAT THE LIBRARY STORES. Both ends travel
             # with it: a band is information the midpoint discards, and the
             # clearance against a bogey depends which end is asked about.
             mid = round((lo + hi) / 2.0, 6)
             picked.append(dict(value=mid, value_musd=None, pct=False,
-                               unit='', role='level', pos=end, gpos=end,
+                               unit='', role='level', pos=_rpos, gpos=_rpos,
                                lpos=start, raw='%s-%s' % (lo, hi), label=lab,
                                currency=((spec or {}).get('currencyBasis')
                                          or currency_of(_cspans, 0)),
@@ -1228,7 +1324,7 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
                         candidateCount=len(got_s.get('cells') or []) or 1,
                         seenCount=max(len(got_s.get('cells') or []), len(seen)),
                         currencyTaken=c.get('currency') or REPORTED,
-                        pos=lp, lpos=lp,
+                        pos=_to_doc(lp), lpos=_to_doc(lp),
                         candidates=[x['raw'] for x in seen], why=None,
                         rejected=rejected)
 
@@ -1271,7 +1367,7 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
                             unitUnverified=(_d is None
                                             and declared in _MUSD),
                             # a table cell has no magnitude word of its own
-                            pos=lp, lpos=lp,
+                            pos=_to_doc(lp), lpos=_to_doc(lp),
                             unit=doc_unit(spec), specState=state,
                             label=c.get('label'), role='level',
                             columnIndex=col['columnIndex'],
@@ -1307,7 +1403,8 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
                                 and declared in _MUSD),
                 sigDigits=best.get('sigDigits'),
                 coveredPrintings=best.get('coveredPrintings'),
-                pos=best.get('gpos'), lpos=best.get('lpos'),
+                pos=_to_doc(best.get('gpos')),
+                lpos=_to_doc(best.get('lpos')),
                 currencyTaken=best.get('currency') or REPORTED,
                 # ★ HOW MANY DISTINCT VALUES DID A FILTER HAVE TO CHOOSE
                 # BETWEEN? 1 means none did, and the answer is unverified by
