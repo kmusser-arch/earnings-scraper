@@ -992,6 +992,50 @@ def _range_offset(window, low, high):
     return None
 
 
+
+#: a LITERAL period phrase -- the issuer named the period in this clause.
+#: Anything outside this set means the class came from position, section,
+#: proximity or a default, and nobody printed it.
+_PERIOD_PHRASE = re.compile(
+    r'\b(?:first|second|third|fourth)\s+quarter\b'
+    r'|\bfiscal\s+(?:year\s+)?\d{2,4}\b'
+    r'|\b(?:three|six|nine|twelve)\s+months\s+ended\b'
+    r'|\bfull[-\s]year\b|\bQ[1-4]\b|\bFY\s?\d{2,4}\b'
+    r'|\byear[-\s]to[-\s]date\b', re.I)
+
+
+def period_basis(fragment):
+    """('EXPLICIT', phrase) when the issuer named the period, else INFERRED."""
+    m = _PERIOD_PHRASE.search(fragment or '')
+    return ('EXPLICIT', m.group(0)) if m else ('INFERRED', None)
+
+
+def period_conflict(text, pos, spec, quarter=None):
+    """Why this row may not take a value at `pos`, or None.
+
+    ★★★ EXPLICIT MAY EXCLUDE; INFERRED MAY ONLY RANK. A classification the
+    issuer's own words support is evidence and can refuse a value; one
+    derived from position or proximity is advisory, because the reader of
+    the evidence is exactly what was wrong the last three times this was
+    measured.
+    """
+    want = (spec or {}).get('period')
+    if not want:
+        return None
+    want = {'FY_GUIDE': _period_mod.GUIDE_FY}.get(want, want)
+    frag = _governing_sentence(text, pos)
+    if not frag:
+        return None
+    klass = _period_mod.classify_candidate(frag, quarter)
+    if klass in (_period_mod.UNRESOLVED, want):
+        return None
+    basis, phrase = period_basis(frag)
+    if basis != 'EXPLICIT':
+        return None                 # advisory only: it may rank, not exclude
+    return ('the row is %s and the issuer marked this clause %s (%r): %r'
+            % (want, klass, phrase, ' '.join(frag.split())[:80]))
+
+
 def value_for(text, row, window=260, record=None):
     """The row's value, taking whereKind as a PREFERENCE ORDER.
 
@@ -1383,8 +1427,8 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
     # ★ THE DECLARED PERIOD IS CONSULTED, NOT MERELY AVAILABLE AS A
     # TIE-BREAKER. A single candidate formed no tie, so nothing ever asked
     # whether SNOW's 36% came from the CFO's FULL-YEAR guidance sentence.
-    _contam = guidance_contamination(src, best, spec,
-                                     (record or {}).get('fiscalQuarter'))
+    _contam = period_conflict(src, best.get('gpos'), spec,
+                              (record or {}).get('fiscalQuarter'))
     if _contam:
         return dict(value=None, specState=state,
                     candidates=[c['raw'] for c in seen],
