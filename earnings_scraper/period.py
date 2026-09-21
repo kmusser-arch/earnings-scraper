@@ -62,6 +62,17 @@ _FY_SCOPE = re.compile(
     r'|\bfor\s+(?:the\s+)?(?:full|entire)\b|\bannual\b'
     r'|\blong[-\s]term\b|\bmulti[-\s]year\b', re.I)
 
+#: a NAMED QUARTER. Distinct from the fiscal-year LABEL a quarter
+#: carries: 'Q2 FY 2027' names a quarter, 'FY 2027' alone names a year.
+_QUARTER_SCOPE = re.compile(
+    r'\bQ[1-4]\b|\b(?:first|second|third|fourth)\s+quarter\b'
+    r'|\b(?:three|3)\s+months\s+ended\b', re.I)
+
+#: a claim about the WHOLE year, as opposed to the year's label
+_WHOLE_YEAR = re.compile(
+    r'\bfull[-\s]year\b|\bfull\s+fiscal\b'
+    r'|\bfor\s+(?:the\s+)?(?:full|entire)\b|\bannual\b', re.I)
+
 #: an explicit prior-period comparison -- never fills, comparison only
 _PRIOR = re.compile(
     r'\bcompared\s+(?:to|with)\b|\bup\s+from\b|\bdown\s+from\b'
@@ -131,8 +142,21 @@ def classify_candidate(fragment, quarter=None):
                 return PRIOR_PERIOD
 
     if forward:
-        # ★ MOST SPECIFIC WINS. "for the full year we expect" carries both
-        # markers; the full-year scope is the more specific claim.
+        # ★★★ A YEAR LABEL IS NOT A YEAR SCOPE. _FY_SCOPE matches both
+        # 'full year' -- a claim about the whole year -- and 'FY 2027' /
+        # 'fiscal year', the label EVERY quarter of that year also carries.
+        # So 'Guidance for Q2 FY 2027' read as full-year guidance. ORCL
+        # prints the contrast in one document, one word apart:
+        #
+        #     'Guidance for Q2 FY 2027'      -> the QUARTER
+        #     'Guidance for Full FY 2027'    -> the YEAR
+        #
+        # A named quarter therefore outranks a bare year label, and only an
+        # explicit whole-year phrase outranks the quarter. Measured over 172
+        # forward sentences: 13 flip to GUIDE_NEXT_Q, every one a real
+        # quarter guide; the 22 keeping GUIDE_FY all carry full/annual/entire.
+        if _QUARTER_SCOPE.search(f) and not _WHOLE_YEAR.search(f):
+            return GUIDE_NEXT_Q
         return GUIDE_FY if fy else GUIDE_NEXT_Q
 
     if _REPORTED.search(f):
