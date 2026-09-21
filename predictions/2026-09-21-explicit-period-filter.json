@@ -1,10 +1,8 @@
 {
   "★whyThisFileExists": "Pre-registered it is a weak test. Stated after the run it is a description. The difference costs one commit, and this is that commit. Nothing below was written after seeing a result.",
-
   "recordedAt": "2026-09-21",
   "recordedBefore": "wiring the EXPLICIT/INFERRED period filter",
   "rule": "The period filter may EXCLUDE a candidate only when the classification is EXPLICIT — the sentence contains a literal period phrase the issuer printed. When INFERRED (class came from position, section, proximity or a default) it may RANK but never EXCLUDE.",
-
   "inCorpusTest": {
     "prediction": "zero correct values rejected across the 14 EXPLICIT classifications",
     "failureThreshold": ">=1 correct value rejected -> the rule does not ship",
@@ -12,39 +10,44 @@
     "independence": "NONE. In-corpus, and every row has been inspected during development.",
     "★statusIfItPasses": "CONSISTENT WITH, NOT CONFIRMING",
     "★whyNotConfirming": "The original falsification test was CONSUMED, not passed: its two counterexamples were REPAIRED by the classifier fix rather than shown never to have been counterexamples. The fix was independently right over 172 sentences, but the test no longer provides the independent check it was written for, and its replacement draws on the same population. There is no holdout in this repo — 89 records, 8 spec'd, and the other 81 carry hand-read actuals with NO CAPTURES, so they cannot be run through the extractor at all.",
-    "★theRealTest": "the first live print whose spec predates the document"
+    "★theRealTest": "the first live print whose spec predates the document",
+    "result": {
+      "ranAt": "2026-09-21",
+      "correctValuesRejected": 0,
+      "wrongValuesRemoved": 2,
+      "explicitClassifications": 13,
+      "verdict": "SHIPS",
+      "status": "CONSISTENT WITH, NOT CONFIRMING",
+      "removed": [
+        "AVGO Q3 AI Semi Revenue 21.7 -> refused (Q4 guide in a Q3 row)",
+        "SNOW Product Revenue Growth 36 -> refused (FY sentence in a REPORTED row)"
+      ]
+    }
   },
-
   "liveTest": {
     "recordedAt": "2026-09-21",
     "checkedOn": "the first Q3-season release whose spec predates the document (season opens mid-October 2026)",
     "independence": "REAL. Nothing about the document is known at the time of writing.",
-
     "a_rejectionCountOnExplicit": {
       "kyle": 0,
       "agent": 0,
       "agree": true,
       "★agentCaveat": "DISAGREEMENT ON POWER, NOT ON DIRECTION. I expect this test to be UNDERPOWERED on a single print. In-corpus, 14 of 35 filled rows classified EXPLICIT; on a fresh release I expect FEWER rows to resolve at all, because a spec written before the document will miss labels the issuer phrases unexpectedly. If the print yields fewer than 8 EXPLICIT classifications, a result of 0 rejections is weak evidence and should be recorded as such rather than treated as clearing the rule. Predicted EXPLICIT count: 4 to 10."
     },
-
     "b_matchMismatchLost": {
       "kyle": "not stated",
       "agent": "MATERIALLY WORSE THAN IN-CORPUS. The standing sweep reads MATCH 30 / MISMATCH 1 / LOST 29, i.e. 30 of 31 resolved rows agree. I predict the first live print does NOT reproduce that ratio. Concretely: MISMATCH >= 2, and agreement among resolved rows below 85%. MATCH 30 measures FIT TO EIGHT DOCUMENTS; a ratio that survives onto a ninth would be the first evidence of skill rather than fit.",
       "★ifIAmWrong": "If the first print reproduces ~97% agreement, that is strong evidence the readers generalise and my pessimism was the error. Recorded so it can be counted against me."
     },
-
     "c_fetchOutcomeAndElapsedMs": {
       "kyle": "not stated",
       "agent": "NO PREDICTION — I have no basis. The BUS permalink fetch path is not something I have measured, read the implementation of, or seen succeed or fail in this session. Guessing a number here would be the plausibility-over-evidence failure this file exists to prevent. I will measure it on the print and record the first value as a baseline, not as a hit or miss."
     },
-
     "d_subHeadlineRowsSupplied": {
       "kyle": "not stated",
       "agent": "NO PREDICTION — same reason. I have not examined the sub-headline block's structure on any release in this corpus."
     },
-
     "★standingCaveat": "Every number this build has produced is in-sample. What the system has never faced: a release it was not tuned against."
   },
-
   "★howToScoreThis": "Open this file BEFORE looking at the result. A prediction read after the outcome is not a prediction."
 }
