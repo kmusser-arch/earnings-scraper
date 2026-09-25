@@ -247,7 +247,55 @@ def provenance(text, pos, spec, quarter=None, axes=None, record=None):
     return (not fails), fails, states
 
 
-def judge(text, pre_row, slot, spec, quarter=None, got=None, record=None):
+#: how good a verdict is. A derived row can be no better than its worst
+#: operand, so these are ordered and min() over them is the cap.
+_RANK = {'MATCH': 5, 'NO_ANSWER_KEY': 4, 'CARD_DEFECT': 3, 'UNSPECD': 2,
+         'REFUSED': 2, 'MISMATCH': 1, 'LOST': 1, 'FALSE_MATCH': 0,
+         'UNCLASSIFIED': 2, 'EXCLUDED': 5}
+
+
+def operand_cap(text, spec, record, quarter, depth=0):
+    """(verdict, why) of the WORST operand of a derived row, or (None, None).
+
+    ★★★ A DERIVED ROW'S VERDICT IS CAPPED BY ITS WEAKEST OPERAND. HPE
+    published 4.485 as a MATCH, derived from the FY26 EPS guide range
+    $3.75-$3.85 -- while HPE[3], WHICH IS THAT GUIDE, REFUSED. Same figure,
+    same document, same card: published via derivation, refused via direct
+    read, and nothing on the card could see the disagreement.
+
+    ★★ AND THIS LANDS WITH DERIVATION COVERAGE, NOT AFTER IT. Every derived
+    row is an all-vacuous MATCH -- fence, basis and period have nothing
+    structural to read on a computed number -- so growing derivation grows
+    the UN-AUDITABLE set. A capability that increases the count of rows
+    nothing can check is a liability on its own terms.
+    """
+    from . import derived as _derived
+    sources = (spec or {}).get('sourceRows') or []
+    rid = (record or {}).get('id')
+    rows = ((record or {}).get('preEarnings') or {}).get('keyKPIs') or []
+    acts = ((record or {}).get('actuals') or {}).get('keyKPIs') or []
+    worst, worst_why = None, None
+    for src in sources:
+        m = _derived._CARD_REF.match((src or '').strip())
+        if not m or m.group(1) != rid:
+            continue
+        i = int(m.group(2))
+        if i >= len(rows) or depth >= _derived.MAX_DEPTH:
+            continue
+        sub_spec = registry.spec_for(rows[i])
+        sub_slot = acts[i] if i < len(acts) and isinstance(acts[i], dict)             else {}
+        sub = judge(text, rows[i], sub_slot, sub_spec, quarter,
+                    record=record, _depth=depth + 1)
+        if _RANK.get(sub['verdict'], 0) < _RANK.get(worst or 'MATCH', 5):
+            worst = sub['verdict']
+            worst_why = ('operand [%d] %r is %s: %s'
+                         % (i, (rows[i].get('name') or '')[:30],
+                            sub['verdict'], (sub.get('reason') or '')[:70]))
+    return worst, worst_why
+
+
+def judge(text, pre_row, slot, spec, quarter=None, got=None, record=None,
+          _depth=0):
     """The verdict for one row, with its provenance reasons."""
     stored = (slot or {}).get('actual')
     _st = registry.status_of(spec)
@@ -278,8 +326,14 @@ def judge(text, pre_row, slot, spec, quarter=None, got=None, record=None):
                             'the closed list (%s): %r'
                             % (_st, '/'.join(registry.EXCLUSION_CLASSES),
                                str((spec or {}).get('why') or '')[:90])))
+    # ★ THE CALLER'S RECORD, NOT A STUB. This rebuilt {'fiscalQuarter': q}
+    # and threw the real record away, so a derived row re-judged here could
+    # not resolve a sourceRow written as an index into the card -- and
+    # refused with a unit message that described nothing. Discard pattern
+    # again: the fact was in the call and was dropped one frame down.
     got = got if got is not None else (
-        extract.value_for(text, pre_row, record={'fiscalQuarter': quarter})
+        extract.value_for(text, pre_row,
+                          record=(record or {'fiscalQuarter': quarter}))
         or {})
     value = parallel.in_stored_unit(got, spec)
     pos = got.get('pos')
@@ -300,6 +354,18 @@ def judge(text, pre_row, slot, spec, quarter=None, got=None, record=None):
     if not parallel.agrees(stored, value):
         return dict(verdict='MISMATCH', reason='digits disagree',
                     value=value, pos=pos)
+
+    # ★ THE FOURTH CHECK. Structure cannot vouch for a computed number, so a
+    # derived row is vouched for by its OPERANDS or not at all.
+    if (spec or {}).get('derived') and (spec or {}).get('sourceRows')             and _depth < 3:
+        cap, cap_why = operand_cap(text, spec, record, quarter, _depth)
+        if cap is not None and _RANK.get(cap, 0) < _RANK['MATCH']:
+            return dict(verdict=cap, value=value, pos=pos,
+                        reason='DERIVED ROW CAPPED BY ITS WEAKEST OPERAND — '
+                               + (cap_why or ''),
+                        checks={'fence': NA, 'basis': NA, 'period': NA,
+                                'operand': cap, 'evidenceCount': 1,
+                                'notes': [cap_why or '']})
 
     ok, fails, states = provenance(text, pos, spec, quarter,
                                    got.get('cellAxes'), record)

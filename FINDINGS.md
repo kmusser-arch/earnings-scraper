@@ -426,3 +426,80 @@ Exactly the two endpoints the card reached by hand.
 product is `3.75 x 0.16 = 0.60`. The operation performed is
 `base x (1 + growth)`. Rather than silently reinterpret an authored word, it
 is named `GROWTH_COMPOUND` and the discrepancy is recorded in `derivedFrom`.
+
+---
+
+## ★★★ 21. A DERIVED ROW'S VERDICT IS CAPPED BY ITS WEAKEST OPERAND
+
+```
+HPE[0]  published 4.485 as MATCH, derived from the FY26 EPS guide $3.75-$3.85
+HPE[3]  IS THAT GUIDE — and it REFUSED
+```
+
+**Same figure, same document, same card: published via derivation, refused
+via direct read**, and nothing on the card could see the disagreement.
+`oneConditionTwoNames` **n=16**.
+
+```
+derived.verdict = min(operand verdicts)
+an operand that is REFUSED / FALSE_MATCH / UNSPEC'D cannot yield MATCH
+```
+
+**It ships with derivation coverage, not after it.** Every derived row is an
+all-vacuous MATCH — fence, basis and period have nothing structural to read on
+a computed number — so **growing derivation grows the un-auditable set.** A
+capability that increases the count of rows nothing can check is a liability
+on its own terms.
+
+The cap governs the *verdict*, not the arithmetic: 4.485 and both operands
+stay on the card. HPE[0] flipped MATCH → REFUSED and the all-vacuous set fell
+6 → 5.
+
+★ And it exposes something about the derivation itself: HPE[0]'s base operand
+resolves from **the endpoints written in the `sourceRow` string**, not from
+re-reading row [3]. It trusts the author's prose over the extractor. The cap
+is what makes that visible.
+
+---
+
+## ★★★ 22. THE EXPECTED COLUMN RECORDS WHAT WAS EXPECTED, NEVER WHAT IS NOW KNOWN
+
+HPE raised the FY27 framework **inside** this release, 12–16% → 16–20%.
+Street $3.93 and bogey $4.00 were computed off 12–16% **because that is what
+the street modelled before the raise. THE RAISE IS THE SURPRISE.** Recompute
+street to $4.35–$4.62 and the +14.5% beat vanishes.
+
+> **An expectation corrected after the fact is not more accurate, it is
+> destroyed.** Surprise is the only quantity in this model that trades, and it
+> is the difference between two timestamps.
+
+`street` / `bogey` on any scored record are **immutable**, short of a sourcing
+error that predates the print. A stale-looking note is prose to fix, never a
+number to recompute.
+
+---
+
+## ★★★ 23. A REASON THAT MISDESCRIBED ITS FAILURE ONCE IS NOT EVIDENCE ABOUT ITS NEIGHBOURS
+
+HPE[0] refused with *"no candidate matched the declared unit"* **and the unit
+was never the problem** — the PRODUCT path did not exist, so a compound row
+had nowhere to go and the refusal named the wrong failure.
+
+Three rows in the same document emit messages under that heading. Traced, they
+are **three different failures**:
+
+| row | stated | actual |
+|---|---|---|
+| HPE[3] | *2 candidates tie on unit and role* | the two candidates are **$1.20–$1.30 (the Q4 guide)** and **$3.75–$3.85 (the FY guide)**. The spec declares `period: GUIDE_FY` — **the declared axis could separate them, and the tie-refusal fires before it is consulted** |
+| HPE[8] | *no candidate matched the declared unit '$'* | the label matches the **"Use of non-GAAP financial measures" boilerplate**, which names the metric and prints no number. A definition, not a data row |
+| HPE[12] | *no candidate matched the declared unit '$B'* | the guide is a **floor** — *"at least $3.75 billion"* — while the label also hits the Q3 **actual** FCF line. Not yet fully traced |
+
+**Spec against the traced failure, never against the stated reason.**
+
+---
+
+## ★★★ 24. NO VALUE AND NO REASON IS THE ONE STATE SIX VERDICTS EXIST TO ABOLISH
+
+A blank with no reason is indistinguishable from a row nobody tried, a
+swallowed crash, and a deliberate refusal. **The writer now raises rather than
+writing it**, and the guard is driven red in the suite.

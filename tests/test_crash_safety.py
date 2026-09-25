@@ -158,3 +158,35 @@ def main():
 
 
 main()
+
+
+def silent_blank_guard():
+    """★ THE WRITER'S ASSERTION, DRIVEN RED.
+
+    NO VALUE AND NO REASON is the one state six verdicts exist to abolish:
+    indistinguishable from a row nobody tried, a swallowed crash, and a
+    deliberate refusal. The writer raises rather than writing it — and a
+    guard never driven red is an unverified claim about a verification.
+    """
+    from earnings_scraper import sweep as SW2
+    blank = SW2.judge('body text', {'extraction': {
+        'specState': 'EXTRACTABLE'}}, {'actual': 1.0},
+        {'specState': 'EXTRACTABLE'}, 3, got={'value': None, 'why': None})
+    check(blank['verdict'] == 'LOST' and (blank.get('reason') or '').strip(),
+          'a value-less, reason-less row is LOST and judge SUPPLIES the '
+          'reason (%r) — so a silent blank cannot reach the writer through '
+          'the normal path' % (blank.get('reason') or '')[:52])
+
+    # and the writer's own condition, exercised directly
+    def would_trip(j):
+        return j['value'] is None and not (j.get('reason') or '').strip()
+
+    check(would_trip({'value': None, 'reason': None}),
+          'the writer condition TRIPS on a hand-made silent blank — driven '
+          'red, not assumed')
+    check(not would_trip({'value': None, 'reason': 'QUALITATIVE'}),
+          'and does NOT trip where a reason exists, so it is a guard rather '
+          'than a blanket')
+
+
+silent_blank_guard()

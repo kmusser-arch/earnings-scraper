@@ -66,6 +66,7 @@ def main():
     rows_seen = 0
     detail = []
     vacuous = []
+    silent = []
 
     for rid, path, kind in CASES:
         if not os.path.exists(path):
@@ -105,6 +106,14 @@ def main():
             detail.append((rid, i, (prow.get('name') or '')[:32],
                            slot.get('actual'), j['value'], j['verdict'],
                            j.get('reason') or ''))
+            # ★★★ NO VALUE AND NO REASON IS THE ONE STATE THE SIX-VERDICT
+            # SCHEME EXISTS TO ABOLISH. A blank with no reason is
+            # indistinguishable from a row nobody tried, from a crash that
+            # was swallowed, and from a deliberate refusal. It must be an
+            # ASSERTION FAILURE at the writer, never a quiet blank on a card.
+            if j['value'] is None and not (j.get('reason') or '').strip():
+                silent.append((rid, i, (prow.get('name') or '')[:40],
+                               j['verdict']))
             if args.write:
                 slot['scraperRead'] = j['value']
                 slot['sweepVerdict'] = j['verdict']
@@ -158,6 +167,19 @@ def main():
                   % (rid, i, nm, stored, val, why[:40]))
         if len(rows) > 12:
             print('   ... %d more' % (len(rows) - 12))
+
+    if silent:
+        print('')
+        print('=' * 100)
+        print('ASSERTION FAILURE — %d row(s) reached the writer with NO VALUE '
+              'AND NO REASON' % len(silent))
+        print('   That is the one state six verdicts exist to abolish: '
+              'indistinguishable from')
+        print('   a row nobody tried, a swallowed crash, and a deliberate '
+              'refusal.')
+        for rid, i, nm, v in silent:
+            print('   %-13s[%-2d] %-40s verdict=%s' % (rid, i, nm, v))
+        raise SystemExit('refusing to write a silent blank')
 
     if args.write:
         io.open(LIB, 'w', encoding='utf-8', newline='').write(
