@@ -1179,12 +1179,31 @@ def value_for(text, row, window=260, record=None):
             type(exc).__name__, str(exc)[:120])
         READER_FAILURES.append(note)
         return dict(value=None, specState=registry.status_of(
-            registry.spec_for(row)), readerCrashed=True, why=note)
+            registry.spec_for(row)), readerCrashed=True,
+            reasonCode='READER_CRASHED', why=note)
+    # ★★★ A SILENT BAND COMPRESSION IS A SILENT BRANCH REASSIGNMENT. The
+    # scenario ladder grades on numeric triggers AT BAND ENDPOINTS, so a band
+    # collapsed to its midpoint moves those endpoints INWARD: a print that
+    # should match branch A matches branch B, and the ladder still reports a
+    # clean match. A derived or guided band is published with BOTH ENDPOINTS
+    # or the row is REFUSED. Never a midpoint alone.
+    if got is not None and got.get('value') is not None:
+        _sp = registry.spec_for(row) or {}
+        _rf = (_sp.get('rangeForm') or '').upper()
+        if _rf and _rf != 'POINT' and (got.get('rangeLow') is None
+                                       or got.get('rangeHigh') is None):
+            return dict(value=None, specState=_sp.get('specState'),
+                        reasonCode='BAND_COLLAPSED',
+                        why=('rangeForm %s declares a BAND and only a '
+                             'midpoint survived (%s) — a band collapsed to '
+                             'a point has lost what the ladder grades on, '
+                             'and the collapse is invisible downstream'
+                             % (_rf, got.get('value'))))
     if got is not None and got.get('value') is None \
             and len(READER_FAILURES) > mark:
         # a reader crashed and the row found nothing: say WHICH, rather than
         # letting a crash wear the clothes of an ordinary miss
-        got = dict(got, readerCrashed=True,
+        got = dict(got, readerCrashed=True, reasonCode='READER_CRASHED',
                    why=('%s | %s' % (READER_FAILURES[mark],
                                      got.get('why') or 'no value'))[:400])
     return got
@@ -1218,6 +1237,7 @@ def _value_for(text, row, window=260, record=None):
     got = _value_for_pass(text, row, window, record)
     if got is None:
         got = dict(value=None, candidates=[],
+                   reasonCode='NO_LABEL_AFTER_FILTERS',
                    why='no label hit survived the row\'s filters')
     if got.get('value') is not None:
         got['extractionKind'] = 'FALLBACK' if prefers_table else (
@@ -1236,7 +1256,8 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
     spec = registry.spec_for(row)
     state = registry.status_of(spec)
     if state != 'EXTRACTABLE':
-        return dict(value=None, specState=state, why=(
+        return dict(value=None, specState=state, reasonCode='SPEC_STATE',
+                    why=(
             'NOT GRADED BY DESIGN' if state == 'NOT_EXTRACTABLE' else
             'issuer changed disclosure — spec is stale' if state ==
             'NEEDS_REMAP' else 'no extraction spec on this row'))
@@ -1285,7 +1306,8 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
         # LOSES CAPABILITY, NEVER CONSTRAINTS.
         if _d.get('why'):
             return dict(value=None, specState=state, candidates=[],
-                        role='derived', why=_d['why'])
+                        role='derived', reasonCode='DERIVED_OPERAND',
+                        why=_d['why'])
 
     hits = registry.label_hits(src, spec)
     if hit_pred is not None:
@@ -1294,6 +1316,7 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
             return None          # this PASS has nothing; the caller falls on
     if not hits:
         return dict(value=None, specState=state, candidates=[],
+                    reasonCode='NO_LABEL',
                     why='no documentLabel found in this text')
 
     # ★★ PERIOD AS A FILTER. The section the candidate sits in IS its period:
@@ -1461,6 +1484,7 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
         # the MESSAGE named a field nobody writes.
         if cur_refusals:
             return dict(value=None, specState=state, candidates=[],
+                        reasonCode='CURRENCY',
                         why='CURRENCY: %s' % cur_refusals[0],
                         rejected=rejected)
         why = 'label found, no candidate matched the declared unit %r' % (
@@ -1470,13 +1494,15 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
         if rejected:
             why += ' (%d candidate(s) disqualified: %s)' % (
                 len(rejected), ', '.join(sorted({r[1] for r in rejected})))
-        return dict(value=None, specState=state, candidates=[], why=why,
+        return dict(value=None, specState=state, candidates=[],
+                    reasonCode='UNIT_MISMATCH', why=why,
                     rejected=rejected)
 
     pool = picked or [c for c in seen if c['role'] != 'delta']
     if not pool:
         return dict(value=None, specState=state,
                     candidates=[c['raw'] for c in seen],
+                    reasonCode='ALL_DELTA',
                     why='every candidate reads as a DELTA, none as a level')
 
     # THE TABLE'S OWN HEADER SCALES THE CELL. documentUnit is the check.
@@ -1532,6 +1558,7 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
             if len(READER_FAILURES) > _mark:
                 return dict(value=None, specState=state, readerCrashed=True,
                             candidates=[x['raw'] for x in seen],
+                            reasonCode='READER_CRASHED',
                             why=('%s — refusing rather than falling through '
                                  'to the basis-blind prose pool on a row '
                                  'that declares %s'
@@ -1562,6 +1589,7 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
                 return dict(value=None, specState=state,
                             basisEvidence=_sev, rowPriority=_sprio,
                             candidates=[x['raw'] for x in seen],
+                            reasonCode='BASIS',
                             why=('BASIS: the stacked block resolves %s for '
                                  'this cell and the row declares %s'
                                  % (_sax.get('basis') or 'NO BASIS GROUP',
@@ -1655,6 +1683,7 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
                     return dict(value=None, specState=state,
                                 basisEvidence=_basis_ev,
                                 candidates=[x['raw'] for x in seen],
+                                reasonCode='BASIS_CONTRADICTS',
                                 why=('BASIS: the selected column is %s and '
                                      'the row declares %s'
                                      % (_axes_got.get('basis'),
@@ -1669,6 +1698,7 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
                     return dict(value=None, specState=state,
                                 basisEvidence=_basis_ev, rowPriority=_prio,
                                 candidates=[x['raw'] for x in seen],
+                                reasonCode='BASIS_ABSENT',
                                 why=('BASIS: this row declares %s and the '
                                      'column it was read from carries no '
                                      'basis word — refusing on a priority-1 '
@@ -1713,6 +1743,7 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
     if len(vals) > 1:
         return dict(value=None, specState=state,
                     candidates=[c['raw'] for c in pool],
+                    reasonCode='CANDIDATE_TIE',
                     why='%d candidates tie on unit and role — refusing: %s'
                         % (len(vals), ', '.join(c['raw'] for c in pool[:6])))
     best = pool[0]
@@ -1724,7 +1755,8 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
     if _contam:
         return dict(value=None, specState=state,
                     candidates=[c['raw'] for c in seen],
-                    why='PERIOD: %s' % _contam, rejected=rejected)
+                    reasonCode='PERIOD', why='PERIOD: %s' % _contam,
+                    rejected=rejected)
     return dict(value=best['value'], value_musd=best.get('musd'),
                 unit=(spec or {}).get('unit'), specState=state,
                 label=best['label'], role=best['role'],

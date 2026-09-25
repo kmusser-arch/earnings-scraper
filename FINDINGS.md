@@ -651,3 +651,67 @@ Fenced anyway, because the `sourceRows` leak was also latent right up until a
 reader became capable enough to parse it: `structural_only()` is an allowlist
 of keys a reader may act on, and `prose_fields()` reports what it dropped so
 the mixing stays visible rather than being silently discarded.
+
+---
+
+## ★★★ 32. PRICE IN ISOLATION TO AVOID WASTE — BUT A ZERO MEANS "WORTHLESS ALONE"
+
+```
+consult the declared period before the tie check, alone  ->  0 of 102
+the section heading, alone                               ->  0 classifications
+BOTH                                                     ->  two priority-1 heroes
+```
+
+An isolated ablation **cannot detect a fix whose two halves are each inert
+alone.** Following the "worth nothing" ruling literally would have left both
+rows refusing.
+
+> **A fix that supplies ACCESS and a fix that supplies the INFORMATION are
+> always a pair.** Neither moves a number without the other, and ablation
+> scores both zero. Price them jointly or not at all.
+
+When a price comes back 0, say what it would be worth **paired** before
+dropping it.
+
+---
+
+## ★★★ 33. A SILENT BAND COMPRESSION IS A SILENT BRANCH REASSIGNMENT
+
+The scenario ladder grades on numeric triggers **at band endpoints**. A band
+collapsed to its midpoint moves those endpoints **inward**, so a print that
+should match branch A matches branch B — **and the ladder still reports a
+clean match.** That is a trade, not a rounding error.
+
+> **A derived or guided band is published with BOTH ENDPOINTS, or the row is
+> REFUSED. Never a midpoint alone.**
+
+Wired at `value_for`'s outer boundary so it covers every return path;
+`reasonCode: BAND_COLLAPSED`. 16 band rows publish both ends, 2 declare
+`POINT` and have no band to lose, 0 reach the card as a bare midpoint.
+
+---
+
+## ★★★ 34. THE REFUSAL-REASON GATE — THE ONLY CLASS THAT SURVIVES A GREEN SUITE
+
+The row refuses either way, the count is unchanged, the suite stays green,
+and **the message sends the next person to the wrong cause.**
+
+| row | said | was |
+|---|---|---|
+| HPE[0] | *no candidate matched the declared unit* | the PRODUCT path did not exist |
+| HPE[3] | *candidates tie on unit and role* | the declared period would have separated them |
+| derived | the unit was wrong | a generalist overwrote the specialist's reason |
+
+It cost the HPE[3] ordering hypothesis and two traces, and the third instance
+surfaced **while the test for the second was being written.**
+
+**Prose cannot be checked; a code can.** Every refusal now carries a
+`reasonCode`, and `reasons.verify()` **re-derives the claim from the
+document** — a derived row may not blame the label path, a tie presupposes a
+label hit, a PERIOD refusal presupposes a declared period. 39 refusals
+checked corpus-wide, 0 misdescribed, and the sweep **refuses to write** a
+misdescribed refusal.
+
+**It matters most where we have no spec.** On an issuer nobody prepared,
+refusals are the normal case, and a wrong reason is how a live mis-diagnosis
+happens with the print moving.

@@ -25,6 +25,7 @@ sys.path.insert(0, HERE)
 
 from earnings_scraper import extract as X          # noqa: E402
 from earnings_scraper import parallel as PAR       # noqa: E402
+from earnings_scraper import reasons as RE        # noqa: E402
 from earnings_scraper import registry as R         # noqa: E402
 from earnings_scraper import sweep as SW           # noqa: E402
 
@@ -67,6 +68,7 @@ def main():
     detail = []
     vacuous = []
     silent = []
+    misdescribed = []
 
     for rid, path, kind in CASES:
         if not os.path.exists(path):
@@ -114,6 +116,15 @@ def main():
             if j['value'] is None and not (j.get('reason') or '').strip():
                 silent.append((rid, i, (prow.get('name') or '')[:40],
                                j['verdict']))
+            # ★★★ A REFUSAL REASON IS A DIAGNOSTIC NO TEST ASSERTS, so the
+            # sweep asserts it. Three defects survived a green suite behind
+            # a message that described the wrong cause.
+            if got:
+                _ok, _c = RE.verify(body, prow, spec, rec, got)
+                if not _ok:
+                    misdescribed.append((rid, i,
+                                         (prow.get('name') or '')[:38],
+                                         got.get('reasonCode'), _c))
             if args.write:
                 slot['scraperRead'] = j['value']
                 slot['sweepVerdict'] = j['verdict']
@@ -167,6 +178,18 @@ def main():
                   % (rid, i, nm, stored, val, why[:40]))
         if len(rows) > 12:
             print('   ... %d more' % (len(rows) - 12))
+
+    if misdescribed:
+        print('')
+        print('=' * 100)
+        print('GATE FAILURE — %d refusal(s) state a cause that cannot be '
+              're-derived' % len(misdescribed))
+        print('   The row refuses either way and the count is unchanged, '
+              'which is exactly')
+        print('   how three defects survived a green suite.')
+        for rid, i, nm, code, c in misdescribed:
+            print('   %-13s[%-2d] %-38s %-18s %s' % (rid, i, nm, code, c))
+        raise SystemExit('refusing to write a misdescribed refusal')
 
     if silent:
         print('')
