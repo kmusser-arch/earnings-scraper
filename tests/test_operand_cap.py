@@ -56,10 +56,14 @@ def main():
     pre, act = rec['preEarnings']['keyKPIs'], rec['actuals']['keyKPIs']
     q = rec.get('fiscalQuarter')
 
+    # ★ THE FOUNDING CASE IS FIXED AND THE RULE IT EARNED IS NOT THEREBY
+    # UNTESTED. HPE[3] now reads, because its section heading separates the
+    # FY guide from the Q4 guide, so the cap is driven on a SYNTHETIC weak
+    # operand below instead.
     j3 = SW.judge(body, pre[3], act[3], R.spec_for(pre[3]), q, record=rec)
-    check(j3['verdict'] == 'REFUSED',
-          'HPE[3], the FY26 EPS guide, REFUSES on a candidate tie: %r'
-          % (j3.get('reason') or '')[:60])
+    check(j3['verdict'] == 'MATCH' and j3['value'] == 3.8,
+          'HPE[3], the FY26 EPS guide, now reads 3.8 and is %s'
+          % j3['verdict'])
 
     j0 = SW.judge(body, pre[0], act[0], R.spec_for(pre[0]), q, record=rec)
     # ★ THE CAP IS NOW BELT AND BRACES, and that is the right order. Since
@@ -68,18 +72,31 @@ def main():
     # refusal arrives from the derivation itself and the cap never has to
     # fire. The cap remains for the case the arithmetic DOES succeed on a
     # weak operand, which is what operand_cap is exercised on below.
-    check(j0['verdict'] == 'REFUSED',
-          'HPE[0] is %s, not MATCH — a derived row cannot be better than '
-          'the operand it was derived from' % j0['verdict'])
-    check('operand' in (j0.get('reason') or '').lower()
-          or 'OPERAND' in (j0.get('reason') or ''),
-          'and the reason names the operand: %r'
-          % (j0.get('reason') or '')[:74])
+    check(j0['verdict'] == 'MATCH' and j0['value'] == 4.485,
+          'and HPE[0], derived from it, is %s at %s — the chain closes'
+          % (j0['verdict'], j0['value']))
+
+    # ── THE CAP, DRIVEN RED on an operand forced weak ────────────────────
+    weak = json.loads(json.dumps(rec))
+    weak['preEarnings']['keyKPIs'][3]['extraction']['specState'] = \
+        'NEEDS_REMAP'
+    cw, whyw = SW.operand_cap(body, R.spec_for(pre[0]), weak, q)
+    check(cw == 'UNSPECD' and 'operand [3]' in (whyw or ''),
+          'with operand [3] forced UNSPECD the cap reports %s and NAMES it: '
+          '%r' % (cw, (whyw or '')[:54]))
+    jw = SW.judge(body, weak['preEarnings']['keyKPIs'][0], act[0],
+                  R.spec_for(weak['preEarnings']['keyKPIs'][0]), q,
+                  record=weak)
+    check(jw['verdict'] != 'MATCH',
+          'and the derived row is %s, not MATCH — the cap is SHOWN to fire '
+          'rather than reported green' % jw['verdict'])
 
     # ── the cap is a CAP, not a floor: a sound operand does not lift ─────
     cap, why = SW.operand_cap(body, R.spec_for(pre[0]), rec, q)
-    check(cap == 'REFUSED' and 'operand [3]' in (why or ''),
-          'operand_cap reports the WORST operand (%s)' % cap)
+    check(cap is None,
+          'operand_cap does NOT fire where every operand is sound (%s) — '
+          'the anti-vacuous half: a cap that always fired would pass every '
+          'assertion below it' % cap)
 
     # ★ ANTI-VACUOUS: with the operand passing, the cap must NOT fire —
     # otherwise this test would pass on a function that always refuses.

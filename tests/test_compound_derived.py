@@ -68,32 +68,27 @@ def main():
     # COMES FROM THE CARD'S PROSE IS THE HAND READ WITH ARITHMETIC APPLIED.
     # It cannot disagree with the author, and it produces a NUMBER.
     live = D.derive(body, prow, rec)
-    check((live or {}).get('value') is None
-          and 'PROSE' in ((live or {}).get('why') or ''),
-          'HPE[0] REFUSES while row [3] refuses, and the reason names the '
-          'leak: %r' % ((live or {}).get('why') or '')[:76])
+    check((live or {}).get('value') == 4.485,
+          'HPE[0] derives 4.485 from the EXTRACTED operand — row [3] now '
+          'reads $3.75-$3.85 off its section heading, so the chain closes')
+    df0 = (live or {}).get('derivedFrom') or {}
+    check((df0.get('base') or {}).get('range') == [3.75, 3.85],
+          'and the base is the extracted RANGE %s, not a midpoint squared: '
+          'both ends travel, because a band is information the midpoint '
+          'discards' % (df0.get('base') or {}).get('range'))
 
-    # ── the arithmetic, driven on an operand that DOES extract ───────────
-    # ★ Without this the test would pass on a function that always refuses.
-    fake = json.loads(json.dumps(rec))
-    fake['preEarnings']['keyKPIs'][3]['extraction'] = {
-        'specState': 'EXTRACTABLE', 'documentUnit': '$', 'period': 'GUIDE_FY',
-        'documentLabels': ['non-GAAP operating profit growth range'],
-    }
-    got = D.derive(body, prow, fake)
-    if not got or got.get('value') is None:
-        # the substitute operand may not resolve either; drive the maths
-        # directly rather than reporting a vacuous pass
-        got = {'value': 4.485, 'rangeLow': 4.35, 'rangeHigh': 4.62,
-               'derivedFrom': {'operation': 'GROWTH_COMPOUND',
-                               'recipeWording': 'a PRODUCT',
-                               'note': 'base x (1 + growth)',
-                               'base': {'range': [3.75, 3.85]},
-                               'growth': {'range': [0.16, 0.2]}},
-               '_synthetic': True}
-        print('NOTE   the substitute operand did not resolve either, so the '
-              'arithmetic below is driven on stated endpoints and is marked '
-              'synthetic — it pins the OPERATION, not the extraction')
+    got = live
+
+    # ★ AND THE CHAIN IS REAL: break the operand and the derivation follows.
+    broken = json.loads(json.dumps(rec))
+    broken['preEarnings']['keyKPIs'][3]['extraction']['documentLabels'] = [
+        'a label this release does not contain']
+    dead = D.derive(body, prow, broken)
+    check((dead or {}).get('value') is None
+          and 'EXTRACTION' in ((dead or {}).get('why') or ''),
+          'with row [3] unable to read, HPE[0] REFUSES rather than falling '
+          'back on the endpoints written in its own sourceRow prose: %r'
+          % ((dead or {}).get('why') or '')[:66])
 
     check(got.get('value') == 4.485
           and (got.get('rangeLow'), got.get('rangeHigh')) == (4.35, 4.62),
@@ -123,17 +118,30 @@ def main():
         'sourceRows': ['HPE-2026Q3 [0] no range written here']}}
     spun = D.derive(body, loop, rec)
     check((spun or {}).get('value') is None
-          and 'BASE' in ((spun or {}).get('why') or ''),
-          'a self-reference with no endpoints REFUSES and names the operand '
-          'that failed (%r) — the depth guard is the close, and without one '
-          'a mutual reference hangs the extractor on a live print'
+          and 'operand' in ((spun or {}).get('why') or ''),
+          'a self-referencing row REFUSES and names the operand that failed '
+          '(%r) — RE-ENTRY is the close. `depth` cannot cross into '
+          'value_for, so counting frames guards nothing and a genuine cycle '
+          'would have hung the extractor on a live print'
           % ((spun or {}).get('why') or '')[:54])
+
+    # ★ AND THE CYCLE IS DRIVEN, not assumed: row [0] pointed at ITSELF.
+    import copy as _copy
+    cyc = _copy.deepcopy(rec)
+    cyc['preEarnings']['keyKPIs'][0]['extraction']['sourceRows'] = [
+        'HPE-2026Q3 [0] itself',
+        "FY27: 'growth to be in the range of 16% to 20%'"]
+    out_c = D.derive(body, cyc['preEarnings']['keyKPIs'][0], cyc)
+    check((out_c or {}).get('value') is None,
+          'a row whose operand IS ITSELF refuses instead of recursing — one '
+          'cell lost, the card still renders')
 
     # ── end to end ───────────────────────────────────────────────────────
     out = X.value_for(body, prow, record=rec) or {}
-    check(out.get('value') is None and 'PROSE' in (out.get('why') or ''),
-          'and end to end the row REFUSES until its operand extracts — the '
-          'chain is real, not decorative (%r)' % (out.get('why') or '')[:60])
+    check(out.get('value') == 4.485,
+          'and value_for returns it end to end (%s) — a priority-1 hero '
+          'that had been REFUSED now carries a value whose every operand '
+          'was EXTRACTED' % out.get('value'))
 
 
 main()

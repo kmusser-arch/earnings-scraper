@@ -573,3 +573,81 @@ reason has hidden the real failure.**
 A derived row is **not in the document**, so the label path cannot be right
 about it. A refusal reason is a diagnostic **no test asserts**; asserting that
 the stated reason matches the branch that produced it is now on the list.
+
+---
+
+## ★★★ 28. THE SECTION HEADING IS THE PERIOD — THE PROSE TWIN OF `cellAxes`
+
+```
+'$1.20 to $1.30'   sentence GUIDE_NEXT_Q / INFERRED
+                   heading  'Fiscal 2026 Fourth Quarter Outlook'
+                   -> GUIDE_NEXT_Q, EXPLICIT  -> DROPPED
+
+'$3.75 to $3.85'   sentence GUIDE_NEXT_Q / INFERRED    <- WRONG
+                   heading  'Fiscal 2026 Full Year Outlook'
+                   -> GUIDE_FY, EXPLICIT      -> KEPT
+```
+
+Both sentences classified **identically** and both were **INFERRED**, so the
+declared axis could only rank. The heading makes the evidence **EXPLICIT**,
+which is what licenses exclusion.
+
+**The close is a close, not a length:** walking up, the *first* heading found
+**is** the section, by definition.
+
+> **ORDER AND EVIDENCE HAD TO LAND TOGETHER.** Consulting the declared period
+> before the tie check moved **0 of 102** rows on its own. The heading alone
+> changes no classification on any row that already resolves. Together they
+> move HPE[3] and HPE[0] — both priority-1 heroes — from REFUSED to MATCH,
+> and nothing else in the corpus moves.
+
+Standing question applied first: `_PERIOD_PHRASE` existed, `section_spans`
+existed but needs a *declared* anchor, **a prose heading detector genuinely
+did not** — so only that part was new, and it was measured before wiring.
+
+---
+
+## ★★★ 29. DISCARD #10 — THE RANGE ENDPOINTS, DROPPED AT THE RETURN
+
+The range arm carries `rangeLow` / `rangeHigh` with the comment *"Both ends
+travel with it: a band is information the midpoint discards"* — **and the
+final return dropped them anyway.**
+
+So a compound derived from a range row squared a midpoint:
+**$4.41–$4.56 instead of the true $4.35–$4.62.** The band the ladder grades
+against was being destroyed one frame from the caller.
+
+---
+
+## ★★★ 30. RE-ENTRY IS THE CLOSE — `depth` CANNOT CROSS A MODULE BOUNDARY
+
+`card_row_value` resolves an operand by calling `value_for`, which may derive
+again. **`value_for` takes no `depth` parameter**, so counting frames guarded
+nothing: a card row whose `sourceRows` pointed at itself would have recursed
+until the interpreter gave up. **An exception costs the whole card.**
+
+The guard is a set of rows *currently being resolved* — the cycle is detected
+by **re-entry**, not by counting. Same shape as a-span-needs-a-CLOSE.
+
+---
+
+## ★★★ 31. SURFACE 3 — `ticker-profiles.json`
+
+**A boundary test proves the boundary it crossed.**
+
+| surface | status |
+|---|---|
+| library record hand-read fields | **proven clean** by poisoning |
+| prose inside `extraction` | **was leaking** — closed |
+| `ticker-profiles.json` notes | **fenced** (below) |
+| anything else read at runtime | **enumerated: nothing.** No reader module opens a file |
+
+`globalDocumentLabelMap` does live in that file beside 279 hero entries, **198
+of which carry three or more figures in `notes`** — street levels, whispers,
+bogeys, implied ramps; MDB's Atlas growth note carries thirty.
+
+**But nothing passes `global_map`**, so the path is **latent, not active.**
+Fenced anyway, because the `sourceRows` leak was also latent right up until a
+reader became capable enough to parse it: `structural_only()` is an allowlist
+of keys a reader may act on, and `prose_fields()` reports what it dropped so
+the mixing stays visible rather than being silently discarded.

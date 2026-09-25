@@ -135,6 +135,10 @@ def is_compound(recipe):
              or 'multipl' in low))
 
 
+#: rows whose operands are being resolved right now, as (record id, index)
+_RESOLVING = set()
+
+
 def card_row_value(text, ref, record, depth=0):
     """(lo, hi) for a source row written as an index into the card, or None.
 
@@ -160,8 +164,18 @@ def card_row_value(text, ref, record, depth=0):
     # disagree with the author, and it produces a NUMBER that lands on the
     # card. Same family as a check consulting the population instead of the
     # selection, one level worse.
+    # ★ RE-ENTRY IS THE CYCLE. `depth` cannot cross into value_for, which
+    # takes no depth, so counting frames here guards nothing. A row already
+    # being resolved is a cycle by definition, and it refuses.
+    key = (rid, idx)
+    if key in _RESOLVING:
+        return None
     from . import extract as _x
-    got = _x.value_for(text, rows[idx], record=record) or {}
+    _RESOLVING.add(key)
+    try:
+        got = _x.value_for(text, rows[idx], record=record) or {}
+    finally:
+        _RESOLVING.discard(key)
     lo, hi = got.get('rangeLow'), got.get('rangeHigh')
     if isinstance(lo, (int, float)) and isinstance(hi, (int, float)):
         return (float(lo), float(hi))

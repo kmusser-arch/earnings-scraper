@@ -152,3 +152,77 @@ def main():
 
 
 main()
+
+
+# ══ SURFACE 3: ticker-profiles.json ═══════════════════════════════════════
+#
+# ★★★ A BOUNDARY TEST PROVES THE BOUNDARY IT CROSSED. The poison above covers
+# the library record's hand-read fields. It never touched ticker-profiles.json
+# — and globalDocumentLabelMap lives in that file, beside 279 hero entries of
+# which 198 carry three or more FIGURES in `notes`: street levels, whispers,
+# bogeys, implied ramps. MDB's Atlas growth note carries thirty.
+#
+# A HAND-READ NUMBER AND A MACHINE-READ LABEL MAP SHARE ONE OBJECT. That is
+# the exact structural mixing that produced the sourceRows leak.
+
+PROFILES = os.path.join(MODEL, 'ticker-profiles.json')
+
+
+def profile_surface():
+    from earnings_scraper import registry as R2
+
+    if not os.path.exists(PROFILES):
+        print('SKIP ticker-profiles.json not reachable')
+        return
+    prof = json.load(io.open(PROFILES, encoding='utf-8'))
+
+    # ── how much oracle is actually sitting there ────────────────────────
+    import re as _re
+    heroes = [h for p in (prof.get('profiles') or {}).values()
+              for h in (p.get('heroKPIs') or [])]
+    loaded = [h for h in heroes
+              if len(_re.findall(r'\d+(?:[.,]\d+)?',
+                                 str(h.get('notes') or ''))) >= 3]
+    check(heroes and loaded,
+          'SAMPLE FRAME: %d hero entries, %d carrying 3+ figures in notes — '
+          'the oracle is real and it is large' % (len(heroes), len(loaded)))
+
+    # ── the reader does not consult that file TODAY ──────────────────────
+    # ★ Nothing in the codebase passes `global_map`, so the path is LATENT.
+    # Saying so is the finding; a test that reported "clean" without saying
+    # which path it exercised would be claiming more than it measured.
+    check(R2.spec_for({'name': 'x'}, global_map=None, metric_kind=None)
+          is None,
+          'spec_for returns None with no row spec and no global map — the '
+          'global fallback is reachable only when a caller passes one, and '
+          'no caller does')
+
+    # ── and when one DOES, prose cannot ride in ──────────────────────────
+    poisoned_map = {'metrics': {'totalRevenue': {
+        'documentLabels': ['Total revenue'],
+        'notes': 'street 12.5, whisper 12.9, bogey 13.1',
+        'interpretation': 'a bogey of 13.1 is the number that matters',
+        'beatBand': POISON_NUM, 'street': POISON_NUM}}}
+    spec = R2.spec_for({'name': 'x'}, global_map=poisoned_map,
+                       metric_kind='totalRevenue')
+    check(spec and spec.get('documentLabels') == ['Total revenue'],
+          'a global-map fallback still yields its LABELS')
+    leaked = [k for k in (spec or {})
+              if k in ('notes', 'interpretation', 'beatBand', 'street')]
+    check(not leaked,
+          'and carries NONE of the hand-read fields into the spec (%s) — '
+          'structural_only is the fence, so a future caller cannot cross '
+          'the line by accident' % (leaked or 'clean'))
+    check(R2.prose_fields(poisoned_map['metrics']['totalRevenue'])
+          == ['beatBand', 'interpretation', 'notes', 'street'],
+          'and the dropped fields are REPORTABLE rather than silently '
+          'discarded, so the mixing stays visible')
+
+    # ── ★ ANTI-VACUOUS: the fence must be able to pass something through ──
+    check('statement' in R2.structural_only(
+        {'documentLabels': ['x'], 'statement': 'income statement'}),
+        'structural_only is an ALLOWLIST that really allows — it is not a '
+        'function that returns {} and looks clean')
+
+
+profile_surface()

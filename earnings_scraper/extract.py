@@ -1075,6 +1075,61 @@ _PERIOD_PHRASE = re.compile(
     r'|\byear[-\s]to[-\s]date\b', re.I)
 
 
+#: a heading does not end a sentence
+_ENDS_SENTENCE = re.compile(r'[.;:]\s*$')
+
+
+def is_heading(line):
+    """Is this line a SECTION HEADING rather than prose or a data row?
+
+    Short, word-bearing, not sentence-terminated, and not mostly figures.
+    HPE prints 'Fiscal 2026 Fourth Quarter Outlook' and 'Fiscal 2026 Full
+    Year Outlook' exactly this way, and they are the only thing in the
+    document that says which period the clauses beneath them describe.
+    """
+    t = (line or '').strip()
+    if not t or len(t) > 80 or _ENDS_SENTENCE.search(t):
+        return False
+    words = [w for w in t.split() if any(c.isalpha() for c in w)]
+    if not (1 <= len(words) <= 10):
+        return False
+    figs = sum(1 for w in t.split() if any(c.isdigit() for c in w))
+    return figs * 2 <= len(t.split())
+
+
+def heading_above(text, pos, max_lines=400):
+    """The nearest preceding section heading, or ''.
+
+    ★ THE FIRST HEADING FOUND WALKING UP *IS* THE SECTION. No length is
+    chosen: the walk stops at the heading or at the top of the document,
+    which is the same close/no-length rule section_spans already follows.
+    """
+    if not isinstance(pos, int) or not text:
+        return ''
+    lines = text.split(chr(10))
+    idx = text.count(chr(10), 0, pos)
+    for k in range(idx, max(-1, idx - max_lines), -1):
+        if 0 <= k < len(lines) and k != idx and is_heading(lines[k]):
+            return lines[k].strip()
+    return ''
+
+
+def governing_context(text, pos):
+    """The clause PLUS the section heading it sits under.
+
+    ★★★ IN A DOCUMENT, STRUCTURE CARRIES PERIOD AND THE SENTENCE DOES NOT.
+    HPE's FY26 guide sentence names no period at all -- 'HPE is raising both
+    GAAP diluted net EPS ... and non-GAAP diluted net EPS(1) to be in the
+    range of $3.75 to $3.85' -- so it classified GUIDE_NEXT_Q, identically
+    to the Q4 sentence, and INFERRED. The heading above it says 'Fiscal 2026
+    Full Year Outlook'. Same shape as cellAxes for tables: the evidence was
+    in the structure and the reader was only ever shown the text.
+    """
+    frag = _governing_sentence(text, pos)
+    head = heading_above(text, pos)
+    return (head + '. ' + frag) if head else frag
+
+
 def period_basis(fragment):
     """('EXPLICIT', phrase) when the issuer named the period, else INFERRED."""
     m = _PERIOD_PHRASE.search(fragment or '')
@@ -1094,7 +1149,7 @@ def period_conflict(text, pos, spec, quarter=None):
     if not want:
         return None
     want = {'FY_GUIDE': _period_mod.GUIDE_FY}.get(want, want)
-    frag = _governing_sentence(text, pos)
+    frag = governing_context(text, pos)
     if not frag:
         return None
     klass = _period_mod.classify_candidate(frag, quarter)
@@ -1213,6 +1268,10 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
                         unit=doc_unit(spec), specState=state,
                         label=(spec.get('sourceRows') or [None])[0],
                         role='derived', derivedFrom=_d.get('derivedFrom'),
+                        # the band survives the derivation too: the ladder
+                        # grades against ends, not against a midpoint
+                        rangeLow=_d.get('rangeLow'),
+                        rangeHigh=_d.get('rangeHigh'),
                         candidateCount=2, seenCount=2,
                         currencyTaken=REPORTED, candidates=[], why=None,
                         rejected=[])
@@ -1535,6 +1594,21 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
                         candidates=[x['raw'] for x in seen], why=None,
                         rejected=rejected)
 
+    # ★★ THE DECLARED AXIS IS CONSULTED BEFORE THE TIE, NOT AFTER IT. On its
+    # own this reordering moved 0 of 102 rows, because both of HPE[3]'s
+    # candidates classified identically off their sentences. With the
+    # heading in the context it separates them. ORDER AND EVIDENCE HAD TO
+    # LAND TOGETHER; either alone is a no-op.
+    if (spec or {}).get('period') and len(pool) > 1:
+        _q = (record or {}).get('fiscalQuarter')
+        _keep = [c for c in pool
+                 if not period_conflict(src, c.get('gpos'), spec, _q)]
+        if _keep and len(_keep) < len(pool):
+            rejected = list(rejected) + [
+                'PERIOD: %s dropped by the declared period, read from the '
+                'section heading' % (len(pool) - len(_keep))]
+            pool = _keep
+
     vals = {round(c['value'], 6) for c in pool}
     # columnAxes REPLACED columnSelect; both are written today, and a
     # reader that asks only for the older name goes quiet the moment
@@ -1664,6 +1738,12 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
                 unitUnverified=(best.get('musd') is None
                                 and declared in _MUSD),
                 sigDigits=best.get('sigDigits'),
+                # BOTH ENDS TRAVEL WITH THE MIDPOINT -- the range arm says so
+                # in as many words and the return dropped them anyway, so a
+                # compound derived from this row narrowed $4.35-$4.62 to
+                # $4.41-$4.56 by squaring a midpoint. Discard #10.
+                rangeLow=best.get('rangeLow'),
+                rangeHigh=best.get('rangeHigh'),
                 coveredPrintings=best.get('coveredPrintings'),
                 pos=_to_doc(best.get('gpos')),
                 lpos=_to_doc(best.get('lpos')),

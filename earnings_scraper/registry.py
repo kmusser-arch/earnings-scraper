@@ -58,8 +58,51 @@ def spec_for(row, global_map=None, metric_kind=None):
     if global_map and metric_kind:
         g = ((global_map.get('metrics') or {}).get(metric_kind) or {})
         if g.get('documentLabels'):
-            return dict(g, source='global')
+            return dict(structural_only(g), source='global')
     return None
+
+
+#: THE FIELDS A READER MAY ACT ON. globalDocumentLabelMap lives in
+#: ticker-profiles.json, and 198 of that file's 279 hero entries carry three
+#: or more FIGURES in `notes` -- street levels, whispers, bogeys, implied
+#: ramps; MDB's Atlas growth note carries thirty. A HAND-READ NUMBER AND A
+#: MACHINE-READ LABEL MAP SHARE ONE OBJECT, which is the exact structural
+#: mixing that produced the sourceRows leak.
+#:
+#: The reader does not consult that map today -- nothing passes global_map --
+#: so the risk is LATENT, not active. It is fenced anyway, because the
+#: sourceRows leak was also latent right up until a reader became capable
+#: enough to parse it. EVERY CLARIFYING NOTE IS AN ANSWER-KEY LEAK AWAITING
+#: A CAPABLE READER.
+SPEC_STRUCTURAL_KEYS = frozenset((
+    'documentLabels', 'unit', 'documentUnit', 'storedUnit', 'period',
+    'basis', 'basisLocation', 'where', 'whereKind', 'disqualify',
+    'extractable', 'needsRemap', 'specState', 'sectionAnchor',
+    'spanTerminator', 'spanStartAfter', 'excludeSections', 'tableLayout',
+    'columnAxes', 'columnSelect', 'currencyBasis', 'rangeForm', 'derived',
+    'sourceRows', 'priority', 'exclusionClass', 'rowDisposition',
+    'statement', 'confidence', 'source'))
+
+
+def structural_only(entry):
+    """A spec stripped to the fields a READER may act on.
+
+    Anything else -- notes, interpretation, provenance prose, a street level
+    -- is FOR HUMANS and must not reach a matcher. What is for humans and
+    what is for readers must be structurally separate, so that no future
+    capability can cross the line by accident.
+    """
+    return {k: v for k, v in (entry or {}).items()
+            if k in SPEC_STRUCTURAL_KEYS}
+
+
+def prose_fields(entry):
+    """The keys structural_only drops -- for REPORTING, never acting.
+
+    Dropped-and-reported keeps the mixing visible; dropped-and-silent is how
+    it would sit there until someone wired a caller.
+    """
+    return sorted(k for k in (entry or {}) if k not in SPEC_STRUCTURAL_KEYS)
 
 
 #: ★★★ THE CLOSED LIST. A row leaves the denominator only for one of these
