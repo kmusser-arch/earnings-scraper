@@ -91,7 +91,11 @@ def main():
 
     def blind(desc):
         got = real(desc)
-        got['basis'] = None            # the issuer printed no basis header
+        # ★ THE GRID RAN AND THE ISSUER NAMED NO BASIS. Both halves matter:
+        # basis=None alone is the state a reader that never looked also
+        # reports, and those two warrant opposite responses.
+        got['basis'] = None
+        got['basisState'] = 'ABSENT_IN_DOCUMENT'
         return got
 
     # AVGO[8] is authored '★ Q3 Non-GAAP EPS' -- ONE star, so it is a
@@ -109,7 +113,7 @@ def main():
     finally:
         HG.cell_axes = real
     check(strict.get('value') is None
-          and strict.get('basisEvidence') == 'ABSENT',
+          and strict.get('basisEvidence') == 'ABSENT_IN_DOCUMENT',
           'with the column unlabelled, a priority-1 row REFUSES instead of '
           'publishing: %r' % (strict.get('why') or '')[:78])
     check('priority-1' in (strict.get('why') or ''),
@@ -122,7 +126,8 @@ def main():
         soft = X.value_for(body, lower, record=rec) or {}
     finally:
         HG.cell_axes = real
-    check(soft.get('value') == 3.32 and soft.get('basisEvidence') == 'ABSENT',
+    check(soft.get('value') == 3.32
+          and soft.get('basisEvidence') == 'ABSENT_IN_DOCUMENT',
           'a supporting row publishes the value AND carries basisEvidence=%r '
           '— accepted and flagged, never accepted silently'
           % soft.get('basisEvidence'))
@@ -130,6 +135,28 @@ def main():
           'with the priority it was judged on recorded beside it (%s), so '
           'the decision can be re-read rather than re-derived'
           % soft.get('rowPriority'))
+
+    # ── ★★★ THE TWO EMPTIES, TOLD APART ─────────────────────────────────
+    # A reader that never looked reports the same basis=None as a document
+    # that says nothing. Refusing a hero row because OUR grid never read a
+    # header would publish a refusal with false provenance — a worse defect
+    # than the one the ruling exists to prevent.
+    def unread(desc):
+        got = real(desc)
+        got['basis'] = None
+        got['basisState'] = 'UNREAD_BY_GRID'
+        return got
+
+    HG.cell_axes = unread
+    try:
+        gap = X.value_for(body, hero, record=rec) or {}
+    finally:
+        HG.cell_axes = real
+    check(gap.get('value') == 3.32
+          and gap.get('basisEvidence') == 'UNREAD_BY_GRID',
+          'the SAME priority-1 row PUBLISHES when the emptiness is OURS '
+          '(%s) — the ruling refuses on a fact about the release, never on '
+          'a gap in the reader' % gap.get('basisEvidence'))
 
     # ── and a CONTRADICTION refuses at any priority ──────────────────────
     def wrong(desc):

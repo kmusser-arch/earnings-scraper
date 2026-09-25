@@ -850,7 +850,12 @@ def column_value(text, spec, label_pos, record=None):
     _cls = got.get('classes') or []
     return dict(value=cells[i][0], pct=cells[i][1], columnIndex=i,
                 columnClasses=_cls,
+                # ★ THE VERTICAL READER NEVER LOOKS FOR A BASIS. Its
+                # strata are PERIOD classes, so a None here is OUR blindness,
+                # not the issuer's silence -- and the strict arm must not
+                # refuse a priority-1 row for a header it never read.
                 cellAxes=dict(basis=None, currency=None,
+                              basisState='UNREAD_BY_GRID',
                               period=(_cls[i] if i < len(_cls) else None),
                               headers=list(_cls)),
                 cellPos=cell_offset(body, cells[i][2]))
@@ -1405,7 +1410,8 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
             # build keeps finding. sgrid reports the GROUP ITS CELL IS IN,
             # so absence here means the block declared no basis groups.
             _sax = got_s.get('cellAxes') or {}
-            _sev = ('AGREES' if _sax.get('basis') else 'ABSENT')
+            _sev = ('AGREES' if _sax.get('basis')
+                    else _sax.get('basisState') or 'UNREAD_BY_GRID')
             if _sax.get('basis') and (
                     _sax['basis'].lower().replace('-', '')
                     != (_basis_want or '').lower().replace('-', '')):
@@ -1413,7 +1419,8 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
             _sprio = _priority.row_priority(
                 row, spec,
                 ((record or {}).get('preEarnings') or {}).get('keyKPIs'))
-            if _sev == 'CONTRADICTS' or (_sev == 'ABSENT' and _sprio == 1):
+            if _sev == 'CONTRADICTS' or (_sev == 'ABSENT_IN_DOCUMENT'
+                                         and _sprio == 1):
                 return dict(value=None, specState=state,
                             basisEvidence=_sev, rowPriority=_sprio,
                             candidates=[x['raw'] for x in seen],
@@ -1482,7 +1489,8 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
                 _basis_ev = 'NOT_DECLARED'
                 if (spec or {}).get('basis'):
                     _basis_ev = ('AGREES' if _axes_got.get('basis')
-                                 else 'ABSENT')
+                                 else _axes_got.get('basisState')
+                                 or 'UNREAD_BY_GRID')
                     if _axes_got.get('basis') and (
                             _axes_got['basis'].lower().replace('-', '')
                             != spec['basis'].lower().replace('-', '')):
@@ -1499,7 +1507,10 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
                                      % (_axes_got.get('basis'),
                                         spec['basis'])),
                                 rejected=rejected)
-                if _basis_ev == 'ABSENT' and _prio == 1:
+                # ★ ONLY ABSENT_IN_DOCUMENT REFUSES. UNREAD_BY_GRID is a
+                # gap in us, and blanking a hero row because our own reader
+                # never looked would publish a refusal with false provenance.
+                if _basis_ev == 'ABSENT_IN_DOCUMENT' and _prio == 1:
                     # THE SNDK PRINCIPLE: on the row that decides the trade,
                     # a refusal beats a wrong number.
                     return dict(value=None, specState=state,

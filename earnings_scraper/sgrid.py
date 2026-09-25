@@ -94,7 +94,14 @@ def block_cells_at(lines, label_idx, limit=MAX_CELLS):
         # reader takes both and the marker lines are not cell boundaries.
         if t in ('$', '%'):
             if t == '%' and out:
-                out[-1] = (out[-1][0], True)
+                # ★ AND THE REWRITE MUST KEEP THE COORDINATE. This line used
+                # to rebuild the entry as a PAIR, silently dropping the line
+                # index on any cell whose percent sign arrives on the next
+                # line -- the SNDK and APP convention. SNOW attaches its
+                # percent to the figure, so the corpus never reached it and
+                # the loss would have surfaced as an IndexError on a live
+                # print instead.
+                out[-1] = (out[-1][0], True, out[-1][2])
             j += 1
             continue
         got = cell(t)
@@ -175,7 +182,11 @@ def select(lines, label_idx, spec, basis_headers=None, lookback=400):
                     cellAxes=dict(basis=(picked_basis[i] if picked_basis
                                          else None),
                                   period=None, currency=None,
-                                  headers=list(seen)),
+                                  headers=list(seen),
+                                  # no grouping ran means the BLOCK declared
+                                  # no basis groups -- about the release.
+                                  basisState=('READ' if picked_basis
+                                              else 'ABSENT_IN_DOCUMENT')),
                     cells=[c[0] for c in cells], groups=seen, why=None)
     if not picked:
         return dict(value=None, cells=[c[0] for c in cells], groups=seen,

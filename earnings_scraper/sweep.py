@@ -112,10 +112,13 @@ def _basis_ok(text, pos, spec, axes=None):
                 return True, None, EVIDENCE
             return (False, 'the COLUMN is %s, the row declares %s'
                     % (got, want), EVIDENCE)
-        # ★ THE COLUMN IS GENUINELY UNLABELLED. Under the ruling this is a
-        # refusal on a priority-1 row -- taken at extraction, before the
-        # value is emitted -- and a FLAG everywhere else. It is never a
-        # silent pass again.
+        # ★ TWO EMPTIES, NOT ONE. basis=None meant both 'the grid read this
+        # cell's headers and the issuer named no basis' and 'no reader ever
+        # looked'. The first is a fact about the RELEASE and the strict arm
+        # refuses on it; the second is a fact about US and refusing on it
+        # would publish a refusal with false provenance.
+        if (axes.get('basisState') or 'UNREAD_BY_GRID') == 'UNREAD_BY_GRID':
+            return True, 'no reader looked for a basis on this cell', VACUOUS
         return True, 'the column carries no basis word', ABSENT
     if not isinstance(pos, int):
         return True, None, VACUOUS

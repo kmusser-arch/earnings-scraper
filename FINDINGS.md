@@ -173,3 +173,85 @@ one lands somewhere it is not tested the same day.
 
 **"THE ONLY FAITHFUL PROBE OF AN EDIT IS THE EDIT."** A monkeypatched
 stand-in is a fifth frame. Adopted permanently.
+
+---
+
+## ★★★ 9. A CHECK THAT CONSULTS THE **POPULATION** INSTEAD OF THE **SELECTION**
+
+Subtler than "the digits agree". That one compares the *wrong thing*; this one
+compares against **everything**, so it cannot disagree.
+
+Founding case: `sgrid` returned `groups` — the list of basis groups that
+**exist** in the block. An audit reading it found `non-GAAP` among them
+**whichever cell had been picked**. It reported `AGREE` on SNOW[5] and
+SNOW[8]: not weak evidence, **false** evidence.
+
+> **STANDING TEST FOR EVERY CHECK: WOULD ITS ANSWER CHANGE IF A DIFFERENT
+> CELL HAD BEEN SELECTED?** If no, it is decorative regardless of how often it
+> passes.
+
+Run against all three checks, 11 grid-read rows, 33 sibling cells:
+
+| check | discriminates between cells of the same row |
+|---|---|
+| `fence` | **0 of 11** — row-level, not cell-level. It can catch a value taken from the wrong *section*; it cannot catch a wrong *cell* |
+| `basis` | 3 of 11 |
+| `period` | 9 of 11 |
+
+**And the instrument that runs this test was itself decorative twice before it
+worked.** First it compared the check's *state* — a GAAP sibling and a
+non-GAAP sibling both report `EVIDENCE`, so nothing ever moved. Then it ran
+the stacked branch on vertical rows and relabelled period classes as basis
+groups. Both versions produced clean-looking numbers.
+
+---
+
+## ★★★ 10. WHEN A FIELD CAN BE EMPTY FOR TWO REASONS, IT NEEDS TWO EMPTIES
+
+`★theFourthState`, third instance. `basis = None` conflated:
+
+| state | meaning | who it is about |
+|---|---|---|
+| `ABSENT_IN_DOCUMENT` | the grid ran, read the headers, found no basis word | **the release** |
+| `UNREAD_BY_GRID` | the reader failed, or never looks for a basis at all | **us** |
+| `NOT_DECLARED` | the spec never asked | the card |
+
+They warrant **opposite responses**. Refusing a priority-1 hero because the
+issuer printed no basis is the SNDK principle. Refusing it because *our own*
+vertical reader never looks for a basis header would publish **a refusal with
+false provenance** — worse than the defect the ruling exists to prevent.
+
+The split immediately reclassified the corpus's only `ABSENT` row: HPE[16] is
+`UNREAD_BY_GRID`, because `vtables`' strata are period classes and it never
+looked for a basis at all.
+
+---
+
+## ★★★ 11. FALSE_MATCH FIRES — CALIBRATED BY INJECTION, ON A REAL ROW
+
+`FALSE_MATCH` read 0 across every sweep, and a verdict that never fires looks
+exactly like one that passes. The audit has **no confirmed positive** —
+AVGO[8] was reclassified four times and ended as right-by-cancellation.
+
+The sibling-cell audit found **no natural target**: across 11 grid-read rows
+and 33 siblings, no cell's digits coincide with the selected one while its
+axes differ. So the injection forges the coincidence on a real document:
+
+```
+HPE Q3 Revenue, real:    12,213 REPORTED · 10,678 SEQUENTIAL · 9,136 PY
+forged (a flat year):    12,213 REPORTED · 10,678 SEQUENTIAL · 12,213 PY
+```
+
+**A flat year is not an exotic document.** It is one character of edit, and it
+is what half the corpus looks like in a downturn — exactly when the wrong
+column stops being detectable by magnitude.
+
+| controls, disabled separately | verdict |
+|---|---|
+| forge the digits, do **not** force the column | `MATCH` — no fault |
+| force the column, do **not** forge the digits | `MISMATCH` — caught by digits |
+| **both** | **`FALSE_MATCH`** |
+
+The value it would have published is `12.213` — **indistinguishable from the
+correct answer by magnitude**, which is the whole reason the verdict exists.
+The fixture on disk is never edited; the forge lives in memory.

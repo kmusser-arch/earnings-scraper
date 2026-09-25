@@ -133,10 +133,21 @@ def main():
 
     _, _, st_abs = SW.provenance(
         body, 0, {'basis': 'non-GAAP', 'specState': 'EXTRACTABLE'},
-        axes={'basis': None, 'period': None})
+        axes={'basis': None, 'period': None,
+              'basisState': 'ABSENT_IN_DOCUMENT'})
     check(st_abs['basis'] == SW.ABSENT and st_abs['evidenceCount'] == 0,
-          'an UNLABELLED column reports ABSENT, not a silent pass — the '
-          'ruling keys on this and it no longer looks like a passing check')
+          'a column the grid READ and found unlabelled reports ABSENT, not a '
+          'silent pass — the ruling keys on this')
+
+    # ★★★ AND THE OTHER EMPTY IS NOT THE SAME EMPTY.
+    _, _, st_unread = SW.provenance(
+        body, 0, {'basis': 'non-GAAP', 'specState': 'EXTRACTABLE'},
+        axes={'basis': None, 'period': None,
+              'basisState': 'UNREAD_BY_GRID'})
+    check(st_unread['basis'] == SW.VACUOUS,
+          'while a cell NO READER LOOKED AT reports VACUOUS — blindness in '
+          'us, not silence in the document, and the strict arm must not '
+          'refuse on it')
 
     _, _, st_vac = SW.provenance(
         body, body.find('Infrastructure software'),

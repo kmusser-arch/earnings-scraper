@@ -292,8 +292,15 @@ def cell_axes(desc):
     grid has computed all three since it was written and handed back only
     the value.
     """
-    return dict(basis=column_basis(desc), period=column_period(desc),
-                currency=column_currency(desc), headers=list(desc or []))
+    b = column_basis(desc)
+    return dict(basis=b, period=column_period(desc),
+                currency=column_currency(desc), headers=list(desc or []),
+                # ★ WHEN A FIELD CAN BE EMPTY FOR TWO REASONS IT NEEDS TWO
+                # EMPTIES. The grid RAN and read this cell's headers, so an
+                # empty basis is a fact about the RELEASE. A reader that
+                # never ran reports UNREAD_BY_GRID instead, and the two
+                # warrant opposite responses.
+                basisState=('READ' if b else 'ABSENT_IN_DOCUMENT'))
 
 
 def select(lines, label_idx, spec, guard=GUARD, is_boundary=None):
