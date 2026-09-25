@@ -719,7 +719,7 @@ def _cell_unit_ok(is_pct, spec):
     return True
 
 
-def cell_offset(text, line_idx, x=0):
+def cell_offset(text, line_idx, x=0, stripped=True):
     """Document offset of column `x` on the STRIPPED line `line_idx`.
 
     THE READERS WORK ON STRIPPED LINES. hgrid and sgrid are handed
@@ -737,7 +737,7 @@ def cell_offset(text, line_idx, x=0):
     for k in range(line_idx):
         base += len(lines[k]) + 1
     raw = lines[line_idx]
-    lead = len(raw) - len(raw.lstrip())
+    lead = (len(raw) - len(raw.lstrip())) if stripped else 0
     return min(len(text), base + lead + (x or 0))
 
 
@@ -768,7 +768,12 @@ def column_value(text, spec, label_pos, record=None):
     # character per line -- ADBE carries 12,755 of them and the selector read
     # a row hundreds of lines away. Split on the newline, count the newline.
     body = text or ''
-    lines = [l.strip() for l in body.split(chr(10))]
+    # THE ISSUER DREW THE COLUMNS AND STRIPPING ERASES THEM. Each line was
+    # stripped INDEPENDENTLY, so AVGO's header at indent 36, its rule at 25
+    # and its data row at 1 were shifted by three different amounts and
+    # stopped lining up -- in a reader whose entire mechanism is that a
+    # cell's column falls inside a dash run.
+    lines = [l.rstrip() for l in body.split(chr(10))]
     idx = body.count(chr(10), 0, label_pos)
     # HORIZONTAL first: on a space-aligned row the label and every column sit
     # on ONE line, and the vertical reader walks DOWN into the next label.
@@ -796,7 +801,8 @@ def column_value(text, spec, label_pos, record=None):
                 return dict(value=_v, pct=_pct, columnIndex=None,
                             columnClasses=_sel.get('description'),
                             cellPos=cell_offset(body, _sel.get('cellLine'),
-                                                _sel.get('cellX')))
+                                                _sel.get('cellX'),
+                                                stripped=False))
             return None
         return None
         h = tables.h_column_value(lines, idx, rq, ry)

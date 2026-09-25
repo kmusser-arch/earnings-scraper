@@ -28,6 +28,27 @@ it on afterwards means re-running that loop against the same blind metric.
 
 Every report carries the denominator. A count without one is what let a
 headline quote three of six buckets for a week.
+
+★★★ AND THE BASIS CHECK HAS NEVER ONCE READ A COLUMN HEADER.
+
+    "a cell is surrounded by digits, the words are in the header, and
+    _governing_sentence cannot reach a column header from any position, at
+    any offset, ever."
+
+That is a proof, not an observation, and it is recorded here verbatim
+because it indicts the three functions directly below it. The audit reported
+basis evidence on 1 of 34 MATCH rows; that one row was HPE[16], whose `pos`
+sat on the LABEL LINE 'Non-GAAP gross profit margin', so the check was
+reading a LABEL and reporting it as provenance. Point `pos` at the cell and
+it goes to 0. IT WAS ALWAYS 0. Every GAAP/non-GAAP selection in this corpus
+is unverified and has been for the life of the project -- with the CBRS
+failure mode (GAAP -7.0% while 'core' beat +9.9%, and the tape traded GAAP)
+completely unguarded.
+
+★★ A MEASUREMENT CHANGE THAT IMPROVES ACCURACY SHOULD BE EXPECTED TO LOWER
+THE SCORE. IF PRECISION MAKES A NUMBER GO UP, SUSPECT IT. basis 1 -> 0 and
+all-vacuous 7 -> 8 is the first number in this build to fall for a good
+reason.
 """
 
 import io
