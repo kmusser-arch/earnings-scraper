@@ -285,6 +285,17 @@ def is_delta_column(desc):
     return bool(_DELTA_COL.search(' '.join(desc or [])))
 
 
+def cell_axes(desc):
+    """The axes this cell's own column headers RESOLVE, not the row's.
+
+    Returned alongside the value so the audit reads what the grid read. The
+    grid has computed all three since it was written and handed back only
+    the value.
+    """
+    return dict(basis=column_basis(desc), period=column_period(desc),
+                currency=column_currency(desc), headers=list(desc or []))
+
+
 def select(lines, label_idx, spec, guard=GUARD, is_boundary=None):
     """The cell this row's axes select on a horizontal grid, or a refusal.
 
@@ -359,12 +370,14 @@ def select(lines, label_idx, spec, guard=GUARD, is_boundary=None):
         return dict(value=cells[best][1], raw=cells[best][1],
                     description=cells[best][2], why=None,
                     cellX=cells[best][0], cellLine=label_idx,
+                    cellAxes=cell_axes(cells[best][2]),
                     columns=[c[2] for c in cells], how=trace + ['latest period'])
     if len(alive) == 1:
         i = alive[0]
         return dict(value=cells[i][1], raw=cells[i][1],
                     description=cells[i][2], why=None,
                     cellX=cells[i][0], cellLine=label_idx,
+                    cellAxes=cell_axes(cells[i][2]),
                     columns=[c[2] for c in cells], how=trace + ['sole survivor'])
     return dict(value=None, description=[c[2] for c in cells],
                 why='%d columns survive and the header names fewer than two '

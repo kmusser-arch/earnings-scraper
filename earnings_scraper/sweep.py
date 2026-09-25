@@ -63,6 +63,15 @@ from . import registry
 VERDICTS = ('MATCH', 'FALSE_MATCH', 'MISMATCH', 'LOST', 'REFUSED', 'EXCLUDED')
 
 
+EVIDENCE, ABSENT, VACUOUS, NA = 'EVIDENCE', 'ABSENT', 'VACUOUS', 'NA'
+
+
+def _same_basis(a, b):
+    na = (a or '').lower().replace(' ', '').replace('-', '')
+    nb = (b or '').lower().replace(' ', '').replace('-', '')
+    return na == nb
+
+
 def _fence_ok(text, pos, spec):
     """Is the value inside the section the row declared?
 
@@ -70,75 +79,156 @@ def _fence_ok(text, pos, spec):
     right digits from the wrong place -- the definition of a false green.
     """
     anchors = spec.get('sectionAnchor')
-    if not anchors or not isinstance(pos, int):
-        return True, None
+    if not anchors:
+        return True, None, NA
+    if not isinstance(pos, int):
+        return True, None, VACUOUS
     spans = extract.section_spans(text, anchors, spec.get('spanTerminator'),
                                   spec.get('spanStartAfter'))
     if not spans:
-        return True, None
+        # THE ANCHOR IS DECLARED AND THE DOCUMENT HAS NO SUCH SECTION. That
+        # is a fact about the release, not an excuse to pass.
+        return True, 'declared section not found in this document', ABSENT
     if any(lo <= pos <= hi for lo, hi in spans):
-        return True, None
-    return False, 'outside its declared section'
+        return True, None, EVIDENCE
+    return False, 'outside its declared section', EVIDENCE
 
 
-def _basis_ok(text, pos, spec):
-    """Does the clause at the value contradict the declared basis?
+def _basis_ok(text, pos, spec, axes=None):
+    """Does the basis of the SELECTED CELL match what the row declares?
 
-    Only a CONTRADICTION fails. Silence is not a failure: most tables carry
-    no basis word at all, and treating that as a failure would mark the
-    majority false.
+    ★ STRUCTURE FIRST. In a table the basis is in the column header, and
+    _governing_sentence cannot reach a column header from any position, at
+    any offset, ever. cellAxes carries what the grid resolved for the cell
+    it chose -- the header group, not the list of groups that exist.
     """
     want = (spec or {}).get('basis')
-    if not want or not isinstance(pos, int):
-        return True, None
+    if not want:
+        return True, None, NA
+    if axes is not None:
+        got = axes.get('basis')
+        if got:
+            if _same_basis(got, want):
+                return True, None, EVIDENCE
+            return (False, 'the COLUMN is %s, the row declares %s'
+                    % (got, want), EVIDENCE)
+        # ★ THE COLUMN IS GENUINELY UNLABELLED. Under the ruling this is a
+        # refusal on a priority-1 row -- taken at extraction, before the
+        # value is emitted -- and a FLAG everywhere else. It is never a
+        # silent pass again.
+        return True, 'the column carries no basis word', ABSENT
+    if not isinstance(pos, int):
+        return True, None, VACUOUS
     frag = extract._governing_sentence(text, pos)
     low = (frag or '').lower()
     has_non = 'non-gaap' in low or 'non gaap' in low
     has_gaap = 'gaap' in low
+    if not (has_gaap or has_non):
+        return True, None, VACUOUS
+    if has_gaap and has_non:
+        # BOTH WORDS IN ONE CLAUSE SEPARATE NOTHING. A table block names
+        # every basis it prints; that is not evidence about one cell.
+        return True, None, VACUOUS
     if want.lower().startswith('non'):
         if has_gaap and not has_non:
-            return False, 'clause says GAAP, row declares non-GAAP'
-    elif want.upper() == 'GAAP':
+            return False, 'clause says GAAP, row declares non-GAAP', EVIDENCE
+        return True, None, EVIDENCE
+    if want.upper() == 'GAAP':
         if has_non:
-            return False, 'clause says non-GAAP, row declares GAAP'
-    return True, None
+            return False, 'clause says non-GAAP, row declares GAAP', EVIDENCE
+        return True, None, EVIDENCE
+    return True, None, VACUOUS
 
 
-def _period_ok(text, pos, spec, quarter=None):
-    """Does the clause at the value contradict the declared period?
+#: a vertical column class that is NOT the reporting period
+_NOT_REPORTED = ('SEQUENTIAL', 'PRIOR_YEAR_Q', 'YTD', 'PRIOR_YEAR_YTD')
 
-    EXPLICIT evidence only, matching the filter: a class the issuer's own
-    words support can contradict; one inferred from position cannot.
+
+def _period_ok(text, pos, spec, quarter=None, axes=None, record=None):
+    """Does the period of the SELECTED CELL contradict what the row declares?
+
+    Three sources, in order of how much they can prove:
+
+    1. A VERTICAL COLUMN CLASS. vtables classified every column and the
+       selector picked one; REPORTED vs SEQUENTIAL / PRIOR_YEAR_Q / YTD is a
+       direct answer, and HPE sits the sequential quarter BETWEEN current
+       and year-ago at 0.87x, so it is the answer that matters most.
+
+    2. A HORIZONTAL HEADER PERIOD, as (year, quarter). ★ AGREEMENT ONLY.
+       ORCL's Q1 FY27 release heads its columns 2026 and 2025 -- CALENDAR
+       years against a fiscalYear of 2027 -- so a DISAGREEMENT here cannot
+       be told apart from the fiscal/calendar offset. Agreement is evidence;
+       disagreement is INCONCLUSIVE and must never fail a row.
+
+    3. The text clause, EXPLICIT evidence only, as before.
     """
     want = (spec or {}).get('period')
-    if not want or not isinstance(pos, int):
-        return True, None
+    if not want:
+        return True, None, NA
     want = {'FY_GUIDE': period_mod.GUIDE_FY}.get(want, want)
+
+    if axes is not None:
+        got = axes.get('period')
+        if isinstance(got, str) and got:
+            if want == period_mod.REPORTED:
+                if got == 'REPORTED':
+                    return True, None, EVIDENCE
+                if got in _NOT_REPORTED:
+                    return (False, 'the COLUMN is %s, the row declares '
+                            'REPORTED' % got, EVIDENCE)
+            # a guide row's column class says nothing about guidance
+            return True, None, VACUOUS
+        if isinstance(got, (tuple, list)) and len(got) == 2:
+            ry = (record or {}).get('fiscalYear')
+            rq = (record or {}).get('fiscalQuarter') or quarter
+            if want == period_mod.REPORTED and got[0] == ry and (
+                    not got[1] or got[1] == rq):
+                return True, None, EVIDENCE
+            # ★ CANNOT TELL A CALENDAR-LABELLED COLUMN FROM A WRONG ONE.
+            return True, None, VACUOUS
+
+    if not isinstance(pos, int):
+        return True, None, VACUOUS
     frag = extract._governing_sentence(text, pos)
     if not frag:
-        return True, None
+        return True, None, VACUOUS
     klass = period_mod.classify_candidate(frag, quarter)
-    if klass in (period_mod.UNRESOLVED, want):
-        return True, None
+    if klass == period_mod.UNRESOLVED:
+        return True, None, VACUOUS
     basis, phrase = extract.period_basis(frag)
     if basis != 'EXPLICIT':
-        return True, None
-    return False, 'clause is %s (%r), row declares %s' % (klass, phrase, want)
+        return True, None, VACUOUS
+    if klass == want:
+        return True, None, EVIDENCE
+    return (False, 'clause is %s (%r), row declares %s'
+            % (klass, phrase, want), EVIDENCE)
 
 
-def provenance(text, pos, spec, quarter=None):
-    """(ok, [failures]) — does the POSITION support this being the row's value?"""
-    fails = []
-    for check in (_fence_ok(text, pos, spec),
-                  _basis_ok(text, pos, spec),
-                  _period_ok(text, pos, spec, quarter)):
-        ok, why = check
+def provenance(text, pos, spec, quarter=None, axes=None, record=None):
+    """(ok, [failures], {check: state}) for one row's position.
+
+    The state matters as much as the verdict: a check that PASSED because it
+    read nothing is not a check that passed, and reporting the two together
+    is what let FALSE_MATCH 0 look like a result for a week.
+    """
+    fails, states, notes = [], {}, []
+    for name, res in (('fence', _fence_ok(text, pos, spec)),
+                      ('basis', _basis_ok(text, pos, spec, axes)),
+                      ('period', _period_ok(text, pos, spec, quarter, axes,
+                                            record))):
+        ok, why, state = res
+        states[name] = state
         if not ok:
             fails.append(why)
-    return (not fails), fails
+        elif why:
+            notes.append('%s: %s' % (name, why))
+    states['notes'] = notes
+    states['evidenceCount'] = sum(1 for k in ('fence', 'basis', 'period')
+                                  if states[k] == EVIDENCE)
+    return (not fails), fails, states
 
 
-def judge(text, pre_row, slot, spec, quarter=None, got=None):
+def judge(text, pre_row, slot, spec, quarter=None, got=None, record=None):
     """The verdict for one row, with its provenance reasons."""
     stored = (slot or {}).get('actual')
     if registry.status_of(spec) != 'EXTRACTABLE':
@@ -166,12 +256,17 @@ def judge(text, pre_row, slot, spec, quarter=None, got=None):
         return dict(verdict='MISMATCH', reason='digits disagree',
                     value=value, pos=pos)
 
-    ok, fails = provenance(text, pos, spec, quarter)
+    ok, fails, states = provenance(text, pos, spec, quarter,
+                                   got.get('cellAxes'), record)
     if ok:
-        return dict(verdict='MATCH', reason=None, value=value, pos=pos)
+        # ★ THE SPLIT TRAVELS WITH THE VERDICT. Counting evidence-bearing
+        # rows in a separate script is how 'MATCH 34' was quoted for a week
+        # without anyone knowing 8 of them had nothing behind them.
+        return dict(verdict='MATCH', reason=None, value=value, pos=pos,
+                    checks=states)
     # ★ THE DIGITS AGREE AND THE POSITION DOES NOT SUPPORT THEM.
     return dict(verdict='FALSE_MATCH', reason='; '.join(fails), value=value,
-                pos=pos)
+                pos=pos, checks=states)
 
 
 def report(counts, population):

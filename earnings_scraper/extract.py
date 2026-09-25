@@ -30,6 +30,7 @@ line sees a label with no number and a number with no label.
 import math
 import re
 
+from . import priority as _priority
 from . import registry
 from . import tables as _tables
 from . import period as _period_mod
@@ -800,6 +801,7 @@ def column_value(text, spec, label_pos, record=None):
             if _v is not None and _cell_unit_ok(_pct, spec):
                 return dict(value=_v, pct=_pct, columnIndex=None,
                             columnClasses=_sel.get('description'),
+                            cellAxes=_sel.get('cellAxes'),
                             cellPos=cell_offset(body, _sel.get('cellLine'),
                                                 _sel.get('cellX'),
                                                 stripped=False))
@@ -825,6 +827,7 @@ def column_value(text, spec, label_pos, record=None):
         if _st.get('value') is not None and _cell_unit_ok(_st.get('pct'), spec):
             return dict(value=_st['value'], pct=_st.get('pct'),
                         columnIndex=None, columnClasses=_st.get('groups'),
+                        cellAxes=_st.get('cellAxes'),
                         cellPos=cell_offset(body, _st.get('cellLine'),
                                             _st.get('cellX')))
     cells = tables.row_value_cells_at(lines, idx)
@@ -841,8 +844,15 @@ def column_value(text, spec, label_pos, record=None):
     # cells would have handed the two APP rows.
     if not _cell_unit_ok(cells[i][1], spec):
         return None
+    # ★ vtables CLASSIFIED EVERY COLUMN and the selector picked index i, so
+    # classes[i] is the SELECTED cell's period. Computed since vtables was
+    # written, returned as a list, and never indexed by anybody.
+    _cls = got.get('classes') or []
     return dict(value=cells[i][0], pct=cells[i][1], columnIndex=i,
-                columnClasses=got.get('classes'),
+                columnClasses=_cls,
+                cellAxes=dict(basis=None, currency=None,
+                              period=(_cls[i] if i < len(_cls) else None),
+                              headers=list(_cls)),
                 cellPos=cell_offset(body, cells[i][2]))
 
 
@@ -1388,11 +1398,39 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
                 continue
             if not _cell_unit_ok(got_s.get('pct'), spec):
                 continue
+            # ★★ THE SAME RULING, ON THE OTHER TABLE SHAPE. This branch
+            # returns before the column path, so leaving it out would make
+            # the rule fire on horizontal grids and not on stacked ones --
+            # one condition with two behaviours, which is the defect this
+            # build keeps finding. sgrid reports the GROUP ITS CELL IS IN,
+            # so absence here means the block declared no basis groups.
+            _sax = got_s.get('cellAxes') or {}
+            _sev = ('AGREES' if _sax.get('basis') else 'ABSENT')
+            if _sax.get('basis') and (
+                    _sax['basis'].lower().replace('-', '')
+                    != (_basis_want or '').lower().replace('-', '')):
+                _sev = 'CONTRADICTS'
+            _sprio = _priority.row_priority(
+                row, spec,
+                ((record or {}).get('preEarnings') or {}).get('keyKPIs'))
+            if _sev == 'CONTRADICTS' or (_sev == 'ABSENT' and _sprio == 1):
+                return dict(value=None, specState=state,
+                            basisEvidence=_sev, rowPriority=_sprio,
+                            candidates=[x['raw'] for x in seen],
+                            why=('BASIS: the stacked block resolves %s for '
+                                 'this cell and the row declares %s'
+                                 % (_sax.get('basis') or 'NO BASIS GROUP',
+                                    _basis_want)
+                                 + (' — refusing on a priority-1 hero'
+                                    if _sev == 'ABSENT' else '')),
+                            rejected=rejected)
             return dict(value=got_s['value'], value_musd=None,
+                        basisEvidence=_sev, rowPriority=_sprio,
                         unit=doc_unit(spec), specState=state,
                         label=c.get('label'), role='level',
                         basisRead=_basis_want,
                         columnClasses=got_s.get('groups'),
+                        cellAxes=got_s.get('cellAxes'),
                         # ★ THE STACKED READER SELECTED AMONG ITS CELLS, not
                         # among the prose candidates. Reporting len(seen) here
                         # filed the two SNOW rows this reader just FIXED as
@@ -1433,6 +1471,46 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
             # was handing it a candidate.
             col = column_value(src, spec, lp, record=record)
             if col is not None:
+                # ★★★ THE COLUMN IS GENUINELY UNLABELLED, AND THAT IS A FACT
+                # ABOUT THE DOCUMENT. Before cellAxes, absence of a basis
+                # word meant WE COULD NOT SEE; now it means THE ISSUER DID
+                # NOT SAY. The filter used to keep such a column silently --
+                # `(column_basis(desc) or want) == want` -- which is why
+                # FALSE_MATCH 0 was never news: a check that ACCEPTS on
+                # missing evidence cannot fail when it has none.
+                _axes_got = col.get('cellAxes') or {}
+                _basis_ev = 'NOT_DECLARED'
+                if (spec or {}).get('basis'):
+                    _basis_ev = ('AGREES' if _axes_got.get('basis')
+                                 else 'ABSENT')
+                    if _axes_got.get('basis') and (
+                            _axes_got['basis'].lower().replace('-', '')
+                            != spec['basis'].lower().replace('-', '')):
+                        _basis_ev = 'CONTRADICTS'
+                _prio = _priority.row_priority(
+                    row, spec,
+                    ((record or {}).get('preEarnings') or {}).get('keyKPIs'))
+                if _basis_ev == 'CONTRADICTS':
+                    return dict(value=None, specState=state,
+                                basisEvidence=_basis_ev,
+                                candidates=[x['raw'] for x in seen],
+                                why=('BASIS: the selected column is %s and '
+                                     'the row declares %s'
+                                     % (_axes_got.get('basis'),
+                                        spec['basis'])),
+                                rejected=rejected)
+                if _basis_ev == 'ABSENT' and _prio == 1:
+                    # THE SNDK PRINCIPLE: on the row that decides the trade,
+                    # a refusal beats a wrong number.
+                    return dict(value=None, specState=state,
+                                basisEvidence=_basis_ev, rowPriority=_prio,
+                                candidates=[x['raw'] for x in seen],
+                                why=('BASIS: this row declares %s and the '
+                                     'column it was read from carries no '
+                                     'basis word — refusing on a priority-1 '
+                                     'hero rather than publishing an '
+                                     'unverifiable basis' % spec['basis']),
+                                rejected=rejected)
                 _d = denomination(src, lp)
                 return dict(value=col['value'],
                             value_musd=(col['value'] * _MUSD[_d[0]]
@@ -1462,6 +1540,10 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
                             label=c.get('label'), role='level',
                             columnIndex=col['columnIndex'],
                             columnClasses=col['columnClasses'],
+                            cellAxes=col.get('cellAxes'),
+                            # ACCEPT AND FLAG. The row is published, and it
+                            # says out loud that its basis is unverified.
+                            basisEvidence=_basis_ev, rowPriority=_prio,
                             candidates=[x['raw'] for x in seen], why=None,
                             rejected=rejected)
     if len(vals) > 1:

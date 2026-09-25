@@ -65,6 +65,7 @@ def main():
     counts = collections.Counter()
     rows_seen = 0
     detail = []
+    vacuous = []
 
     for rid, path, kind in CASES:
         if not os.path.exists(path):
@@ -86,8 +87,21 @@ def main():
             rows_seen += 1
             got = (X.value_for(body, prow, record=rec) or {}
                    if R.status_of(spec) == 'EXTRACTABLE' else {})
-            j = SW.judge(body, prow, slot, spec, q, got=got or None)
+            j = SW.judge(body, prow, slot, spec, q, got=got or None,
+                         record=rec)
             counts[j['verdict']] += 1
+            ck = j.get('checks') or {}
+            if j['verdict'] == 'MATCH':
+                if ck.get('evidenceCount'):
+                    counts['_auditable'] += 1
+                else:
+                    counts['_vacuous'] += 1
+                    vacuous.append((rid, i, (prow.get('name') or '')[:32], ck))
+                for c in ('fence', 'basis', 'period'):
+                    if ck.get(c) == SW.EVIDENCE:
+                        counts['_ev:' + c] += 1
+                    elif ck.get(c) == SW.ABSENT:
+                        counts['_ab:' + c] += 1
             detail.append((rid, i, (prow.get('name') or '')[:32],
                            slot.get('actual'), j['value'], j['verdict'],
                            j.get('reason') or ''))
@@ -98,11 +112,32 @@ def main():
                 slot['pos'] = j.get('pos')
                 slot['agreesWithActual'] = PAR.agrees(slot.get('actual'),
                                                       j['value'])
+                # ★ THE EVIDENCE TRAVELS WITH THE ROW. A verdict without it
+                # cannot be told apart from a verdict nothing checked.
+                slot['sweepChecks'] = {k: v for k, v in
+                                       (j.get('checks') or {}).items()
+                                       if k in ('fence', 'basis', 'period',
+                                                'evidenceCount', 'notes')}
+                slot['basisEvidence'] = (got or {}).get('basisEvidence')
 
     print('=' * 100)
     print('SWEEP — one writer, all six verdicts, denominator attached')
     print('=' * 100)
     print(SW.report(counts, rows_seen))
+    # ★★ THE SPLIT IS PART OF THE SWEEP NOW, not a separate script. Report
+    # coverage as EVIDENCE-BEARING ROWS, never as declared rows.
+    print('   MATCH %d = %d with >=1 DISCRIMINATING check + %d ALL-VACUOUS'
+          % (counts['MATCH'], counts['_auditable'], counts['_vacuous']))
+    print('   evidence-bearing rows:  fence %d · period %d · basis %d'
+          % (counts['_ev:fence'], counts['_ev:period'], counts['_ev:basis']))
+    print('   column states NO basis word (flagged, not silent): %d'
+          % counts['_ab:basis'])
+    if vacuous:
+        print('   the all-vacuous MATCHes:')
+        for rid, i, nm, ck in vacuous:
+            print('      %-13s[%-2d] %-32s fence=%-8s basis=%-8s period=%s'
+                  % (rid, i, nm, ck.get('fence'), ck.get('basis'),
+                     ck.get('period')))
     print('')
     for v in SW.VERDICTS:
         rows = [d for d in detail if d[5] == v]

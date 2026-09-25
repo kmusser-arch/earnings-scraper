@@ -23,8 +23,17 @@ correct provenance and made the audit EMPTIER, not richer: basis evidence went
 1 -> 0 and the all-vacuous MATCH rows went 7 -> 8. A cell is surrounded by
 digits; the words are in the header, and these checks read prose.
 
-    MATCH 34 = 26 with >=1 DISCRIMINATING check + 8 ALL-VACUOUS
-    evidence-bearing rows: fence 20 · period 14 · basis 0
+    MATCH 34 = 29 with >=1 DISCRIMINATING check + 5 ALL-VACUOUS
+    evidence-bearing rows: fence 18 · period 18 · basis 3
+
+★★★ AND EACH CHECK NOW REPORTS WHICH OF THREE THINGS HAPPENED, because a
+check whose behaviour on missing evidence is ACCEPT cannot fail when it has
+no evidence at all — which is why FALSE_MATCH 0 was never news.
+
+    EVIDENCE  it had something to read and could have failed
+    ABSENT    the column exists and carries no such word — a fact about the
+              DOCUMENT, not about our blindness
+    VACUOUS   nothing readable at all — blind, and saying so
 
 DECLARING A CHECK IS NOT DISCRIMINATING WITH IT. An earlier version of this
 docstring said all 34 had a live check 'because every extractable row declares
@@ -56,27 +65,27 @@ def main():
 
     # ── each provenance check must be able to say NO ─────────────────────
     gaap = body.lower().find('gaap operating income')
-    ok, fails = SW.provenance(body, gaap,
+    ok, fails, _st = SW.provenance(body, gaap,
                               {'basis': 'non-GAAP', 'specState': 'EXTRACTABLE'})
     check(not ok and any('GAAP' in f for f in fails),
           'BASIS check fires: a non-GAAP row whose position sits in a '
           'GAAP-only clause')
 
     q4 = body.find('In Q4 the momentum')
-    ok2, f2 = SW.provenance(body, q4,
+    ok2, f2, _st2 = SW.provenance(body, q4,
                             {'period': 'REPORTED', 'specState': 'EXTRACTABLE'})
     check(not ok2 and any('GUIDE_NEXT_Q' in f for f in f2),
           'PERIOD check fires: a REPORTED row whose position sits in an '
           'explicit Q4 guide clause')
 
-    ok3, f3 = SW.provenance(body, 10, {
+    ok3, f3, _st3 = SW.provenance(body, 10, {
         'sectionAnchor': ['Third Quarter Fiscal Year 2026 Financial '
                           'Highlights'], 'specState': 'EXTRACTABLE'})
     check(not ok3 and any('outside' in f for f in f3),
           'FENCE check fires: a position far outside the declared section')
 
     # ── and each must be able to say YES ─────────────────────────────────
-    okp, _ = SW.provenance(body, body.find('Infrastructure software'),
+    okp, _fp, _stp = SW.provenance(body, body.find('Infrastructure software'),
                            {'basis': 'non-GAAP', 'specState': 'EXTRACTABLE'})
     check(okp, 'and the basis check PASSES where the clause does not '
                'contradict — it is not simply on')
@@ -104,6 +113,64 @@ def main():
     v6 = SW.judge(body, {'extraction': {'specState': 'NOT_EXTRACTABLE'}},
                   slot, {'specState': 'NOT_EXTRACTABLE'}, 3, got={})['verdict']
     check(v6 == 'EXCLUDED', 'judge returns EXCLUDED for a NOT_EXTRACTABLE row')
+
+    # ── the three STATES, each shown to occur ────────────────────────────
+    # ★ A STATE THAT NEVER OCCURS LOOKS EXACTLY LIKE ONE THAT IS CORRECT.
+    _, _, st_struct = SW.provenance(
+        body, 0, {'basis': 'non-GAAP', 'specState': 'EXTRACTABLE'},
+        axes={'basis': 'non-GAAP', 'period': None})
+    check(st_struct['basis'] == SW.EVIDENCE,
+          'a cell whose COLUMN is labelled non-GAAP gives the basis check '
+          'EVIDENCE — read from structure, not from prose')
+
+    okc, failc, st_bad = SW.provenance(
+        body, 0, {'basis': 'GAAP', 'specState': 'EXTRACTABLE'},
+        axes={'basis': 'non-GAAP', 'period': None})
+    check(not okc and st_bad['basis'] == SW.EVIDENCE
+          and any('COLUMN' in f for f in failc),
+          'and the SAME source fails when the column contradicts the row: '
+          '%r' % (failc[0] if failc else None))
+
+    _, _, st_abs = SW.provenance(
+        body, 0, {'basis': 'non-GAAP', 'specState': 'EXTRACTABLE'},
+        axes={'basis': None, 'period': None})
+    check(st_abs['basis'] == SW.ABSENT and st_abs['evidenceCount'] == 0,
+          'an UNLABELLED column reports ABSENT, not a silent pass — the '
+          'ruling keys on this and it no longer looks like a passing check')
+
+    _, _, st_vac = SW.provenance(
+        body, body.find('Infrastructure software'),
+        {'basis': 'non-GAAP', 'specState': 'EXTRACTABLE'})
+    check(st_vac['basis'] in (SW.EVIDENCE, SW.VACUOUS),
+          'a PROSE row still falls back to the clause (%s) — structure '
+          'first, text second, never text where structure exists'
+          % st_vac['basis'])
+
+    # ── the VERTICAL column class is period evidence ─────────────────────
+    _, _, st_seq = SW.provenance(
+        body, 0, {'period': 'REPORTED', 'specState': 'EXTRACTABLE'},
+        axes={'basis': None, 'period': 'PRIOR_YEAR_Q'})
+    check(st_seq['period'] == SW.EVIDENCE,
+          'vtables already classified every column; the SELECTED class is '
+          'period evidence and was computed and discarded until now')
+    okq, failq, _ = SW.provenance(
+        body, 0, {'period': 'REPORTED', 'specState': 'EXTRACTABLE'},
+        axes={'basis': None, 'period': 'PRIOR_YEAR_Q'})
+    check(not okq and any('PRIOR_YEAR_Q' in f for f in failq),
+          'and a REPORTED row sitting on a PRIOR_YEAR_Q column FAILS: %r'
+          % (failq[0] if failq else None))
+
+    # ★★ WHAT THIS CANNOT TELL APART, asserted rather than hoped: a
+    # horizontal header period is used for AGREEMENT ONLY, because ORCL
+    # heads CALENDAR years against a fiscal year two ahead.
+    oky, faily, st_y = SW.provenance(
+        body, 0, {'period': 'REPORTED', 'specState': 'EXTRACTABLE'},
+        axes={'basis': None, 'period': (2019, 3)},
+        record={'fiscalYear': 2026, 'fiscalQuarter': 3})
+    check(oky and not faily and st_y['period'] == SW.VACUOUS,
+          'a header year that DISAGREES is inconclusive, never a failure — '
+          'the fiscal/calendar offset is indistinguishable from a wrong '
+          'column and this check must not pretend otherwise')
 
     # ── the report cannot be quoted without its denominator ──────────────
     line = SW.report({'MATCH': 34, 'MISMATCH': 1}, 102)

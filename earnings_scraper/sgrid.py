@@ -155,17 +155,27 @@ def select(lines, label_idx, spec, basis_headers=None, lookback=400):
                             'group(s)' % (len(cells), len(seen)))
         labels = [seen[g] for g in part]
         alive = [i for i, lab in enumerate(labels) if lab == want]
+        picked_basis = labels
         if not alive:
             return dict(value=None, cells=[c[0] for c in cells],
                         why='no %s group in this block' % want)
     else:
         alive = list(range(len(cells)))
+        # ★ NO GROUPING RAN, SO NO CELL HAS A RESOLVED BASIS. Reporting the
+        # group LIST here is what turned 'the block contains a non-GAAP
+        # group somewhere' into 'this cell is non-GAAP'.
+        picked_basis = None
 
     picked = [i for i in alive if cells[i][1] == want_pct]
     if len(picked) == 1:
         i = picked[0]
         return dict(value=cells[i][0], pct=cells[i][1],
                     cellLine=cells[i][2], cellX=0,
+                    # THE GROUP THIS CELL IS IN, not the groups that exist.
+                    cellAxes=dict(basis=(picked_basis[i] if picked_basis
+                                         else None),
+                                  period=None, currency=None,
+                                  headers=list(seen)),
                     cells=[c[0] for c in cells], groups=seen, why=None)
     if not picked:
         return dict(value=None, cells=[c[0] for c in cells], groups=seen,

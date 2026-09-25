@@ -18,6 +18,8 @@ because every one of them recurred after being fixed once.
 | 3 | `refresh_agreement` | recompute works, value never written |
 | 4 | `pos` | cell coordinate computed by the grid, discarded before `provenance()` |
 | 5 | the cell description `Q3 26 \| Non-GAAP` | computed by the grid, discarded at the same step as the coordinate |
+| 6 | sgrid's `labels[i]` — the basis GROUP the chosen cell is in | returned the group **list** instead, so an audit found 'non-GAAP' in it whatever cell was picked: **false** evidence, not weak evidence |
+| 7 | vtables' `classes[i]` — the selected column's period | classified every column since vtables was written, returned as a list, never indexed |
 
 **STANDING TEST, before writing any new extraction logic:**
 
@@ -113,3 +115,61 @@ period check because every row declares one" proved nothing.
 
     MATCH 34 = 26 with >=1 DISCRIMINATING check + 8 ALL-VACUOUS
     evidence-bearing rows: fence 20 - period 14 - basis 0
+
+---
+
+## ★★★ 7. A CHECK THAT **ACCEPTS** ON MISSING EVIDENCE CANNOT FAIL WHEN IT HAS NONE
+
+`column_basis` returned `None` on an unlabelled column and the filter kept it
+— `(column_basis(desc) or want) == want`. **Basis was not a weak instrument.
+It was a no-op that reported as a check**, which is why `FALSE_MATCH 0` was
+never news. All three checks defaulted to accept.
+
+**And the semantics of absence change the moment the instrument works:**
+
+| | absence means |
+|---|---|
+| before `cellAxes` | **we are blind** |
+| after | **the column is genuinely unlabelled** — a fact about the document |
+
+Landing the instrument without changing the default is building the
+instrument and keeping the blindfold. **RULING, in the same commit:**
+
+```
+priority-1 hero + basis declared + column carries no basis word  ->  REFUSE
+lower priority,  same conditions                                 ->  ACCEPT AND FLAG
+```
+
+Never accept silently. That is **the SNDK principle: on the row that decides
+the trade, a refusal beats a wrong number.**
+
+Each check now reports one of three states, and coverage is counted in
+**EVIDENCE** rows only:
+
+```
+EVIDENCE   it had something to read and could have failed
+ABSENT     the column exists and carries no such word
+VACUOUS    nothing readable at all — blind, and saying so
+```
+
+---
+
+## ★★★ 8. COORDINATES THAT DO NOT CARRY THEIR FRAME
+
+Three instances, one shape. An integer position is meaningless without the
+frame it was measured in, and the frames are **raw · dewrapped · stripped ·
+kept** — with a monkeypatched stand-in as a fifth.
+
+| # | what happened |
+|---|---|
+| 1 | `dewrap` — `pos` emitted in dewrapped space, persisted as original (AVGO 21.7 at 1541 against a true 1635) |
+| 2 | `cell_offset` — indent added twice, `pos` one character right of the figure |
+| 3 | the probe — `label_idx` from **dewrapped** space handed to a **raw** document, and it reported the **exact opposite** of the true result |
+
+Vigilance has failed three times here and will fail again. **The fix is a
+type: positions carry their frame, and a cross-frame use becomes a type error
+rather than a plausible number.** Not urgent — on the list before a fourth
+one lands somewhere it is not tested the same day.
+
+**"THE ONLY FAITHFUL PROBE OF AN EDIT IS THE EDIT."** A monkeypatched
+stand-in is a fifth frame. Adopted permanently.
