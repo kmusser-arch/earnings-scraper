@@ -135,7 +135,7 @@ def is_compound(recipe):
              or 'multipl' in low))
 
 
-def card_row_value(ref, record, depth=0):
+def card_row_value(text, ref, record, depth=0):
     """(lo, hi) for a source row written as an index into the card, or None.
 
     ★ A CARD THAT REFERENCES ITSELF MUST REFUSE, NOT RECURSE. The depth guard
@@ -151,11 +151,23 @@ def card_row_value(ref, record, depth=0):
     rows = ((record or {}).get('preEarnings') or {}).get('keyKPIs') or []
     if idx >= len(rows):
         return None
-    # the endpoints are written in the source row itself; prefer them over a
-    # re-read, because the row being referenced may itself be refusing
-    got = _DOLLAR_RANGE.search(ref)
-    if got:
-        return (float(got.group(1)), float(got.group(2)))
+    # ★★★ THE OPERAND IS EXTRACTED, NEVER READ OUT OF THE REFERENCE. An
+    # earlier version preferred the endpoints written in the sourceRow
+    # sentence -- 'HPE-2026Q3 [3] ... the $3.75-$3.85 range' -- because the
+    # referenced row might be refusing. That is precisely the case where it
+    # must NOT substitute: A DERIVED VALUE WHOSE OPERAND COMES FROM THE
+    # CARD'S PROSE IS THE HAND READ WITH ARITHMETIC APPLIED. It cannot
+    # disagree with the author, and it produces a NUMBER that lands on the
+    # card. Same family as a check consulting the population instead of the
+    # selection, one level worse.
+    from . import extract as _x
+    got = _x.value_for(text, rows[idx], record=record) or {}
+    lo, hi = got.get('rangeLow'), got.get('rangeHigh')
+    if isinstance(lo, (int, float)) and isinstance(hi, (int, float)):
+        return (float(lo), float(hi))
+    v = got.get('value')
+    if isinstance(v, (int, float)):
+        return (float(v), float(v))
     return None
 
 
@@ -184,7 +196,7 @@ def derive_compound(text, row, record=None, depth=0):
     base_src = rate_src = None
     for src in sources:
         if base is None:
-            got = card_row_value(src, record, depth)
+            got = card_row_value(text, src, record, depth)
             if got:
                 base, base_src = got, src
                 continue
@@ -193,8 +205,14 @@ def derive_compound(text, row, record=None, depth=0):
             if got:
                 rate, rate_src = got, src
     if base is None:
+        prose = [s for s in sources if _DOLLAR_RANGE.search(str(s))]
         return dict(value=None, derivedFrom=None,
-                    why='the BASE operand did not resolve from %s' % sources)
+                    why=('the BASE operand did not resolve by EXTRACTION'
+                         + (' — and its sourceRow states the endpoints as '
+                            'PROSE (%r), which is the answer key with '
+                            'arithmetic applied and is never substituted'
+                            % str(prose[0])[:60] if prose
+                            else ' from %s' % sources)))
     if rate is None:
         return dict(value=None, derivedFrom=None,
                     why=('the GROWTH operand did not resolve — the framework '

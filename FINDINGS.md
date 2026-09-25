@@ -503,3 +503,73 @@ are **three different failures**:
 A blank with no reason is indistinguishable from a row nobody tried, a
 swallowed crash, and a deliberate refusal. **The writer now raises rather than
 writing it**, and the guard is driven red in the suite.
+
+---
+
+## ★★★ 25. THE OPERAND IS EXTRACTED, NEVER READ OUT OF THE REFERENCE
+
+> **A derived value whose operand comes from the card's prose is the hand read
+> with arithmetic applied. IT CANNOT DISAGREE.**
+
+Same family as a check consulting the population instead of the selection —
+**one level worse, because it produces a NUMBER and the number lands on the
+card.**
+
+`card_row_value` preferred the endpoints written in the `sourceRow` sentence
+(*"HPE-2026Q3 [3] … the $3.75-$3.85 range"*) *because the referenced row might
+be refusing*. That is precisely the case where it must not substitute.
+
+**And the dangerous field was the helpful one.** That prose was written as an
+aid to a human. **Every clarifying note is a latent answer-key leak awaiting a
+reader capable enough to parse it**, so what is for humans and what is for
+readers must be structurally separate. `sourceRows` must be a structured
+reference — record id plus row index, or an extraction spec. **Never prose.**
+
+**Boundary confirmed by poisoning, not by inspection:** every hand-read field
+(`street` · `bogey` · `consensus` · `note` · `setup` · `actual` · `vsBogey`)
+replaced with an absurd value across 35 extractable rows on 3 documents, 16 of
+them producing a value — **no extracted value moved.** Grepping for field
+names would prove nothing about a path that builds a key dynamically.
+
+---
+
+## ★★★ 26. HPE[3] IS THE PROSE TWIN OF THE TABLE PROBLEM — NOT AN ORDERING BUG
+
+Measured two independent ways: **consulting the declared period before the tie
+check resolves 0 rows, not 5 or 6.** (And there are **17** tie refusals
+corpus-wide, not 6 — my earlier count was the basis-declaring subset.)
+
+The reason the declared axis cannot separate them:
+
+```
+clause : 'HPE is raising both GAAP diluted net EPS to be in the range of
+          $2.93 to $3.03 and non-GAAP diluted net EPS(1) to be in the range
+          of $3.75 to $3.85.'
+class  : GUIDE_NEXT_Q        <- WRONG, and identical for both candidates
+basis  : INFERRED            <- so the filter may RANK, never EXCLUDE
+```
+
+The period is in the **section heading directly above** — `Fiscal 2026 Full
+Year Outlook` — and `_governing_sentence` stops at sentence punctuation, so
+the classifier never sees it.
+
+> **In a document, structure carries period and the sentence does not.**
+
+Exactly the table finding, one surface over. For tables the answer was
+`cellAxes`; for prose the equivalent is the **section heading the clause sits
+under**, which `section_spans` already knows how to find and the period
+classifier has never consulted. **The discard register, by sequencing and by
+signature at once.**
+
+---
+
+## ★★★ 27. THE SPECIALIST'S REFUSAL IS THE ANSWER, NOT A REASON TO TRY SOMETHING WEAKER
+
+Finding #17 again, in the derived path. The derivation refused with *"the BASE
+operand did not resolve by EXTRACTION"* and the label path below overwrote it
+with *"no candidate matched the declared unit '$'"* — **the third time a wrong
+reason has hidden the real failure.**
+
+A derived row is **not in the document**, so the label path cannot be right
+about it. A refusal reason is a diagnostic **no test asserts**; asserting that
+the stated reason matches the branch that produced it is now on the list.

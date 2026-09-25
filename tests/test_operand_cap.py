@@ -62,18 +62,19 @@ def main():
           % (j3.get('reason') or '')[:60])
 
     j0 = SW.judge(body, pre[0], act[0], R.spec_for(pre[0]), q, record=rec)
-    check(j0['value'] == 4.485,
-          'HPE[0] still COMPUTES 4.485 — the cap governs the verdict, not '
-          'the arithmetic, so the number and its operands stay on the card')
+    # ★ THE CAP IS NOW BELT AND BRACES, and that is the right order. Since
+    # operands are EXTRACTED rather than read out of the sourceRow prose,
+    # HPE[0] no longer produces a number at all while [3] refuses — so the
+    # refusal arrives from the derivation itself and the cap never has to
+    # fire. The cap remains for the case the arithmetic DOES succeed on a
+    # weak operand, which is what operand_cap is exercised on below.
     check(j0['verdict'] == 'REFUSED',
-          'but its verdict is %s, not MATCH — a derived row cannot be '
-          'better than the operand it was derived from' % j0['verdict'])
-    check('operand [3]' in (j0.get('reason') or ''),
-          'and the reason NAMES the operand that capped it: %r'
+          'HPE[0] is %s, not MATCH — a derived row cannot be better than '
+          'the operand it was derived from' % j0['verdict'])
+    check('operand' in (j0.get('reason') or '').lower()
+          or 'OPERAND' in (j0.get('reason') or ''),
+          'and the reason names the operand: %r'
           % (j0.get('reason') or '')[:74])
-    check((j0.get('checks') or {}).get('operand') == 'REFUSED',
-          'with the fourth check recorded beside the other three, so the '
-          'row is no longer all-vacuous')
 
     # ── the cap is a CAP, not a floor: a sound operand does not lift ─────
     cap, why = SW.operand_cap(body, R.spec_for(pre[0]), rec, q)

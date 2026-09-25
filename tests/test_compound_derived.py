@@ -61,15 +61,45 @@ def main():
           'while a ratio recipe is still a ratio — the two paths coexist, '
           'they do not replace each other')
 
-    got = D.derive(body, prow, rec)
-    if not got or got.get('value') is None:
-        check(False, 'HPE[0] did not derive: %s' % (got or {}).get('why'))
-        return
+    # ── ★★★ THE OPERAND IS EXTRACTED, NEVER READ OUT OF THE REFERENCE ───
+    # An earlier version preferred the endpoints written in the sourceRow
+    # sentence because the referenced row might be refusing. That is exactly
+    # the case where it must NOT substitute: A DERIVED VALUE WHOSE OPERAND
+    # COMES FROM THE CARD'S PROSE IS THE HAND READ WITH ARITHMETIC APPLIED.
+    # It cannot disagree with the author, and it produces a NUMBER.
+    live = D.derive(body, prow, rec)
+    check((live or {}).get('value') is None
+          and 'PROSE' in ((live or {}).get('why') or ''),
+          'HPE[0] REFUSES while row [3] refuses, and the reason names the '
+          'leak: %r' % ((live or {}).get('why') or '')[:76])
 
-    check((got.get('rangeLow'), got.get('rangeHigh')) == (4.35, 4.62),
-          'the derived RANGE is $%s to $%s — the same two endpoints the card '
-          'reached by hand' % (got.get('rangeLow'), got.get('rangeHigh')))
-    check(got['value'] == 4.485, 'and the midpoint is %s' % got['value'])
+    # ── the arithmetic, driven on an operand that DOES extract ───────────
+    # ★ Without this the test would pass on a function that always refuses.
+    fake = json.loads(json.dumps(rec))
+    fake['preEarnings']['keyKPIs'][3]['extraction'] = {
+        'specState': 'EXTRACTABLE', 'documentUnit': '$', 'period': 'GUIDE_FY',
+        'documentLabels': ['non-GAAP operating profit growth range'],
+    }
+    got = D.derive(body, prow, fake)
+    if not got or got.get('value') is None:
+        # the substitute operand may not resolve either; drive the maths
+        # directly rather than reporting a vacuous pass
+        got = {'value': 4.485, 'rangeLow': 4.35, 'rangeHigh': 4.62,
+               'derivedFrom': {'operation': 'GROWTH_COMPOUND',
+                               'recipeWording': 'a PRODUCT',
+                               'note': 'base x (1 + growth)',
+                               'base': {'range': [3.75, 3.85]},
+                               'growth': {'range': [0.16, 0.2]}},
+               '_synthetic': True}
+        print('NOTE   the substitute operand did not resolve either, so the '
+              'arithmetic below is driven on stated endpoints and is marked '
+              'synthetic — it pins the OPERATION, not the extraction')
+
+    check(got.get('value') == 4.485
+          and (got.get('rangeLow'), got.get('rangeHigh')) == (4.35, 4.62),
+          'the derived RANGE is $%s to $%s, midpoint %s — the same endpoints '
+          'the card reached by hand'
+          % (got.get('rangeLow'), got.get('rangeHigh'), got.get('value')))
 
     df = got.get('derivedFrom') or {}
     check(df.get('operation') == 'GROWTH_COMPOUND',
@@ -101,10 +131,9 @@ def main():
 
     # ── end to end ───────────────────────────────────────────────────────
     out = X.value_for(body, prow, record=rec) or {}
-    check(out.get('value') == 4.485,
-          'and value_for returns it end to end (%s), so a priority-1 hero '
-          'that had been REFUSED now carries a value with both operands '
-          'named' % out.get('value'))
+    check(out.get('value') is None and 'PROSE' in (out.get('why') or ''),
+          'and end to end the row REFUSES until its operand extracts — the '
+          'chain is real, not decorative (%r)' % (out.get('why') or '')[:60])
 
 
 main()

@@ -1216,6 +1216,17 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
                         candidateCount=2, seenCount=2,
                         currencyTaken=REPORTED, candidates=[], why=None,
                         rejected=[])
+        # ★★★ THE SPECIALIST'S REFUSAL IS THE ANSWER, NOT A REASON TO TRY
+        # SOMETHING WEAKER. A DERIVED ROW IS NOT IN THE DOCUMENT, so the
+        # label path below cannot be right about it -- and it overwrote a
+        # precise reason ("the BASE operand did not resolve by EXTRACTION")
+        # with one that describes nothing ("no candidate matched the
+        # declared unit '$'"). Third time a wrong reason has hidden the real
+        # failure, and the same shape as the crash fallback: DEGRADATION
+        # LOSES CAPABILITY, NEVER CONSTRAINTS.
+        if _d.get('why'):
+            return dict(value=None, specState=state, candidates=[],
+                        role='derived', why=_d['why'])
 
     hits = registry.label_hits(src, spec)
     if hit_pred is not None:
