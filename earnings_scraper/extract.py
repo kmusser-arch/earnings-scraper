@@ -1130,6 +1130,52 @@ def governing_context(text, pos):
     return (head + '. ' + frag) if head else frag
 
 
+#: 'gaap' NOT preceded by 'non-' or 'non ' -- the negation CONTAINS the token
+_BARE_GAAP_RE = re.compile(r'(?<!non-)(?<!non )gaap', re.I)
+_NON_GAAP_RE = re.compile(r'non[- ]gaap', re.I)
+
+
+def basis_at(text, pos):
+    """Which basis governs the value at `pos`, or None.
+
+    ★★★ THE QUALIFIER LEADS THE VALUE, which is the MIRROR of the currency
+    rule. currency_spans exists because a currency qualifier TRAILS its
+    figure ('13% growth, or 12% in constant currency', measured 29 to 4).
+    A basis qualifier leads it:
+
+        'Q1 GAAP earnings per share increased to $1.56, up 55%, and
+         non-GAAP earnings per share climbed to $1.92, up 30%.'
+
+    So the governing basis is the LAST basis word before the value, within
+    the value's own sentence. The mechanism was built for one axis and never
+    for the other, which is why a clause naming both bases scored VACUOUS and
+    the basis check went blind on exactly the sentences that carry both.
+
+    ★ DOCUMENT COORDINATES THROUGHOUT. Prefixing a heading and then indexing
+    into the joined string is the frame defect this build has logged three
+    times; the scan runs on `text` itself.
+    """
+    if not isinstance(pos, int) or not text:
+        return None
+    lo = 0
+    for m in _SENTENCE_END.finditer(text, 0, pos):
+        lo = m.end()
+    seg = text[lo:pos]
+    last_non = None
+    for m in _NON_GAAP_RE.finditer(seg):
+        last_non = m
+    last_bare = None
+    for m in _BARE_GAAP_RE.finditer(seg):
+        last_bare = m
+    if last_non is None and last_bare is None:
+        return None
+    if last_non is None:
+        return 'GAAP'
+    if last_bare is None or last_non.start() > last_bare.start():
+        return 'non-GAAP'
+    return 'GAAP'
+
+
 def period_basis(fragment):
     """('EXPLICIT', phrase) when the issuer named the period, else INFERRED."""
     m = _PERIOD_PHRASE.search(fragment or '')

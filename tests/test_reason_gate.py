@@ -242,3 +242,35 @@ def band_rule():
 
 
 band_rule()
+
+
+def control_char_guard():
+    """★ NO SOURCE FILE CARRIES A CONTROL CHARACTER FROM A BROKEN ESCAPE.
+
+    `\b` written through a shell heredoc became a literal BACKSPACE inside a
+    regex, so `basis_token` silently stopped matching and two rows reported
+    FALSE_MATCH for a reason that was mine, not the document's. Earlier
+    patches asserted `chr(8) not in s` and later ones stopped; this makes the
+    assertion permanent and repo-wide instead of per-patch.
+    """
+    root = os.path.join(HERE, '..', 'earnings_scraper')
+    bad = []
+    for base, _dirs, files in os.walk(root):
+        for f in files:
+            if not f.endswith('.py'):
+                continue
+            path = os.path.join(base, f)
+            text = io.open(path, encoding='utf-8').read()
+            hits = sum(text.count(chr(x)) for x in (7, 8, 11, 12))
+            if hits:
+                bad.append((os.path.basename(path), hits))
+    check(not bad,
+          'no module carries a BEL/BACKSPACE/VT/FF from a collapsed escape: '
+          '%s' % (bad or 'clean'))
+    # ★ ANTI-VACUOUS: the scanner must be able to see one.
+    check(sum('x\x08y'.count(chr(x)) for x in (7, 8, 11, 12)) == 1,
+          'and the scanner detects one when it is there — otherwise the '
+          'clean result above means only that it looked at nothing')
+
+
+control_char_guard()

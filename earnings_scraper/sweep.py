@@ -54,6 +54,7 @@ reason.
 import io
 import json
 import os
+import re
 
 from . import extract
 from . import parallel
@@ -82,9 +83,27 @@ OUT_OF_DENOMINATOR = ('EXCLUDED',)
 EVIDENCE, ABSENT, VACUOUS, NA = 'EVIDENCE', 'ABSENT', 'VACUOUS', 'NA'
 
 
+def basis_token(value):
+    """The BASIS a field declares, ignoring any prose that follows it.
+
+    ★★★ `basis` CARRIES PROSE ON SOME ROWS, and one of them carries a
+    FIGURE: ORCL[7] declares 'non-GAAP. ★ reconciliation row is RAGGED --
+    header declares 6 cols...' and ADBE[12] declares 'non-GAAP ($2,974). ★
+    GAAP is $2,354 and appears FIRST...'. Comparing a resolved basis against
+    that whole paragraph fails every time, and the ADBE string contains the
+    ANSWER -- a leak on the surface I had called closed.
+
+    Reading only the leading token is the defensive fix. The field itself is
+    Kyle's to split.
+    """
+    t = (value or '').strip()
+    m = re.match(r'(non[- ]gaap|gaap|core|adjusted|cash)', t, re.I)
+    return m.group(1) if m else t.split('.')[0].strip()
+
+
 def _same_basis(a, b):
-    na = (a or '').lower().replace(' ', '').replace('-', '')
-    nb = (b or '').lower().replace(' ', '').replace('-', '')
+    na = basis_token(a).lower().replace(' ', '').replace('-', '')
+    nb = basis_token(b).lower().replace(' ', '').replace('-', '')
     return na == nb
 
 
@@ -138,10 +157,30 @@ def _basis_ok(text, pos, spec, axes=None):
         return True, 'the column carries no basis word', ABSENT
     if not isinstance(pos, int):
         return True, None, VACUOUS
-    frag = extract._governing_sentence(text, pos)
+    # ★★★ POSITION FIRST, CLAUSE SECOND. The basis qualifier LEADS its value
+    # -- the mirror of the currency rule, which exists because a currency
+    # qualifier TRAILS its figure. A sentence naming BOTH bases separates
+    # them perfectly by position ('GAAP EPS ... $1.56 ... and non-GAAP EPS
+    # ... $1.92') and scored VACUOUS for want of a mechanism that had been
+    # built for the other axis.
+    at = extract.basis_at(text, pos)
+    if at:
+        if _same_basis(at, want):
+            return True, None, EVIDENCE
+        return (False, 'the nearest basis word before this value is %s, the '
+                'row declares %s' % (at, want), EVIDENCE)
+    # ★★★ THE PROSE PATH USES THE SECTION HEADING TOO. A guide clause names
+    # no basis; the block above it does -- ADBE prints 'Non-GAAP diluted net
+    # income per share' as the heading over the figure.
+    frag = extract.governing_context(text, pos)
     low = (frag or '').lower()
-    has_non = 'non-gaap' in low or 'non gaap' in low
-    has_gaap = 'gaap' in low
+    has_non = bool(_NON_GAAP.search(low))
+    # ★★★ 'gaap' in low IS ALWAYS TRUE WHEN 'non-gaap' IS PRESENT. Every
+    # non-GAAP-only clause therefore read as naming BOTH bases, which this
+    # function scores VACUOUS -- so the basis check could NEVER find
+    # non-GAAP evidence in prose, which is most of where it lives. A
+    # substring test for a token whose negation CONTAINS it.
+    has_gaap = bool(_BARE_GAAP.search(low))
     if not (has_gaap or has_non):
         return True, None, VACUOUS
     if has_gaap and has_non:
@@ -157,6 +196,11 @@ def _basis_ok(text, pos, spec, axes=None):
             return False, 'clause says non-GAAP, row declares GAAP', EVIDENCE
         return True, None, EVIDENCE
     return True, None, VACUOUS
+
+
+#: 'gaap' NOT preceded by 'non-' or 'non ' -- the negation contains the token
+_BARE_GAAP = __import__('re').compile(r'(?<!non-)(?<!non )gaap')
+_NON_GAAP = __import__('re').compile(r'non[- ]gaap')
 
 
 #: a vertical column class that is NOT the reporting period

@@ -20,11 +20,15 @@ import json
 import os
 import sys
 
+import datetime                                   # noqa: E402
+RUN_AT = datetime.date.today().isoformat()
+
 HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 from earnings_scraper import extract as X          # noqa: E402
 from earnings_scraper import parallel as PAR       # noqa: E402
+from earnings_scraper import firstfire as FF      # noqa: E402
 from earnings_scraper import reasons as RE        # noqa: E402
 from earnings_scraper import registry as R         # noqa: E402
 from earnings_scraper import sweep as SW           # noqa: E402
@@ -69,6 +73,8 @@ def main():
     vacuous = []
     silent = []
     misdescribed = []
+    firstfires = []
+    ledger = FF.seen_codes()
 
     for rid, path, kind in CASES:
         if not os.path.exists(path):
@@ -119,6 +125,16 @@ def main():
             # ★★★ A REFUSAL REASON IS A DIAGNOSTIC NO TEST ASSERTS, so the
             # sweep asserts it. Three defects survived a green suite behind
             # a message that described the wrong cause.
+            # ★ FIRST-FIRE. A code meeting real prose for the first time is
+            # a refusal to HAND-CHECK before it informs anything, however
+            # correct the gate says its claim is.
+            _code = (got or {}).get('reasonCode')
+            _first = False
+            if _code:
+                _first = FF.mark(_code, rid, when=RUN_AT, ledger=ledger)
+                if _first:
+                    firstfires.append((rid, i, (prow.get('name') or '')[:38],
+                                       _code))
             if got:
                 _ok, _c = RE.verify(body, prow, spec, rec, got)
                 if not _ok:
@@ -139,6 +155,8 @@ def main():
                                        if k in ('fence', 'basis', 'period',
                                                 'evidenceCount', 'notes')}
                 slot['basisEvidence'] = (got or {}).get('basisEvidence')
+                slot['reasonCode'] = _code
+                slot['firstFire'] = _first or None
 
     print('=' * 100)
     print('SWEEP — one writer, all six verdicts, denominator attached')
@@ -179,6 +197,20 @@ def main():
         if len(rows) > 12:
             print('   ... %d more' % (len(rows) - 12))
 
+    if firstfires:
+        print('')
+        print('★ FIRST FIRE — %d refusal code(s) met real prose for the '
+              'first time in this run.' % len(firstfires))
+        print('   HAND-CHECK THESE AGAINST THE RELEASE before any of it '
+              'informs a trade:')
+        for rid, i, nm, code in firstfires:
+            print('   %-13s[%-2d] %-38s %s' % (rid, i, nm, code))
+    _unfired = FF.unfired(RE.CODES, ledger)
+    if _unfired:
+        print('')
+        print('   codes that have STILL never met real prose (%d of %d): %s'
+              % (len(_unfired), len(RE.CODES), ', '.join(_unfired)))
+
     if misdescribed:
         print('')
         print('=' * 100)
@@ -205,6 +237,7 @@ def main():
         raise SystemExit('refusing to write a silent blank')
 
     if args.write:
+        FF.save(ledger)
         io.open(LIB, 'w', encoding='utf-8', newline='').write(
             json.dumps(lib, indent=2, ensure_ascii=False) + '\n')
         print('')

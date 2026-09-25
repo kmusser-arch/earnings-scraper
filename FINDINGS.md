@@ -715,3 +715,113 @@ misdescribed refusal.
 **It matters most where we have no spec.** On an issuer nobody prepared,
 refusals are the normal case, and a wrong reason is how a live mis-diagnosis
 happens with the print moving.
+
+---
+
+## ★★★ 32 (REPLACES THE EARLIER FORM). A ZERO IS A QUESTION
+
+The earlier rule — *"price them jointly where they address the same root from
+different surfaces"* — **requires knowing they are a pair in advance, which is
+the insight the measurement was supposed to produce.** The pair was found by
+luck of sequencing, not by method. Neither of us gets to claim the method
+caught it.
+
+> **A ZERO IS A QUESTION: WHAT WOULD ALSO HAVE TO BE TRUE FOR THIS TO MATTER,
+> AND IS IT TRUE TODAY?**
+>
+> **ACCESS fix** (ordering, sequencing, plumbing)
+> → is the information it grants access to actually **correct** today?
+> **INFORMATION fix** (a new classifier, a new evidence source)
+> → can anything **reach** it today?
+
+Retroactively: the reordering is an ACCESS fix, and *"is the declared period
+ever classified correctly?"* answers **NO** — HPE[3]'s clause classifies
+`GUIDE_NEXT_Q` for **both** candidates. **The pair was visible from the zero**
+without the heading probe existing first.
+
+---
+
+## ★★★ 35. THE FALLBACK-CHAIN AUDIT — AND WHAT IT DID NOT COVER
+
+63 (row × specialist) chains forced to fail across 8 documents and 5
+specialists:
+
+```
+REFUSES when the specialist fails    28   correct
+SAME VALUE from another path         35   benign TODAY
+★ DIFFERENT VALUE                     0   no wrong number in green
+```
+
+**But the crash case is not the live case.** Forcing a specialist to *raise*
+tests the crash guard. The generalised SNOW is the row that never reaches the
+specialist at all: **6 rows declare a basis and take a PROSE value**, three of
+them ★★★ heroes, with `basisCheck = VACUOUS` and nothing verifying the basis.
+
+---
+
+## ★★★ 36. A SUBSTRING TEST FOR A TOKEN WHOSE NEGATION CONTAINS IT
+
+```python
+has_non  = 'non-gaap' in low
+has_gaap = 'gaap' in low        # ALWAYS TRUE WHEN has_non IS
+```
+
+Every non-GAAP-only clause therefore read as naming **both** bases, which the
+check scores `VACUOUS`. **The basis check could never find non-GAAP evidence
+in prose** — which is most of where it lives. Fixed with
+`(?<!non-)(?<!non )gaap`. **Severity: MEDIUM-HIGH** — it publishes no wrong
+number, but it is why basis evidence sat near zero.
+
+---
+
+## ★★★ 37. THE QUALIFIER LEADS THE VALUE — THE MIRROR OF THE CURRENCY RULE
+
+`currency_spans` exists because a currency qualifier **trails** its figure
+(*"13% growth, or 12% in constant currency"*, measured 29 to 4). A **basis**
+qualifier **leads** it:
+
+```
+'Q1 GAAP earnings per share increased to $1.56, and non-GAAP earnings
+ per share climbed to $1.92'
+```
+
+So the governing basis is the **last basis word before the value, inside its
+own sentence**. The mechanism was built for one axis and never for the other,
+which is why a clause naming both bases scored `VACUOUS` — **the discard
+register answered this before any new rule was written.** Measured on the six
+prose-basis rows: **3 AGREE, 0 CONTRADICT, 3 silent.**
+
+Basis evidence: **0 → 3 → 5 → 8** across this session.
+
+---
+
+## ★★★ 38. `basis` CARRIES PROSE — SURFACE 2 WAS NOT FULLY CLOSED
+
+```
+ORCL[7]   basis = 'non-GAAP. ★ reconciliation row is RAGGED — header
+                   declares 6 cols, row supplies 4 ...'
+ADBE[12]  basis = 'non-GAAP ($2,974). ★ GAAP is $2,354 and appears FIRST,
+                   in the SAME PROSE SENTENCE: ...'
+```
+
+**ADBE[12]'s `basis` field contains the answer.** My poison pass did not reach
+it because `basis` is a *structural* key — on my own allowlist — and the leak
+is prose **inside** a field a reader must act on. **I called surface 2 closed
+and it was not.**
+
+`basis_token()` reads the leading declaration defensively. **The field is
+Kyle's to split. Severity: HIGH** — it is an oracle inside a key the matcher
+consults.
+
+---
+
+## ★★★ 39. A BROKEN ESCAPE IS A SILENT REGEX
+
+`\b` written through a shell heredoc became a literal **BACKSPACE** inside
+`basis_token`'s pattern. The regex stopped matching, `_same_basis` returned
+False, and **two rows reported `FALSE_MATCH` for a reason that was mine, not
+the document's** — the verdict's first real fire was a false one.
+
+Earlier patches asserted `chr(8) not in s`; later ones stopped. The assertion
+is now a **repo-wide test**, with an anti-vacuous half proving the scanner can
+see a control character when one is there.
