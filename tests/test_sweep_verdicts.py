@@ -17,11 +17,19 @@ corpus reports FALSE_MATCH 0; that number is worth nothing unless the verdict
 can be shown to fire, so each of the three provenance checks is driven to
 failure here and the full judge is driven to all six outcomes.
 
-★ THE BLIND SPOT IS MEASURED, NOT ASSUMED. On a horizontal grid `pos` points
-at the ROW, not at the selected cell, so a clause carrying both GAAP and
-non-GAAP cannot discriminate: 3 of the 34 MATCH rows have an inert basis
-check for that reason. All 34 still have at least one check that applies,
-because every extractable row declares a period.
+★ THE BLIND SPOT IS MEASURED, NOT ASSUMED, AND IT IS WORSE THAN IT LOOKED.
+`pos` now points at the SELECTED CELL rather than the matched row, which is
+correct provenance and made the audit EMPTIER, not richer: basis evidence went
+1 -> 0 and the all-vacuous MATCH rows went 7 -> 8. A cell is surrounded by
+digits; the words are in the header, and these checks read prose.
+
+    MATCH 34 = 26 with >=1 DISCRIMINATING check + 8 ALL-VACUOUS
+    evidence-bearing rows: fence 20 · period 14 · basis 0
+
+DECLARING A CHECK IS NOT DISCRIMINATING WITH IT. An earlier version of this
+docstring said all 34 had a live check 'because every extractable row declares
+a period'. Every row declaring one is exactly why that sentence proves
+nothing.
 """
 
 import io

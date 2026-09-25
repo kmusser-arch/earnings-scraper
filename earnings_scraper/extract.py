@@ -719,6 +719,28 @@ def _cell_unit_ok(is_pct, spec):
     return True
 
 
+def cell_offset(text, line_idx, x=0):
+    """Document offset of column `x` on the STRIPPED line `line_idx`.
+
+    THE READERS WORK ON STRIPPED LINES. hgrid and sgrid are handed
+    [l.strip() for l in body.split(chr(10))], so a cell's x is an offset into
+    the stripped line and the leading whitespace has to be put back. Skipping
+    that is the dewrap shift again in a different frame: a coordinate right
+    where it was computed and wrong where it is recorded.
+    """
+    if not isinstance(line_idx, int) or not text:
+        return None
+    lines = text.split(chr(10))
+    if not (0 <= line_idx < len(lines)):
+        return None
+    base = 0
+    for k in range(line_idx):
+        base += len(lines[k]) + 1
+    raw = lines[line_idx]
+    lead = len(raw) - len(raw.lstrip())
+    return min(len(text), base + lead + (x or 0))
+
+
 def column_value(text, spec, label_pos, record=None):
     """The REPORTED-column cell of the table row at `label_pos`, or None.
 
@@ -772,7 +794,9 @@ def column_value(text, spec, label_pos, record=None):
                 _v = None
             if _v is not None and _cell_unit_ok(_pct, spec):
                 return dict(value=_v, pct=_pct, columnIndex=None,
-                            columnClasses=_sel.get('description'))
+                            columnClasses=_sel.get('description'),
+                            cellPos=cell_offset(body, _sel.get('cellLine'),
+                                                _sel.get('cellX')))
             return None
         return None
         h = tables.h_column_value(lines, idx, rq, ry)
@@ -794,8 +818,10 @@ def column_value(text, spec, label_pos, record=None):
         _st = _sg.select(lines, idx, spec)
         if _st.get('value') is not None and _cell_unit_ok(_st.get('pct'), spec):
             return dict(value=_st['value'], pct=_st.get('pct'),
-                        columnIndex=None, columnClasses=_st.get('groups'))
-    cells = tables.row_value_cells(lines, idx)
+                        columnIndex=None, columnClasses=_st.get('groups'),
+                        cellPos=cell_offset(body, _st.get('cellLine'),
+                                            _st.get('cellX')))
+    cells = tables.row_value_cells_at(lines, idx)
     if len(cells) < 2:
         return None
     got = vtables.column_map(lines, idx, len(cells), rq, ry,
@@ -810,7 +836,8 @@ def column_value(text, spec, label_pos, record=None):
     if not _cell_unit_ok(cells[i][1], spec):
         return None
     return dict(value=cells[i][0], pct=cells[i][1], columnIndex=i,
-                columnClasses=got.get('classes'))
+                columnClasses=got.get('classes'),
+                cellPos=cell_offset(body, cells[i][2]))
 
 
 
@@ -1368,7 +1395,13 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
                         candidateCount=len(got_s.get('cells') or []) or 1,
                         seenCount=max(len(got_s.get('cells') or []), len(seen)),
                         currencyTaken=c.get('currency') or REPORTED,
-                        pos=_to_doc(lp), lpos=_to_doc(lp),
+                        pos=_to_doc(cell_offset(src, got_s.get('cellLine'),
+                                                got_s.get('cellX'))
+                                    or lp),
+                        cellPos=_to_doc(cell_offset(src,
+                                                    got_s.get('cellLine'),
+                                                    got_s.get('cellX'))),
+                        lpos=_to_doc(lp),
                         candidates=[x['raw'] for x in seen], why=None,
                         rejected=rejected)
 
@@ -1410,8 +1443,15 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
                             seenCount=len(seen),
                             unitUnverified=(_d is None
                                             and declared in _MUSD),
-                            # a table cell has no magnitude word of its own
-                            pos=_to_doc(lp), lpos=_to_doc(lp),
+                            # THE CELL, NOT THE ROW. A row-level pos hands
+                            # every provenance check the words the row opens
+                            # with; the cell is what was actually selected,
+                            # and it is what the audit has to be able to see.
+                            pos=_to_doc(col.get('cellPos')
+                                        if col.get('cellPos') is not None
+                                        else lp),
+                            cellPos=_to_doc(col.get('cellPos')),
+                            lpos=_to_doc(lp),
                             unit=doc_unit(spec), specState=state,
                             label=c.get('label'), role='level',
                             columnIndex=col['columnIndex'],

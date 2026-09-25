@@ -353,13 +353,18 @@ def select(lines, label_idx, spec, guard=GUARD, is_boundary=None):
     if len(dated) >= 2:
         # THE LATEST PERIOD IS THE REPORTED ONE, by relation to the others.
         best = max(dated)[1]
+        # WHERE THE CELL IS, not where its row starts. describe_cells has
+        # carried the column offset all along; it was simply never returned,
+        # so the audit read the row's opening words as the cell's clause.
         return dict(value=cells[best][1], raw=cells[best][1],
                     description=cells[best][2], why=None,
+                    cellX=cells[best][0], cellLine=label_idx,
                     columns=[c[2] for c in cells], how=trace + ['latest period'])
     if len(alive) == 1:
         i = alive[0]
         return dict(value=cells[i][1], raw=cells[i][1],
                     description=cells[i][2], why=None,
+                    cellX=cells[i][0], cellLine=label_idx,
                     columns=[c[2] for c in cells], how=trace + ['sole survivor'])
     return dict(value=None, description=[c[2] for c in cells],
                 why='%d columns survive and the header names fewer than two '

@@ -68,12 +68,17 @@ def cell(line):
     return (val, t.rstrip(') ').endswith('%'))
 
 
-def block_cells(lines, label_idx, limit=MAX_CELLS):
-    """Every cell of the stacked row whose label sits at `label_idx`.
+def block_cells_at(lines, label_idx, limit=MAX_CELLS):
+    """[(value, is_pct, line_index)] for the stacked row at `label_idx`.
 
     The block ends at the next line that is not blank and not a cell -- which
     is the next row's label. No length, no count: the document says where the
     row stops by starting the next one.
+
+    A STACKED CELL IS ITS OWN LINE, so the line index IS the cell's location.
+    This is the one shape where the coordinate was free all along and simply
+    was not returned, which is why the audit read the LABEL's clause for a
+    value printed four lines below it.
     """
     out = []
     j = label_idx + 1
@@ -95,9 +100,14 @@ def block_cells(lines, label_idx, limit=MAX_CELLS):
         got = cell(t)
         if got is None:
             break
-        out.append(got)
+        out.append((got[0], got[1], j))
         j += 1
     return out
+
+
+def block_cells(lines, label_idx, limit=MAX_CELLS):
+    """[(value, is_pct)] -- the pair contract its callers and tests hold."""
+    return [(v, p) for v, p, _ln in block_cells_at(lines, label_idx, limit)]
 
 
 def select(lines, label_idx, spec, basis_headers=None, lookback=400):
@@ -107,7 +117,7 @@ def select(lines, label_idx, spec, basis_headers=None, lookback=400):
     """
     from . import axes
 
-    cells = block_cells(lines, label_idx)
+    cells = block_cells_at(lines, label_idx)
     if not cells:
         return dict(value=None, cells=[], why='no stacked cells below this row')
 
@@ -140,13 +150,13 @@ def select(lines, label_idx, spec, basis_headers=None, lookback=400):
     if want and len(seen) >= 2:
         part = axes.partition(len(cells), len(seen))
         if part is None:
-            return dict(value=None, cells=[v for v, _p in cells],
+            return dict(value=None, cells=[c[0] for c in cells],
                         why='ragged: %d cell(s) do not divide into %d basis '
                             'group(s)' % (len(cells), len(seen)))
         labels = [seen[g] for g in part]
         alive = [i for i, lab in enumerate(labels) if lab == want]
         if not alive:
-            return dict(value=None, cells=[v for v, _p in cells],
+            return dict(value=None, cells=[c[0] for c in cells],
                         why='no %s group in this block' % want)
     else:
         alive = list(range(len(cells)))
@@ -155,11 +165,12 @@ def select(lines, label_idx, spec, basis_headers=None, lookback=400):
     if len(picked) == 1:
         i = picked[0]
         return dict(value=cells[i][0], pct=cells[i][1],
-                    cells=[v for v, _p in cells], groups=seen, why=None)
+                    cellLine=cells[i][2], cellX=0,
+                    cells=[c[0] for c in cells], groups=seen, why=None)
     if not picked:
-        return dict(value=None, cells=[v for v, _p in cells], groups=seen,
+        return dict(value=None, cells=[c[0] for c in cells], groups=seen,
                     why='no cell in the %s group matches the row unit %r'
                         % (want or 'only', unit))
-    return dict(value=None, cells=[v for v, _p in cells], groups=seen,
+    return dict(value=None, cells=[c[0] for c in cells], groups=seen,
                 why='%d cells survive basis and unit — nothing separates them'
                     % len(picked))

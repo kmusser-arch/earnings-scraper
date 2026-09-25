@@ -175,8 +175,8 @@ def _record(found, metric, value, basis, scale, line, column_verified=False):
                          source='table', columnVerified=column_verified)
 
 
-def row_value_cells(lines, label_index, limit=12):
-    """Every numeric cell of a vertically exploded row, in document order.
+def row_value_cells_at(lines, label_index, limit=12):
+    """[(value, is_pct, line_index)] for a vertically exploded row.
 
     ★ THE CELLS ARE THE COLUMNS. _first_value() took cell 0 and called it the
     quarter; this returns the whole row so the header can say which cell that
@@ -223,9 +223,20 @@ def row_value_cells(lines, label_index, limit=12):
         # whether it is wrapped in a matched pair.
         if cell.lstrip().startswith('(') or cell.lstrip().startswith('$('):
             val = -abs(val)
-        out.append((val, is_pct))
+        out.append((val, is_pct, j))
         j += 1
     return out
+
+
+def row_value_cells(lines, label_index, limit=12):
+    """[(value, is_pct)] -- the pair contract its callers and tests hold.
+
+    The line index each cell came from is available from row_value_cells_at.
+    It is not derivable here by arithmetic: the walk skips blank lines, bare
+    '$' markers and bare '%' markers, so cell i is not at label_index + i + 1.
+    """
+    return [(v, p) for v, p, _ln in row_value_cells_at(lines, label_index,
+                                                       limit)]
 
 
 def verified_value(lines, label_index):

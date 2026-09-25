@@ -3,13 +3,16 @@
   "recordedAt": "2026-09-25",
   "recordedBefore": "moving pos from the matched ROW to the SELECTED CELL",
   "change": "hgrid.select and sgrid.select return the coordinates of the cell they chose; extract.column_value converts those to a document offset; value_for records THAT as pos instead of the label position.",
-
   "baselineMeasuredBefore": {
     "source": "scratchpad/audit_of_audit.py, run 2026-09-25 against the 8 spec'd releases",
     "MATCH": 34,
     "withAtLeastOneDiscriminatingCheck": 27,
     "allVacuous": 7,
-    "evidenceBearingRows": {"fence": 20, "period": 14, "basis": 1},
+    "evidenceBearingRows": {
+      "fence": 20,
+      "period": 14,
+      "basis": 1
+    },
     "theSeven": [
       "ORCL-2027Q1[2] RPO ($B)",
       "AVGO-2026Q3[7] Q3 Total Revenue ($B)",
@@ -20,13 +23,11 @@
       "SNDK-2026Q4[0] FQ4 Revenue ($B)"
     ]
   },
-
   "kylePrediction": {
     "verbatim": "I expect basis evidence to rise sharply and the 7 to shrink",
     "basisEvidence": "rises sharply from 1",
     "allVacuous": "fewer than 7"
   },
-
   "agentPrediction": {
     "basisEvidence": 1,
     "band": "1 to 2",
@@ -37,16 +38,30 @@
     "★whyTheChangeIsStillRight": "pos->cell is NECESSARY and not SUFFICIENT. It converts structure the grid already computed into a coordinate the audit can use; a second change has to make the checks CONSULT that structure (the cell's own column description) instead of the surrounding prose. Landing them together would leave it unknowable which one moved the number.",
     "★ifIAmWrong": "basis evidence >= 8, or the seven drop below 6, means my model of _governing_sentence is wrong and I should read what it actually returns at a cell position before drawing any further conclusion from this instrument."
   },
-
   "★whatThisCannotTellApart": "This measurement cannot distinguish 'the check had evidence and the value was right' from 'the check had evidence and the evidence was wrong'. It counts whether a check COULD have failed, not whether it would have failed correctly. A rise in basis evidence is therefore not by itself a rise in audit quality - the synthetic injection is what tests that, and it comes next.",
-
   "failureThresholds": {
     "blocking": "any MATCH row flipping to FALSE_MATCH must be inspected ROW BY ROW before the change ships. A flip is either a real catch or a new defect, and the count cannot tell which.",
     "nonBlocking": "a basis/period/fence evidence count moving inside the stated bands"
   },
-
   "★notPredicted": [
     "what the follow-on structural-evidence change does to any of these numbers",
     "whether any of the 34 MATCH rows is actually wrong - FALSE_MATCH 0 stays uncalibrated until a confirmed positive exists, and the audit has none"
-  ]
+  ],
+  "result": {
+    "ranAt": "2026-09-25",
+    "MATCH": 34,
+    "withAtLeastOneDiscriminatingCheck": 26,
+    "allVacuous": 8,
+    "evidenceBearingRows": {
+      "fence": 20,
+      "period": 14,
+      "basis": 0
+    },
+    "verdictCounts": "MATCH 34 - FALSE_MATCH 0 - MISMATCH 1 - LOST 0 - REFUSED 41 - EXCLUDED 26, of 102. UNCHANGED.",
+    "posLandsOnTheSelectedCell": "11 of 11 rows that go through a cell reader; the other 22 values come from prose or from a computed midpoint and have no cell",
+    "kyleScored": "REFUTED, AND IN THE OPPOSITE DIRECTION ON BOTH HALVES. Basis evidence did not rise from 1, it fell to 0. The seven did not shrink, they grew to eight.",
+    "agentScored": "CORRECT IN DIRECTION, CONSERVATIVE IN SIZE. I predicted basis 1-2 and vacuous 6-7; it came in at 0 and 8, just outside both bands on the side I argued for.",
+    "★whatMovedTheOneRow": "HPE-2026Q3[16] Q3 Adjusted Gross Margin. Its pos used to sit on the LABEL LINE, which reads 'Non-GAAP gross profit margin' - so the basis check had a basis word to read. The label's words were the evidence. Moving pos onto the cell, 40.4 printed on a line of its own, took that word away. The single row of basis evidence in the whole audit was the audit reading a LABEL and calling it provenance.",
+    "★theRealFinding": "THE CHECKS GOT EMPTIER BECAUSE THE POSITION GOT MORE ACCURATE. That is not an argument against the change; it is the measurement that proves the checks are looking in the wrong place. In a table the basis is in the COLUMN HEADER and the period is in the COLUMN HEADER, and _governing_sentence cannot reach a column header from anywhere, at any position, ever."
+  }
 }
