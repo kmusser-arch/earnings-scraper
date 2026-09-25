@@ -122,8 +122,14 @@ def main():
                   'why': 'QUALITATIVE — forward commentary.'})
     check(v6 == 'EXCLUDED',
           'a closed-list reason (QUALITATIVE) is EXCLUDED — the only exit')
+    # ★ AND THE CASH-FLOW EXAMPLE THIS TEST USED IS NOW ON THE LIST, as
+    # NOT_AUTOMATABLE — a POLICY exclusion, the number IS in the document.
+    check(verdict({'specState': 'NOT_EXTRACTABLE',
+                   'why': 'Buyback is in the cash-flow statement.'})
+          == 'EXCLUDED',
+          'the cash-flow rule is a POLICY member of the closed list')
     v7 = verdict({'specState': 'NOT_EXTRACTABLE',
-                  'why': 'Buyback is in the cash-flow statement.'})
+                  'why': 'Segment split changed shape mid-year.'})
     check(v7 == 'UNCLASSIFIED',
           'a NOT_EXTRACTABLE row whose reason is NOT on the closed list is '
           'UNCLASSIFIED and stays in the denominator — nobody ruled on it')
@@ -142,6 +148,14 @@ def main():
                    'exclusionClass': 'NOT_IN_PR'})
     check(v10 == 'EXCLUDED',
           'and an authored exclusionClass is read before any prose match')
+
+    # ★★★ AN AUTHORED RULING OUTRANKS EVERY INFERENCE, and a fact about OUR
+    # CARD never buys an exit: excluding a defect hides it.
+    v11 = verdict({'specState': 'NOT_EXTRACTABLE', 'why': 'QUALITATIVE.',
+                   'rowDisposition': 'CARD_DEFECT'})
+    check(v11 == 'CARD_DEFECT',
+          'a row ruled CARD_DEFECT stays in the denominator EVEN THOUGH its '
+          'prose would have matched the closed list')
 
     # ── the three STATES, each shown to occur ────────────────────────────
     # ★ A STATE THAT NEVER OCCURS LOOKS EXACTLY LIKE ONE THAT IS CORRECT.

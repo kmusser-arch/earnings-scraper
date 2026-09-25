@@ -351,3 +351,78 @@ MATCH 34 · FALSE_MATCH 0 · MISMATCH 1 · LOST 0 · REFUSED 41
 ```
 
 EXCLUDED fell **26 → 19**. The seven that came back are ours.
+
+---
+
+## ★★★ 17. A FALLBACK MAY BE LESS CAPABLE. IT MAY NEVER BE LESS DISCRIMINATING
+
+> **Degradation loses CAPABILITY, never CONSTRAINTS.** If a row declares
+> basis / period / currency and the specialist was chosen **because** of that
+> declaration, the fallback honours it or refuses.
+
+Founding case: with `sgrid` raising, the crash guard dropped through to the
+basis-blind prose pool and SNOW published **70.9 GAAP in place of 74.7
+non-GAAP**. The safety net was delivering the failure mode it exists to
+prevent. A crash costs one cell and announces itself; that cost the read and
+hid inside a green cell.
+
+**Not yet audited across the other fallback chains, on any axis.** Queued.
+
+---
+
+## ★★★ 18. A NEGATIVE FINDING FROM A BOUNDED SEARCH DESCRIBES THE BOUND
+
+> Only an **exhaustive** or **explicitly terminated** search may assert
+> absence.
+
+`a-span-needs-a-CLOSE-not-a-LENGTH`, applied to an absence claim. `sgrid`
+finds its basis groups by lookback, so it may never report
+`ABSENT_IN_DOCUMENT` — a miss there cannot be told from a short window.
+**To be checked wherever else we assert a negative.**
+
+---
+
+## ★★★ 19. AN EXCLUSION IS A DOCUMENT FACT OR A DELIBERATE POLICY
+
+Anything that is a fact about **our card** is a defect and stays in the
+denominator.
+
+| row | ruling | in? |
+|---|---|---|
+| AVGO[12] Buyback | `EXCLUDED` / **`NOT_AUTOMATABLE`** — POLICY. The number *is* there and we choose not to take it (CLAUDE.md's cash-flow rule, founding case SNDK's $93.9B backlog). Never recorded as a document fact | out |
+| AVGO[17], AVGO[18] | **`CARD_DEFECT`** — "INVERTED" means two different things | **in** |
+| HPE[6] derived % | **`UNSPECD`** — derived-but-unsupported is unfinished work, identical in kind to `NEEDS_REMAP` | **in** |
+| HPE[17] | **`CARD_DEFECT`** — a duplicate slot guarantees one of the two is wrong or blank | **in** |
+
+**`oneConditionTwoNames`, n=15** — and this one is in the library, not the
+code:
+
+```
+AMZN[5]            "inverted polarity"  = a SCORING SEMANTIC  -> HONOUR it
+AVGO[17], AVGO[18] "INVERTED ROW"       = a DATA DEFECT       -> REPAIR it
+```
+
+Same word, opposite handling, and AVGO[18] is a ★★★ hero. **Neither is graded
+until the split lands.** HPE[17] is a *semantic* duplicate, invisible to the
+name-based duplicate check — so that class has no count.
+
+---
+
+## ★★★ 20. THE OPERATION IS READ OFF THE RECIPE, NOT ASSUMED TO BE THE ONE THAT EXISTS
+
+The ratio path was the only derived path, so HPE[0] — a **PRODUCT** row —
+had nowhere to go and refused with *"no candidate matched the declared
+unit"*: **a refusal that described the wrong failure entirely.**
+
+```
+FY26 non-GAAP EPS guide    $3.75 to $3.85   (card row [3])
+FY27 EPS growth framework   16% to 20%      (this release RAISED it from 12-16%)
+->                         $4.35 to $4.62   midpoint 4.485
+```
+
+Exactly the two endpoints the card reached by hand.
+
+**And the spec says `PRODUCT` while the arithmetic is a compound.** A literal
+product is `3.75 x 0.16 = 0.60`. The operation performed is
+`base x (1 + growth)`. Rather than silently reinterpret an authored word, it
+is named `GROWTH_COMPOUND` and the discrepancy is recorded in `derivedFrom`.

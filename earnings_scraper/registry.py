@@ -67,7 +67,17 @@ def spec_for(row, global_map=None, metric_kind=None):
 #: an unclassified exclusion is a row nobody ruled on -- which is exactly
 #: how 76 rows minus a DYNAMIC exclusion became a headline nobody could
 #: reconcile. Order is precedence: a row may honestly match more than one.
-EXCLUSION_CLASSES = ('NOT_IN_PR', 'CALL_SOURCED', 'QUALITATIVE')
+#: ★ AN EXCLUSION IS A FACT ABOUT THE DOCUMENT OR A DELIBERATE POLICY.
+#: Anything that is a fact about our CARD is a defect and stays in the
+#: denominator. NOT_AUTOMATABLE is the policy member -- CLAUDE.md's
+#: cash-flow / balance-sheet rule, founding case SNDK's $93.9B backlog. The
+#: number IS in the document and we are CHOOSING not to take it, so it must
+#: never be recorded as a document fact.
+EXCLUSION_CLASSES = ('NOT_IN_PR', 'CALL_SOURCED', 'QUALITATIVE',
+                     'NOT_AUTOMATABLE')
+
+#: policy exclusions, as opposed to facts about the release
+POLICY_CLASSES = ('NOT_AUTOMATABLE',)
 
 _EXCLUSION_PAT = (
     ('NOT_IN_PR', re.compile(
@@ -76,7 +86,19 @@ _EXCLUSION_PAT = (
     ('CALL_SOURCED', re.compile(
         r'call-only|call/commentary|call-heavy|call-sourced', re.I)),
     ('QUALITATIVE', re.compile(r'QUALITATIVE|NARRATIVE', re.I)),
+    ('NOT_AUTOMATABLE', re.compile(
+        r'cash-flow statement|cash flow statement|balance sheet', re.I)),
 )
+
+
+def row_disposition(spec):
+    """An authored ruling that overrides everything, or None.
+
+    CARD_DEFECT and UNSPECD are facts about OUR card. They are authored, not
+    matched out of prose, because excluding a defect hides it.
+    """
+    d = (spec or {}).get('rowDisposition')
+    return d if d in ('CARD_DEFECT', 'UNSPECD') else None
 
 
 def exclusion_class(spec):

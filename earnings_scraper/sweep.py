@@ -72,7 +72,8 @@ from . import registry
 #:                  Its own verdict: neither a pass nor a failure, and
 #:                  folding it into EXCLUDED hid it inside an exit.
 VERDICTS = ('MATCH', 'FALSE_MATCH', 'MISMATCH', 'LOST', 'REFUSED',
-            'UNSPECD', 'UNCLASSIFIED', 'NO_ANSWER_KEY', 'EXCLUDED')
+            'UNSPECD', 'CARD_DEFECT', 'UNCLASSIFIED', 'NO_ANSWER_KEY',
+            'EXCLUDED')
 
 #: the only verdict that leaves the graded population
 OUT_OF_DENOMINATOR = ('EXCLUDED',)
@@ -250,6 +251,18 @@ def judge(text, pre_row, slot, spec, quarter=None, got=None, record=None):
     """The verdict for one row, with its provenance reasons."""
     stored = (slot or {}).get('actual')
     _st = registry.status_of(spec)
+    # ★★★ AN AUTHORED RULING OUTRANKS EVERY INFERENCE. A duplicate slot or an
+    # inverted row is a fact about OUR CARD: excluding it hides it, so it
+    # stays in the denominator with its own name.
+    _disp = registry.row_disposition(spec)
+    if _disp == 'CARD_DEFECT':
+        return dict(verdict='CARD_DEFECT', value=None, pos=None,
+                    reason=str((spec or {}).get('rowDefectNote')
+                               or 'authored CARD_DEFECT')[:160])
+    if _disp == 'UNSPECD':
+        return dict(verdict='UNSPECD', value=None, pos=None,
+                    reason=str((spec or {}).get('rowDefectNote')
+                               or 'authored UNSPECD — unfinished work')[:160])
     if _st == 'NEEDS_REMAP':
         return dict(verdict='UNSPECD', value=None, pos=None,
                     reason='issuer changed disclosure — the spec is stale, '
