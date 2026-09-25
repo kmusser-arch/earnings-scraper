@@ -1,0 +1,52 @@
+{
+  "★whyThisFileExists": "Kyle stated an expectation for this change in the same message that ordered it: 'I expect basis evidence to rise sharply and the 7 to shrink.' That is a prediction, so it gets scored, and mine gets written down beside it BEFORE the change runs. Nothing below was written after seeing a result.",
+  "recordedAt": "2026-09-25",
+  "recordedBefore": "moving pos from the matched ROW to the SELECTED CELL",
+  "change": "hgrid.select and sgrid.select return the coordinates of the cell they chose; extract.column_value converts those to a document offset; value_for records THAT as pos instead of the label position.",
+
+  "baselineMeasuredBefore": {
+    "source": "scratchpad/audit_of_audit.py, run 2026-09-25 against the 8 spec'd releases",
+    "MATCH": 34,
+    "withAtLeastOneDiscriminatingCheck": 27,
+    "allVacuous": 7,
+    "evidenceBearingRows": {"fence": 20, "period": 14, "basis": 1},
+    "theSeven": [
+      "ORCL-2027Q1[2] RPO ($B)",
+      "AVGO-2026Q3[7] Q3 Total Revenue ($B)",
+      "AVGO-2026Q3[8] Q3 Non-GAAP EPS ($)",
+      "HPE-2026Q3[7] Q3 Revenue ($B)",
+      "SNOW-2027Q2[5] Non-GAAP Product Gross Margin",
+      "SNOW-2027Q2[8] Non-GAAP Operating Margin (%)",
+      "SNDK-2026Q4[0] FQ4 Revenue ($B)"
+    ]
+  },
+
+  "kylePrediction": {
+    "verbatim": "I expect basis evidence to rise sharply and the 7 to shrink",
+    "basisEvidence": "rises sharply from 1",
+    "allVacuous": "fewer than 7"
+  },
+
+  "agentPrediction": {
+    "basisEvidence": 1,
+    "band": "1 to 2",
+    "allVacuous": 7,
+    "allVacuousBand": "6 to 7",
+    "verdictCounts": "unchanged - no MATCH becomes FALSE_MATCH from this change alone",
+    "★reasoning": "THE CHECKS ARE TEXTUAL AND THE EVIDENCE IS STRUCTURAL. _basis_ok and _period_ok both read extract._governing_sentence(text, pos), whose bounds are the nearest sentence-ending punctuation on either side. A table block contains almost none, so the clause returned for a cell at column 63 of a data row and the clause returned for the START of that same data row are THE SAME STRING. Moving pos inside the row cannot change a function whose boundaries lie outside the row. AVGO[8] will still see 'GAAP Non-GAAP ---- ---- (Dollars in millions' and the basis check will still be unable to separate them.",
+    "★whyTheChangeIsStillRight": "pos->cell is NECESSARY and not SUFFICIENT. It converts structure the grid already computed into a coordinate the audit can use; a second change has to make the checks CONSULT that structure (the cell's own column description) instead of the surrounding prose. Landing them together would leave it unknowable which one moved the number.",
+    "★ifIAmWrong": "basis evidence >= 8, or the seven drop below 6, means my model of _governing_sentence is wrong and I should read what it actually returns at a cell position before drawing any further conclusion from this instrument."
+  },
+
+  "★whatThisCannotTellApart": "This measurement cannot distinguish 'the check had evidence and the value was right' from 'the check had evidence and the evidence was wrong'. It counts whether a check COULD have failed, not whether it would have failed correctly. A rise in basis evidence is therefore not by itself a rise in audit quality - the synthetic injection is what tests that, and it comes next.",
+
+  "failureThresholds": {
+    "blocking": "any MATCH row flipping to FALSE_MATCH must be inspected ROW BY ROW before the change ships. A flip is either a real catch or a new defect, and the count cannot tell which.",
+    "nonBlocking": "a basis/period/fence evidence count moving inside the stated bands"
+  },
+
+  "★notPredicted": [
+    "what the follow-on structural-evidence change does to any of these numbers",
+    "whether any of the 34 MATCH rows is actually wrong - FALSE_MATCH 0 stays uncalibrated until a confirmed positive exists, and the audit has none"
+  ]
+}
