@@ -62,6 +62,43 @@ def spec_for(row, global_map=None, metric_kind=None):
     return None
 
 
+#: ★★★ THE CLOSED LIST. A row leaves the denominator only for one of these
+#: three reasons. Anything else is not "excluded", it is UNCLASSIFIED, and
+#: an unclassified exclusion is a row nobody ruled on -- which is exactly
+#: how 76 rows minus a DYNAMIC exclusion became a headline nobody could
+#: reconcile. Order is precedence: a row may honestly match more than one.
+EXCLUSION_CLASSES = ('NOT_IN_PR', 'CALL_SOURCED', 'QUALITATIVE')
+
+_EXCLUSION_PAT = (
+    ('NOT_IN_PR', re.compile(
+        r'NOT_IN_PR|never appears in any document|never in the release'
+        r'|not disclosed|not a PR table figure', re.I)),
+    ('CALL_SOURCED', re.compile(
+        r'call-only|call/commentary|call-heavy|call-sourced', re.I)),
+    ('QUALITATIVE', re.compile(r'QUALITATIVE|NARRATIVE', re.I)),
+)
+
+
+def exclusion_class(spec):
+    """Which closed-list reason excuses this row, or None.
+
+    ★ AUTHORED FIRST. `exclusionClass` on the spec is read before anything
+    is matched out of prose, because prose matching is inference and this
+    decides whether a row counts against us. Where the author has not said,
+    the literal tokens they DID write are matched -- and a row matching none
+    of them returns None, which puts it back in the denominator rather than
+    quietly excusing it.
+    """
+    declared = (spec or {}).get('exclusionClass')
+    if declared in EXCLUSION_CLASSES:
+        return declared
+    why = str((spec or {}).get('why') or '')
+    for name, pat in _EXCLUSION_PAT:
+        if pat.search(why):
+            return name
+    return None
+
+
 def status_of(spec):
     """EXTRACTABLE | NOT_EXTRACTABLE | NEEDS_REMAP | no-spec.
 

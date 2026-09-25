@@ -183,10 +183,15 @@ def select(lines, label_idx, spec, basis_headers=None, lookback=400):
                                          else None),
                                   period=None, currency=None,
                                   headers=list(seen),
-                                  # no grouping ran means the BLOCK declared
-                                  # no basis groups -- about the release.
+                                  # ★ THIS READER NEVER CLAIMS ABSENCE. Its
+                                  # groups come from a LOOKBACK SEARCH, and a
+                                  # lookback that finds nothing cannot tell
+                                  # 'the issuer printed no basis header' from
+                                  # 'the window was too short' -- the same
+                                  # reason a span needs a CLOSE, not a
+                                  # LENGTH. So a miss here is OURS.
                                   basisState=('READ' if picked_basis
-                                              else 'ABSENT_IN_DOCUMENT')),
+                                              else 'UNREAD_BY_GRID')),
                     cells=[c[0] for c in cells], groups=seen, why=None)
     if not picked:
         return dict(value=None, cells=[c[0] for c in cells], groups=seen,

@@ -128,8 +128,16 @@ def main():
     # coverage as EVIDENCE-BEARING ROWS, never as declared rows.
     print('   MATCH %d = %d with >=1 DISCRIMINATING check + %d ALL-VACUOUS'
           % (counts['MATCH'], counts['_auditable'], counts['_vacuous']))
-    print('   evidence-bearing rows:  fence %d · period %d · basis %d'
-          % (counts['_ev:fence'], counts['_ev:period'], counts['_ev:basis']))
+    # ★★★ TWO NUMBERS, NEVER ONE. fence answers 'taken from the right
+    # SECTION'; period and basis answer 'the right CELL'. Summing them is
+    # the same category error as summing DECLARED with EVIDENCED -- two
+    # instruments answering different questions, added because both return
+    # a boolean. The sibling-cell audit settles it: fence discriminates
+    # between cells of the same row on 0 of 11 rows.
+    print('   ROW-LEVEL  evidence:  fence %d          (right SECTION)'
+          % counts['_ev:fence'])
+    print('   CELL-LEVEL evidence:  period %d · basis %d   (right CELL)'
+          % (counts['_ev:period'], counts['_ev:basis']))
     print('   column states NO basis word (flagged, not silent): %d'
           % counts['_ab:basis'])
     if vacuous:

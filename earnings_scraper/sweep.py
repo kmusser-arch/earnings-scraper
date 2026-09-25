@@ -60,7 +60,22 @@ from . import parallel
 from . import period as period_mod
 from . import registry
 
-VERDICTS = ('MATCH', 'FALSE_MATCH', 'MISMATCH', 'LOST', 'REFUSED', 'EXCLUDED')
+#: ★★★ EXCLUDED SPLITS THREE WAYS, AND TWO OF THEM STAY IN THE DENOMINATOR.
+#:
+#:   EXCLUDED       a closed-list reason -- NOT_IN_PR / CALL_SOURCED /
+#:                  QUALITATIVE. Genuinely out. The ONLY exit.
+#:   UNSPECD        NEEDS_REMAP: the issuer changed disclosure and our spec
+#:                  is stale. That is OUR gap, so it counts against us.
+#:   UNCLASSIFIED   NOT_EXTRACTABLE for a reason nobody put on the list. A
+#:                  row no one ruled on is not an excused row.
+#:   NO_ANSWER_KEY  a value was read and there is no hand read to compare.
+#:                  Its own verdict: neither a pass nor a failure, and
+#:                  folding it into EXCLUDED hid it inside an exit.
+VERDICTS = ('MATCH', 'FALSE_MATCH', 'MISMATCH', 'LOST', 'REFUSED',
+            'UNSPECD', 'UNCLASSIFIED', 'NO_ANSWER_KEY', 'EXCLUDED')
+
+#: the only verdict that leaves the graded population
+OUT_OF_DENOMINATOR = ('EXCLUDED',)
 
 
 EVIDENCE, ABSENT, VACUOUS, NA = 'EVIDENCE', 'ABSENT', 'VACUOUS', 'NA'
@@ -234,9 +249,22 @@ def provenance(text, pos, spec, quarter=None, axes=None, record=None):
 def judge(text, pre_row, slot, spec, quarter=None, got=None, record=None):
     """The verdict for one row, with its provenance reasons."""
     stored = (slot or {}).get('actual')
-    if registry.status_of(spec) != 'EXTRACTABLE':
-        return dict(verdict='EXCLUDED', reason='specState %s'
-                    % registry.status_of(spec), value=None, pos=None)
+    _st = registry.status_of(spec)
+    if _st == 'NEEDS_REMAP':
+        return dict(verdict='UNSPECD', value=None, pos=None,
+                    reason='issuer changed disclosure — the spec is stale, '
+                           'and that is our gap, not an exemption')
+    if _st != 'EXTRACTABLE':
+        klass = registry.exclusion_class(spec)
+        if klass:
+            return dict(verdict='EXCLUDED', value=None, pos=None,
+                        exclusionClass=klass,
+                        reason='%s — closed list' % klass)
+        return dict(verdict='UNCLASSIFIED', value=None, pos=None,
+                    reason=('specState %s, but the stated reason is not on '
+                            'the closed list (%s): %r'
+                            % (_st, '/'.join(registry.EXCLUSION_CLASSES),
+                               str((spec or {}).get('why') or '')[:90])))
     got = got if got is not None else (
         extract.value_for(text, pre_row, record={'fiscalQuarter': quarter})
         or {})
@@ -252,8 +280,9 @@ def judge(text, pre_row, slot, spec, quarter=None, got=None, record=None):
                     value=None, pos=pos)
 
     if not isinstance(stored, (int, float)):
-        return dict(verdict='EXCLUDED', reason='no hand read to compare',
-                    value=value, pos=pos)
+        return dict(verdict='NO_ANSWER_KEY', value=value, pos=pos,
+                    reason='a value was read and there is no hand read to '
+                           'compare it against')
 
     if not parallel.agrees(stored, value):
         return dict(verdict='MISMATCH', reason='digits disagree',
@@ -273,8 +302,13 @@ def judge(text, pre_row, slot, spec, quarter=None, got=None, record=None):
 
 
 def report(counts, population):
-    """A line that cannot be quoted without its denominator."""
+    """A line that cannot be quoted without its denominator.
+
+    ★ AND THE GRADED POPULATION IS PRINTED SEPARATELY, because only EXCLUDED
+    leaves it. UNSPECD and UNCLASSIFIED are our own gaps and stay in.
+    """
     total = sum(counts.get(v, 0) for v in VERDICTS)
+    out = sum(counts.get(v, 0) for v in OUT_OF_DENOMINATOR)
     parts = ' · '.join('%s %d' % (v, counts.get(v, 0)) for v in VERDICTS)
-    return '%s   [denominator %d of %d rows: %s]' % (parts, total, population,
-                                                     'all verdicts shown')
+    return ('%s   [all %d rows shown of %d; GRADED POPULATION %d — only '
+            'EXCLUDED leaves it]' % (parts, total, population, total - out))

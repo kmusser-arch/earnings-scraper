@@ -255,3 +255,99 @@ column stops being detectable by magnitude.
 The value it would have published is `12.213` — **indistinguishable from the
 correct answer by magnitude**, which is the whole reason the verdict exists.
 The fixture on disk is never edited; the forge lives in memory.
+
+---
+
+## ★★★ 12. AN INSTRUMENT IS TRUSTWORTHY ONLY ONCE IT HAS BEEN MADE TO FAIL ON PURPOSE
+
+Not "it passed". **Revert the condition and watch it go red.**
+
+The regress is real and has no bottom by observation: `pos` needed a test, the
+sweep needed a reconciliation, and the standing test for decorative checks
+needed **three versions** — two of which produced clean-looking numbers.
+
+> **A GATE NEVER DRIVEN RED IS AN UNVERIFIED CLAIM ABOUT A VERIFICATION.**
+> Where a gate *cannot* be driven red, say so explicitly rather than reporting
+> it green.
+
+Forced failure is the terminator. It is the only reason `FALSE_MATCH` firing
+means anything, and every reader guard in `test_crash_safety.py` is driven
+red — including a check that the unguarded call genuinely raises, so the guard
+is demonstrably what caught it rather than luck.
+
+---
+
+## ★★★ 13. WE HAVE BEEN HUNTING FALSE GREENS. **A FALSE REFUSAL** IS THE OTHER ONE
+
+`vtables`' strata are period classes — it never looks for a basis header at
+all. The strict arm would have blanked a **priority-1 hero** for a header
+**our own reader never read**.
+
+**Blindness misattributed to the issuer, wearing the costume of caution.**
+Mid-print on a hero row it costs the read outright, and it is invisible
+because refusals are *supposed* to look like that.
+
+> `ABSENT_IN_DOCUMENT` must require **positive evidence that the reader
+> looked** — never merely that it returned nothing.
+
+`hgrid` claims it only where header text was actually resolved for that cell.
+`sgrid` **never** claims it: its groups come from a lookback search, and a
+lookback that finds nothing cannot tell *"the issuer printed no basis header"*
+from *"the window was too short"* — the same reason a span needs a CLOSE, not
+a LENGTH.
+
+---
+
+## ★★★ 14. A REFUSAL COSTS ONE CELL. AN EXCEPTION COSTS THE WHOLE CARD
+
+**Which code paths get exercised is decided by which eight issuers we happened
+to spec.** `block_cells_at` dropped the line index on the bare-`%` marker
+path; SNOW attaches its percent to the figure so the corpus never reached it,
+and SNDK and APP use the bare marker. It would have surfaced as an
+`IndexError` **on a live print** — a ninth document, mid-print, on the card
+that is needed right then.
+
+Five reader call sites are guarded, plus an outer boundary on `value_for`, so
+whatever escapes costs **one row**. The guard is **loud**: `readerCrashed` is
+set and the refusal names the reader and the exception, because a blanket
+try/except that swallows everything is how a defect lives for a year.
+
+**And the pass found its own first defect.** A guard that lets execution fall
+through to a less-specific reader converts a crash into a **wrong value**:
+with `sgrid` raising, SNOW published **70.9 GAAP in place of 74.7 non-GAAP** —
+the CBRS failure mode, delivered by the safety net. A basis-declaring row now
+refuses rather than dropping through to the basis-blind prose pool.
+
+---
+
+## ★★★ 15. TWO INSTRUMENTS, TWO NUMBERS — NEVER ONE SUM
+
+```
+ROW-LEVEL  evidence:  fence 18              "taken from the right SECTION"
+CELL-LEVEL evidence:  period 18 · basis 3   "the right CELL"
+```
+
+Summing them is the same category error as summing DECLARED with EVIDENCED:
+two instruments answering different questions, added because both return a
+boolean.
+
+---
+
+## ★★★ 16. ONLY ONE VERDICT LEAVES THE DENOMINATOR
+
+`EXCLUDED` was doing four jobs. A row nobody ruled on is not an excused row.
+
+| verdict | meaning | in the denominator? |
+|---|---|---|
+| `EXCLUDED` | closed list: `NOT_IN_PR` · `CALL_SOURCED` · `QUALITATIVE` | **no — the only exit** |
+| `UNSPECD` | `NEEDS_REMAP`: issuer changed disclosure, our spec is stale | **yes — our gap** |
+| `UNCLASSIFIED` | `NOT_EXTRACTABLE` for a reason not on the closed list | **yes — nobody ruled** |
+| `NO_ANSWER_KEY` | a value was read, no hand read to compare | **yes — its own verdict** |
+
+```
+MATCH 34 · FALSE_MATCH 0 · MISMATCH 1 · LOST 0 · REFUSED 41
+· UNSPECD 3 · UNCLASSIFIED 4 · NO_ANSWER_KEY 0 · EXCLUDED 19
+[all 102 rows shown of 102; GRADED POPULATION 83 — only EXCLUDED leaves it]
+```
+
+EXCLUDED fell **26 → 19**. The seven that came back are ours.

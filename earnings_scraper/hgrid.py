@@ -295,12 +295,16 @@ def cell_axes(desc):
     b = column_basis(desc)
     return dict(basis=b, period=column_period(desc),
                 currency=column_currency(desc), headers=list(desc or []),
-                # ★ WHEN A FIELD CAN BE EMPTY FOR TWO REASONS IT NEEDS TWO
-                # EMPTIES. The grid RAN and read this cell's headers, so an
-                # empty basis is a fact about the RELEASE. A reader that
-                # never ran reports UNREAD_BY_GRID instead, and the two
-                # warrant opposite responses.
-                basisState=('READ' if b else 'ABSENT_IN_DOCUMENT'))
+                # ★★★ ABSENT_IN_DOCUMENT REQUIRES POSITIVE EVIDENCE THAT
+                # THE READER LOOKED, never merely that it returned nothing.
+                # An empty `desc` means no header text was resolved for this
+                # cell at all -- blindness in us. Calling that 'the issuer
+                # named no basis' would blank a priority-1 hero for a header
+                # WE never read: a FALSE REFUSAL, wearing the costume of
+                # caution and invisible because refusals look like that.
+                basisState=('READ' if b else
+                            'ABSENT_IN_DOCUMENT' if desc else
+                            'UNREAD_BY_GRID'))
 
 
 def select(lines, label_idx, spec, guard=GUARD, is_boundary=None):

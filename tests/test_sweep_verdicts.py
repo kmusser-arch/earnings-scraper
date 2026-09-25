@@ -110,9 +110,38 @@ def main():
         v = SW.judge(body, prow, slot, spec, 3, got=got)['verdict']
         check(v == want, 'judge returns %s where it should (%s)' % (v, want))
 
-    v6 = SW.judge(body, {'extraction': {'specState': 'NOT_EXTRACTABLE'}},
-                  slot, {'specState': 'NOT_EXTRACTABLE'}, 3, got={})['verdict']
-    check(v6 == 'EXCLUDED', 'judge returns EXCLUDED for a NOT_EXTRACTABLE row')
+    # ── ★★★ EXCLUDED SPLITS THREE WAYS, AND ONLY ONE LEAVES ─────────────
+    # A row no one ruled on is not an excused row. Folding NEEDS_REMAP and
+    # unclassified exclusions into EXCLUDED shrank the denominator by our own
+    # gaps, which is how a headline nobody could reconcile gets made.
+    def verdict(spec):
+        return SW.judge(body, {'extraction': spec}, slot, spec, 3,
+                        got={})['verdict']
+
+    v6 = verdict({'specState': 'NOT_EXTRACTABLE',
+                  'why': 'QUALITATIVE — forward commentary.'})
+    check(v6 == 'EXCLUDED',
+          'a closed-list reason (QUALITATIVE) is EXCLUDED — the only exit')
+    v7 = verdict({'specState': 'NOT_EXTRACTABLE',
+                  'why': 'Buyback is in the cash-flow statement.'})
+    check(v7 == 'UNCLASSIFIED',
+          'a NOT_EXTRACTABLE row whose reason is NOT on the closed list is '
+          'UNCLASSIFIED and stays in the denominator — nobody ruled on it')
+    v8 = verdict({'specState': 'NEEDS_REMAP'})
+    check(v8 == 'UNSPECD',
+          'NEEDS_REMAP is UNSPECD and stays in: the issuer changed '
+          'disclosure, our spec is stale, and that is OUR gap')
+    v9 = SW.judge(body, {'extraction': spec}, {'actual': None}, spec, 3,
+                  got=good)['verdict']
+    check(v9 == 'NO_ANSWER_KEY',
+          'a value read with no hand read to compare gets its OWN verdict, '
+          'not an exit — folding it into EXCLUDED hid it inside one')
+    # ★ AND THE AUTHORED FIELD BEATS THE PROSE MATCH, because matching prose
+    # is inference and this decides whether a row counts against us.
+    v10 = verdict({'specState': 'NOT_EXTRACTABLE', 'why': 'QUALITATIVE.',
+                   'exclusionClass': 'NOT_IN_PR'})
+    check(v10 == 'EXCLUDED',
+          'and an authored exclusionClass is read before any prose match')
 
     # ── the three STATES, each shown to occur ────────────────────────────
     # ★ A STATE THAT NEVER OCCURS LOOKS EXACTLY LIKE ONE THAT IS CORRECT.
@@ -184,9 +213,10 @@ def main():
           'column and this check must not pretend otherwise')
 
     # ── the report cannot be quoted without its denominator ──────────────
-    line = SW.report({'MATCH': 34, 'MISMATCH': 1}, 102)
+    line = SW.report({'MATCH': 34, 'MISMATCH': 1, 'EXCLUDED': 19,
+                      'UNSPECD': 3}, 102)
     check('of 102' in line and 'FALSE_MATCH 0' in line
-          and 'LOST 0' in line,
+          and 'LOST 0' in line and 'GRADED POPULATION 38' in line,
           'the report line carries the denominator AND prints every verdict '
           'including the zeros: %r' % line[:70])
 

@@ -720,6 +720,27 @@ def _cell_unit_ok(is_pct, spec):
     return True
 
 
+#: readers that crashed this run, as (reader, exception) -- for the report
+READER_FAILURES = []
+
+
+def guarded(label, fn, *args, **kwargs):
+    """Run a reader; on ANY exception return None and record why.
+
+    The guard is LOUD. A blanket try/except that swallows everything is how a
+    defect lives for a year, so the failure is appended to READER_FAILURES
+    and the caller turns it into a refusal whose reason NAMES the reader and
+    the exception. A crash must read as a crash, never as 'no candidate'.
+    """
+    try:
+        return fn(*args, **kwargs)
+    except Exception as exc:                            # noqa: BLE001
+        note = 'READER FAILED in %s: %s: %s' % (
+            label, type(exc).__name__, str(exc)[:120])
+        READER_FAILURES.append(note)
+        return None
+
+
 def cell_offset(text, line_idx, x=0, stripped=True):
     """Document offset of column `x` on the STRIPPED line `line_idx`.
 
@@ -789,7 +810,8 @@ def column_value(text, spec, label_pos, record=None):
         # column is a FY total and AVGO's fourth is the non-GAAP quarter;
         # only the header can tell them apart.
         from . import hgrid as _hg
-        _sel = _hg.select(lines, idx, spec, is_boundary=_axes.is_table_boundary)
+        _sel = guarded('hgrid.select', _hg.select, lines, idx, spec,
+                       is_boundary=_axes.is_table_boundary) or {}
         if _sel.get('value') is not None:
             _raw = str(_sel['value'])
             _pct = '%' in _raw
@@ -823,18 +845,19 @@ def column_value(text, spec, label_pos, record=None):
          .get('axes', []) if (a.get('axis') or '').upper() == 'BASIS'), None)
     if _want_basis and (spec or {}).get('basisLocation') != 'ROW_LABEL':
         from . import sgrid as _sg
-        _st = _sg.select(lines, idx, spec)
+        _st = guarded('sgrid.select', _sg.select, lines, idx, spec) or {}
         if _st.get('value') is not None and _cell_unit_ok(_st.get('pct'), spec):
             return dict(value=_st['value'], pct=_st.get('pct'),
                         columnIndex=None, columnClasses=_st.get('groups'),
                         cellAxes=_st.get('cellAxes'),
                         cellPos=cell_offset(body, _st.get('cellLine'),
                                             _st.get('cellX')))
-    cells = tables.row_value_cells_at(lines, idx)
+    cells = guarded('tables.row_value_cells_at',
+                    tables.row_value_cells_at, lines, idx) or []
     if len(cells) < 2:
         return None
-    got = vtables.column_map(lines, idx, len(cells), rq, ry,
-                             values=[c[0] for c in cells])
+    got = guarded('vtables.column_map', vtables.column_map, lines, idx,
+                  len(cells), rq, ry, values=[c[0] for c in cells]) or {}
     i = got.get('valueIndex')
     if i is None or i >= len(cells):
         return None
@@ -1085,6 +1108,34 @@ def period_conflict(text, pos, spec, quarter=None):
 
 
 def value_for(text, row, window=260, record=None):
+    """One cell, guarded. See _value_for for the reader itself.
+
+    ★★★ THE OUTER BOUNDARY IS THE ONE THAT SAVES THE CARD. The inner guards
+    let one reader fail and the next one try; this one guarantees that
+    whatever still escapes -- from the parser, the registry, the classifier,
+    anything -- costs this ROW and nothing else. The scorer above it sees an
+    ordinary refusal and every other row still renders.
+    """
+    mark = len(READER_FAILURES)
+    try:
+        got = _value_for(text, row, window=window, record=record)
+    except Exception as exc:                            # noqa: BLE001
+        note = 'READER FAILED in value_for: %s: %s' % (
+            type(exc).__name__, str(exc)[:120])
+        READER_FAILURES.append(note)
+        return dict(value=None, specState=registry.status_of(
+            registry.spec_for(row)), readerCrashed=True, why=note)
+    if got is not None and got.get('value') is None \
+            and len(READER_FAILURES) > mark:
+        # a reader crashed and the row found nothing: say WHICH, rather than
+        # letting a crash wear the clothes of an ordinary miss
+        got = dict(got, readerCrashed=True,
+                   why=('%s | %s' % (READER_FAILURES[mark],
+                                     got.get('why') or 'no value'))[:400])
+    return got
+
+
+def _value_for(text, row, window=260, record=None):
     """The row's value, taking whereKind as a PREFERENCE ORDER.
 
     The declared kind is tried first and the rest only if it yields nothing.
@@ -1398,7 +1449,24 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
             lp = c.get('lpos')
             if lp is None:
                 continue
-            got_s = _sg.select(_doc, src.count(chr(10), 0, lp), spec)
+            # ★★★ A CRASH MUST NOT FALL THROUGH TO A LESS-SPECIFIC READER.
+            # This branch exists because the row declares a BASIS; the prose
+            # pool below it is basis-blind. Letting a raising sgrid drop
+            # through published SNOW's GAAP 70.9 in place of the non-GAAP
+            # 74.7 -- the CBRS failure mode, delivered by the crash guard
+            # that was supposed to make failure safe. A guard that converts
+            # a crash into a WRONG VALUE is worse than the crash.
+            _mark = len(READER_FAILURES)
+            got_s = guarded('sgrid.select', _sg.select, _doc,
+                            src.count(chr(10), 0, lp), spec) or {}
+            if len(READER_FAILURES) > _mark:
+                return dict(value=None, specState=state, readerCrashed=True,
+                            candidates=[x['raw'] for x in seen],
+                            why=('%s — refusing rather than falling through '
+                                 'to the basis-blind prose pool on a row '
+                                 'that declares %s'
+                                 % (READER_FAILURES[_mark], _basis_want)),
+                            rejected=rejected)
             if got_s.get('value') is None:
                 continue
             if not _cell_unit_ok(got_s.get('pct'), spec):
