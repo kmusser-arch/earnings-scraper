@@ -101,12 +101,17 @@ def main():
     # AVGO[8] is authored '★ Q3 Non-GAAP EPS' -- ONE star, so it is a
     # supporting row. The strict arm needs a priority-1 name, and saying so
     # here is the point: NO corpus row reaches this arm today.
-    hero = dict(prow, name=u'★★★ Q3 Non-GAAP EPS ($)')
+    # ★ AUTHORED PRIORITY ON THE ROW NOW WINS OVER THE STAR SCALE, which is
+    # correct -- the stars are a display string and `priority` is the
+    # judgement. So the strict arm is driven by setting the AUTHORED field,
+    # not by renaming the row.
+    hero = dict(prow, priority=1)
+    low = dict(prow, priority=2)
     check(PR.row_priority(hero, None, rec['preEarnings']['keyKPIs']) == 1
-          and PR.row_priority(prow, None,
+          and PR.row_priority(low, None,
                               rec['preEarnings']['keyKPIs']) == 2,
-          'AVGO[8] as authored is a SUPPORTING row (1 star); the strict arm '
-          'is driven on a priority-1 name because no corpus row reaches it')
+          'an AUTHORED row priority outranks the star scale, so the arm is '
+          'driven on the field the author actually writes')
     HG.cell_axes = blind
     try:
         strict = X.value_for(body, hero, record=rec) or {}
@@ -120,7 +125,7 @@ def main():
           'and the refusal says WHY in the row, not in a log')
 
     # ── THE LENIENT ARM: same conditions, lower priority ─────────────────
-    lower = dict(prow, name=u'\u2605 Q3 Non-GAAP EPS ($)')
+    lower = low          # AUTHORED priority 2, not a star count
     HG.cell_axes = blind
     try:
         soft = X.value_for(body, lower, record=rec) or {}
@@ -228,9 +233,10 @@ def period_strict_arm():
     real = X2._period_evidence
     X2._period_evidence = lambda *a, **k: 'ABSENT_IN_DOCUMENT'
     try:
-        hero = dict(row, name=u'\u2605\u2605\u2605 ' + (row.get('name') or ''))
-        out = X2.value_for(body, hero, record=rec) or {}
-        low = X2.value_for(body, dict(row, name=u'\u2605 x'), record=rec) or {}
+        # \u2605 AUTHORED PRIORITY, not a star count \u2014 the row carries one now
+        # and the stars are a display string.
+        out = X2.value_for(body, dict(row, priority=1), record=rec) or {}
+        low = X2.value_for(body, dict(row, priority=2), record=rec) or {}
     finally:
         X2._period_evidence = real
     check(out.get('value') is None
