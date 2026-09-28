@@ -1,5 +1,44 @@
 # FINDINGS — the shapes this build keeps producing
 
+Not a changelog. Each entry is a defect *shape* with its instances.
+
+---
+
+# PART I — PROTOCOLS
+
+> **EVERY RULE IN THIS FILE HAS BEEN VIOLATED BY ITS OWN AUTHOR.
+> NO PROTOCOL HAS BEEN.**
+>
+> **A RULE is a test you must remember to apply, and you remember when you
+> are uncertain. A PROTOCOL is a step you run before knowing whether you
+> need it.** Confidence is exactly the state in which a rule goes
+> unconsulted, and exactly the state in which the expensive errors happen.
+
+| # | protocol | run it |
+|---|---|---|
+| P1 | **TRACE FROM THE DOCUMENT** — open the release and find the figure before reading any code or any refusal reason | before diagnosing any refusal |
+| P2 | **THE ONLY FAITHFUL PROBE OF AN EDIT IS THE EDIT** — apply, snapshot, revert, diff. A monkeypatched stand-in is a fifth frame | before quoting any delta |
+| P3 | **REPORT-ONLY ON THE REAL EDIT, THEN REVERT AND CONFIRM THE TREE IS CLEAN** | before landing any reader change |
+| P4 | **REVERT-AND-DIFF BEFORE ATTRIBUTING** — a recent visible change is the cheapest explanation for any metric move, and latent defects are invisible by construction | before blaming anyone's change |
+| P5 | **DRIVE THE GATE RED** — an instrument is trustworthy only once it has been made to fail on purpose. Where it cannot be driven red, say so instead of reporting it green | before trusting any check |
+| P6 | **NAME THE SAMPLE FRAME BEFORE QUOTING THE NUMBER** — and check the input size before explaining a surprising count | before quoting any number |
+| P7 | **POISON THE BOUNDARY** — replace every field on the far side with an absurd value and confirm nothing moves. Grepping for names proves nothing about a path that builds a key dynamically | before claiming a boundary holds |
+| P8 | **ASSERT THE BEHAVIOUR, NOT THE STRING** — *"every module that does X imports the canonicaliser"*, never *"no site mishandles `basis`"* | when writing any negative assertion |
+| P9 | **BEFORE EXCLUDING A REGION, LIST WHAT LIVES INSIDE IT** — *"exclude this section"* conflates *do not match labels here* with *do not take values here*, and for a reconciliation block the correct answers are opposite | before any exclusion |
+| P10 | **STATE THE ACCESS/INFORMATION TYPE AND THE JUNCTION** — naming the fact is not naming the fix. If no junction can be named, it is a trace request, not a prediction | before any access hypothesis |
+| P11 | **WAS THIS FACT EVER COMPUTED ANYWHERE IN THE CALL PATH?** — and, for the author: does the code already implement this rule? | before writing any new rule |
+| P12 | **BUCKET ON THE RICHEST AVAILABLE FIELD, NOT THE CHEAPEST** | before reporting any tally |
+
+**P9 and P10 are new.** They are the protocol forms of two rules that were
+violated by their authors: *"exclusion is two operations"* and *"price
+jointly"*. Two others were already converted — *"a consistent reason and a
+true reason are different claims"* became **P1**, and *"a name is not a
+type"* became **P8**.
+
+---
+
+# PART II — RULES
+
 Not a changelog. Each entry is a defect *shape* with its instances, kept
 because every one of them recurred after being fixed once.
 
@@ -1193,3 +1232,42 @@ hand read of `10.0`, a **percent growth** figure, in a section that prints
 only dollars. Its three `10` matches are coincidental digits inside a dollar
 table. That row is probably derived or not-in-PR, **not** a unit failure —
 one bucket, two unrelated causes, which is why the trace had to run.
+
+---
+
+## ★★★ 55. THE _unit_ok FIX DOES NOT EXIST — TRACED, NOT REASONED
+
+Predicted junction: `_unit_ok` rejects a bare `$ 49.0` for want of a
+magnitude word. **Traced from the document, it does not.**
+
+```
+DELL[16]  hand 49.0
+document  'Q3FY27 (% Y/Y) Revenue $ 49.0 81 %'   at 3233
+fence     'Third-Quarter Guidance' 3152..3339     label hit INSIDE (1 of 47)
+candidates on that window            3, 27, 49.0, 81
+_unit_ok('49.0', '$B')               TRUE
+verdict                              UNIT_MISMATCH, candidates []
+```
+
+**`49.0` passes the unit test.** Eliminated in turn, each by substitution:
+`_unit_ok` · the section anchor · `rangeForm` · `whereKind` · the label set.
+All four variants return byte-identical refusals. The blocker sits between
+the surviving label hits and the candidate pool, and is not yet named.
+
+> **So there is no loosening to make, and the AAPL[3] FALSE_MATCH risk does
+> not arise from this fix.** That is a fourth outcome the three-way
+> prediction did not contain: **the fix was never available.**
+
+★ And the trace found something else: `Q3FY27` yields candidates **3** and
+**27**. A period token is being read as a magnitude, inside the fence.
+
+**AAPL[3], dispositioned from the document:** `F4Q Revenue Guide (% YoY)`,
+hand read `10.0`. The release contains **no percent revenue-growth guide at
+all** — its only guidance language is a disclaimer about reconciling non-GAAP
+guidance. `NOT_IN_PR` / `CALL_SOURCED`. The row asks for a figure the release
+does not print, and its three `10` matches are coincidental digits in a
+dollar table.
+
+**One refusal bucket, five unrelated causes now** — HPE[3]/[8]/[12], AVGO[6],
+DELL × 3, AAPL[3]. **A refusal code is a bucket, not a cause**, and every
+split has been visible only from the document. That is the evidence for P1.
