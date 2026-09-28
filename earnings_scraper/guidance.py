@@ -173,21 +173,29 @@ def specs_for(text, gmap, metric_kind, unit=None):
         # the end of the document, and every guide row tied on candidates
         # inside it. A SPAN NEEDS A CLOSE, and the close was computed and
         # discarded one line before it was needed.
-        spec = dict(specState='EXTRACTABLE', documentLabels=list(labels),
+        # ★★★ A LIST IN A ROUTING FIELD IS AN ORDERED PREFERENCE, NOT A SET
+        # OF PERMISSIONS -- and the library has carried
+        # whereKindIsAPreferenceOrder: True all along. Declaring all three
+        # 'to be safe' selects the FIRST branch and hides which one ran:
+        # clip() then applies the prose stop rule and returns an empty
+        # window. Breadth in a routing field is not caution.
+        #
+        # ★★ AND rangeForm IS NOT ASSERTED WHERE NOTHING WAS DETECTED. A
+        # declared SEPARATOR sends the row through the range arm, which
+        # finds no adjacent pair in a table cell and yields nothing. DELL[16]
+        # needed BOTH: one routing kind AND no invented range form. Either
+        # alone still refuses -- the access/information pair again.
+        base = dict(specState='EXTRACTABLE', documentLabels=list(labels),
                     sectionAnchor=[heading],
-                    documentUnit=unit or '$M', storedUnit=unit or '$B',
-                    whereKind=['PROSE', 'RANGE', 'TABLE'],
-                    rangeForm='SEPARATOR')
-        # ★★★ UNRESOLVED IS NOT A PERIOD, IT IS THE ABSENCE OF ONE. Writing
-        # it into `period` declares a period we do not have -- and an
-        # INFERRED period may RANK, never EXCLUDE. The vocabulary validator
-        # caught this on six of ten forward rows, which is the validator
-        # working: it refused a spec THIS MODULE generated.
-        if period in (GUIDE_FY, GUIDE_NEXT_Q):
-            spec['period'] = period
-        else:
-            spec['periodHint'] = period
+                    documentUnit=unit or '$M', storedUnit=unit or '$B')
         if closer:
-            spec['spanTerminator'] = [closer]
-        out.append((spec, heading, period))
+            base['spanTerminator'] = [closer]
+        if period in (GUIDE_FY, GUIDE_NEXT_Q):
+            base['period'] = period
+        else:
+            base['periodHint'] = period
+        # ONE SPEC PER ROUTING KIND, IN PREFERENCE ORDER. A refusal then
+        # NAMES the branch it tried; breadth hides it.
+        for kind in ('TABLE', 'PROSE'):
+            out.append((dict(base, whereKind=[kind]), heading, period))
     return out

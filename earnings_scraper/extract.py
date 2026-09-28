@@ -1385,11 +1385,19 @@ def _value_for(text, row, window=260, record=None):
     # the range arm's job; the table pass returns single cells and took
     # ADBE's Q4 guide to 6.35, the high, instead of 6.325. Preferring the
     # table must not bypass the shape the row declares.
-    prefers_table = ('TABLE' in kinds
+    # ★★★ whereKind IS AN ORDERED PREFERENCE, AND THE LIBRARY SAYS SO:
+    # `whereKindIsAPreferenceOrder: True` has been authored on the spec all
+    # along, and this read the list as a SET -- requiring PROSE to be ABSENT
+    # before it would prefer the table. 29 of 76 rows declare more than one
+    # kind and 9 of those refused. ADBE[6] declares TABLE/PROSE and reads
+    # 6.13, its exact hand value, the moment the ORDER is honoured.
+    # Third instance of a fact present in the system and not consulted.
+    _first_layout = next((k for k in kinds
+                          if k in ('TABLE', 'PROSE', 'WRAPPED', 'HEADLINE',
+                                   'QUOTE')), None)
+    prefers_table = (_first_layout == 'TABLE'
                      and 'RANGE' not in kinds
-                     and not spec.get('requiresRangePair')
-                     and not ('PROSE' in kinds or 'WRAPPED' in kinds
-                              or 'HEADLINE' in kinds or 'QUOTE' in kinds))
+                     and not spec.get('requiresRangePair'))
     if prefers_table:
         got = _value_for_pass(text, row, window, record,
                               hit_pred=_lands_in_table)

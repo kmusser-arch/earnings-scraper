@@ -1338,3 +1338,71 @@ Discard question, asked first: `★periodMarkers` exists in
 them may already recognise the token and simply not be consulted before
 candidate selection.** Junction not yet named; this is a trace request, not a
 prediction.
+
+---
+
+## ★★★ 58. A LIST IN A ROUTING FIELD IS AN ORDERED PREFERENCE, NOT A SET OF PERMISSIONS
+
+> **WHEN UNSURE, DECLARE ONE.** A single declaration that refuses **names the
+> branch it tried**. Breadth takes the first branch and hides which one ran.
+> **A refusal is diagnostic; a silent wrong branch is not.**
+
+**And the library said so all along:** `whereKindIsAPreferenceOrder: True` is
+authored on the spec. The code read the list as a **set** — `prefers_table`
+required `PROSE` to be *absent* before it would prefer the table.
+
+```
+76 spec'd rows · 29 declare more than one kind · 9 of those refused
+ADBE[6] 'TABLE/PROSE'  REFUSED  ->  MATCH 6.13   (hand 6.13)
+ADBE[7] 'TABLE/PROSE'  REFUSED  ->  MATCH 6.76   (hand 6.76)
+ADBE[12]                MATCH 2.97 ->  MATCH 2.974  (more precise)
+MATCH 36 -> 38, zero regressions
+```
+
+**Third instance of a fact present in the system and not consulted** — after
+`period.py`'s precedence and the range endpoints.
+
+★ **The validator now SURFACES routing breadth rather than refusing it** —
+29 rows, 7 of them refusing, printed with the branch they declared. Breadth
+is not invalid; 20 of the 29 read correctly. This turns the habit into an
+**artifact the author can see** instead of a judgement they must remember.
+
+---
+
+## ★★★ 59. A DOCSTRING IS A JUDGEMENT, NOT AN ARTIFACT
+
+Twice this month a function **documented the defect it then committed**:
+
+- `clip()` — *"the prose rule clipped all four guide windows to '' and the
+  selector refused a candidate set that was empty by construction"* — and it
+  did exactly that to DELL, because the fix routed on `tabular`, which
+  requires PROSE to be absent.
+- the range arm — *"both ends travel with it: a band is information the
+  midpoint discards"* — and the return dropped them one frame from the
+  caller.
+
+> **WRITING A DEFECT DOWN IS NOT PREVENTING IT.** A docstring leaves no
+> residue when ignored, which is the artifact criterion applied to comments:
+> **if a docstring states an invariant, the invariant needs a test, or the
+> docstring is decoration.**
+
+---
+
+## ★★★ 60. THE GUIDE GENERATOR READS SIX AND GETS FOUR WRONG
+
+With one routing kind per spec and no invented `rangeForm`, the held-out
+forward rows move **0 → 6 reads**. Two agree. **Four publish a wrong value:**
+
+```
+DELL[4]  FY27 Revenue Guide    read 49.0   hand 192.0   <- took the Q3 figure
+MDB[2]   FY27 Revenue Guide    read 761.0  hand 3.01
+MRVL[0]  FY27+FY28 DC Revenue  read 5.0    hand 60.0
+```
+
+DELL[4] is the sharp one: an **FY** row took the **Q3** number, out of a
+`Guidance Summary` section whose period is `UNRESOLVED`. `periodHint` ranks
+and never excludes — correctly, by the standing rule — so nothing stopped it.
+
+**Two right and four wrong is worse than six refusals.** The generator stays
+a measurement tool and is not wired into `value_for`. **Reading more is not
+progress until the period can exclude.**

@@ -31,6 +31,7 @@ from earnings_scraper import parallel as PAR       # noqa: E402
 from earnings_scraper import firstfire as FF      # noqa: E402
 from earnings_scraper import frames as FR         # noqa: E402
 from earnings_scraper import spans as SP          # noqa: E402
+from earnings_scraper import vocab as VOC         # noqa: E402
 from earnings_scraper import reasons as RE        # noqa: E402
 from earnings_scraper import registry as R         # noqa: E402
 from earnings_scraper import sweep as SW           # noqa: E402
@@ -78,6 +79,7 @@ def main():
     silent = []
     misdescribed = []
     firstfires = []
+    broad = []
     ledger = FF.seen_codes()
 
     for rid, path, kind in CASES:
@@ -139,6 +141,9 @@ def main():
                 if _first:
                     firstfires.append((rid, i, (prow.get('name') or '')[:38],
                                        _code))
+            for _f, _vals in VOC.routing_breadth(spec):
+                broad.append((rid, i, (prow.get('name') or '')[:32], _f,
+                              '/'.join(_vals), j['verdict']))
             if got:
                 _ok, _c = RE.verify(body, prow, spec, rec, got)
                 if not _ok:
@@ -214,6 +219,18 @@ def main():
         print('')
         print('   codes that have STILL never met real prose (%d of %d): %s'
               % (len(_unfired), len(RE.CODES), ', '.join(_unfired)))
+
+    if broad:
+        _ref = [b for b in broad if b[5] in ('REFUSED', 'LOST')]
+        print('')
+        print('ROUTING BREADTH — %d row(s) declare more than one layout kind'
+              ' (%d of them refusing)' % (len(broad), len(_ref)))
+        print('   A list in a routing field is an ORDERED PREFERENCE, not a '
+              'set of permissions.')
+        print('   When unsure, declare one: a single declaration that '
+              'refuses NAMES the branch.')
+        for rid, i, nm, f, vals, v in _ref[:10]:
+            print('   %-13s[%-2d] %-32s %s=%s  %s' % (rid, i, nm, f, vals, v))
 
     if SP.VIOLATIONS:
         print('')

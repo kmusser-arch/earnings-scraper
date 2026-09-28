@@ -107,6 +107,30 @@ def range_form_source():
     return _RANGE_FORMS[1] if len(_RANGE_FORMS) > 1 else 'unknown'
 
 
+#: routing fields where a LIST is an ORDERED PREFERENCE, not a permission set
+ROUTING_FIELDS = ('whereKind', 'where')
+
+
+def routing_breadth(spec):
+    """[(field, values)] for every routing field declaring more than one kind.
+
+    ★★★ A LIST IN A ROUTING FIELD IS AN ORDERED PREFERENCE, NOT A SET OF
+    PERMISSIONS. WHEN UNSURE, DECLARE ONE. A single declaration that refuses
+    NAMES THE BRANCH IT TRIED; breadth takes the first branch and hides which
+    one ran. A refusal is diagnostic; a silent wrong branch is not.
+
+    ★ SURFACED, NEVER REFUSED. Breadth is not invalid -- 29 of 76 rows
+    declare it and 20 of them read correctly. This turns the habit into an
+    ARTIFACT the author can see rather than a judgement they must remember.
+    """
+    out = []
+    for f in ROUTING_FIELDS:
+        v = (spec or {}).get(f)
+        if isinstance(v, list) and len(v) > 1:
+            out.append((f, list(v)))
+    return out
+
+
 def violations(spec):
     """[(field, value, why)] for every matcher field that is not a token."""
     out = []
