@@ -317,7 +317,14 @@ def select(lines, label_idx, spec, guard=GUARD, is_boundary=None):
     if not cells:
         return dict(value=None, why='no numeric cells on this row')
 
-    want_basis = (spec or {}).get('basis')
+    from . import vocab as _vocab
+    # ★★★ CANONICALISE BOTH SIDES. The library carries `non-GAAP` on 14 rows
+    # and `NON_GAAP` on 5, and a raw == silently dropped EVERY column on the
+    # underscore rows -- AVGO[8], a graded row, fell through to prose and an
+    # 18-candidate tie. oneConditionTwoNames reached the SELECTION path, not
+    # just the audit, which is why one canonicaliser has to be used at every
+    # comparison rather than at the one that was noticed first.
+    want_basis = _vocab.canonical_basis((spec or {}).get('basis'))
     want_cur = (spec or {}).get('currencyBasis')
     alive = list(range(len(cells)))
     trace = []
@@ -335,7 +342,8 @@ def select(lines, label_idx, spec, guard=GUARD, is_boundary=None):
 
     if want_basis:
         keep = [i for i in alive
-                if (column_basis(cells[i][2]) or want_basis) == want_basis]
+                if (_vocab.canonical_basis(column_basis(cells[i][2]))
+                    or want_basis) == want_basis]
         if not keep:
             return dict(value=None, description=[c[2] for c in cells],
                         why='BASIS %s: no column on this row is that basis'

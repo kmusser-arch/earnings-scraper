@@ -31,6 +31,7 @@ import math
 import re
 
 from . import priority as _priority
+from . import vocab as _vocab
 from . import registry
 from . import tables as _tables
 from . import period as _period_mod
@@ -1266,7 +1267,6 @@ def value_for(text, row, window=260, record=None):
     # ANSWER VALUE. So every matcher field is validated against a CLOSED
     # VOCABULARY here, and a violation refuses ONE ROW -- loudly, with its
     # own code -- rather than raising and costing the card.
-    from . import vocab as _vocab
     _bad = _vocab.violations(registry.spec_for(row))
     if _bad:
         return dict(value=None, reasonCode='SPEC_INVALID',
@@ -1689,8 +1689,8 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
             _sev = ('AGREES' if _sax.get('basis')
                     else _sax.get('basisState') or 'UNREAD_BY_GRID')
             if _sax.get('basis') and (
-                    _sax['basis'].lower().replace('-', '')
-                    != (_basis_want or '').lower().replace('-', '')):
+                    _vocab.canonical_basis(_sax['basis'])
+                    != _vocab.canonical_basis(_basis_want)):
                 _sev = 'CONTRADICTS'
             _sprio = _priority.row_priority(
                 row, spec,
@@ -1783,9 +1783,16 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
                     _basis_ev = ('AGREES' if _axes_got.get('basis')
                                  else _axes_got.get('basisState')
                                  or 'UNREAD_BY_GRID')
+                    # ★★★ ONE CANONICALISER, EVERY COMPARISON. This is the
+                    # FIFTH call site of the same test and the THIRD time it
+                    # has been fixed where it was noticed rather than
+                    # everywhere it occurs. 'NON_GAAP' vs 'non-GAAP' read as
+                    # a CONTRADICTION and refused three graded rows,
+                    # including two heroes, the moment the library was
+                    # normalised to the underscore form.
                     if _axes_got.get('basis') and (
-                            _axes_got['basis'].lower().replace('-', '')
-                            != spec['basis'].lower().replace('-', '')):
+                            _vocab.canonical_basis(_axes_got['basis'])
+                            != _vocab.canonical_basis(spec['basis'])):
                         _basis_ev = 'CONTRADICTS'
                 _prio = _priority.row_priority(
                     row, spec,

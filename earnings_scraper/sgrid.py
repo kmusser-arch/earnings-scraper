@@ -160,8 +160,12 @@ def select(lines, label_idx, spec, basis_headers=None, lookback=400):
             return dict(value=None, cells=[c[0] for c in cells],
                         why='ragged: %d cell(s) do not divide into %d basis '
                             'group(s)' % (len(cells), len(seen)))
+        from . import vocab as _vocab
+        # ★ SAME CANONICALISER AS EVERY OTHER BASIS COMPARISON.
+        _w = _vocab.canonical_basis(want)
         labels = [seen[g] for g in part]
-        alive = [i for i, lab in enumerate(labels) if lab == want]
+        alive = [i for i, lab in enumerate(labels)
+                 if _vocab.canonical_basis(lab) == _w]
         picked_basis = labels
         if not alive:
             return dict(value=None, cells=[c[0] for c in cells],
