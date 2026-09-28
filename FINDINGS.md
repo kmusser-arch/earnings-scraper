@@ -1041,3 +1041,84 @@ heading NAME, so `section_spans` re-derived a fence with no terminator: MDB's
 716-character guidance section became 3,192 characters running to the end of
 the document. The close was computed and discarded one line before it was
 needed.
+
+---
+
+## ★★★ 49. FRAME TYPE — POSITIONS CARRY THEIR FRAME
+
+Five failures, none caught by vigilance, and vigilance would have failed a
+sixth. `frames.py` is a `str` subclass that remembers which frame a document
+is in, so nothing had to be rewritten to adopt it.
+
+```
+dewrap_mapped()  ->  tags its output DEWRAPPED
+derive()         ->  declares it expects RAW
+value_for()      ->  declares it expects RAW
+```
+
+**It records, it does not raise.** An exception costs the whole card; the
+point is to make the mistake visible, not fatal at 4:31. The sweep refuses to
+write when a violation is recorded.
+
+Driven red on the exact n=5 defect: handing `value_for` dewrapped text now
+reports *"value_for expected RAW text and was given DEWRAPPED"* and names the
+inner call too, instead of silently refusing a priority-1 hero.
+
+---
+
+## ★★★ 50. BOTH PREDICTIONS PRICED ZERO — AND A ZERO IS A QUESTION
+
+Kyle predicted `denomination` (an ACCESS fix) and range-form detection (an
+INFORMATION fix) would each pay alone.
+
+```
+ARM              forward  refused  READS  AGREES
+baseline            10      10       0      0
++denomination       10      10       0      0
++rangeForm          10      10       0      0
+BOTH                10      10       0      0
+```
+
+**Neither paid, alone or together.** He was on record; the answer is that the
+*type* of each was misdiagnosed, which is exactly what he said the failure
+would mean.
+
+**`UNIT_MISMATCH` × 4 is not a unit problem.** `denomination()` returns the
+correct `$B` for DELL's guidance section — the information is right and
+reachable, and the rows still refuse. The fix reached correct information and
+the blocker was elsewhere.
+
+**`BAND_COLLAPSED` × 4 is not a detection problem.** MRVL prints
+
+```
+Net revenue is expected to be $3.150 billion +/- 5%.
+```
+
+The form **is** detected as `PLUS_MINUS`. What is missing is that this is a
+**PERCENTAGE delta**, not an absolute one — `centre ± (centre × pct)`. Kyle's
+block lists `"$29.4B +/- $500M"`, an absolute delta. **A percentage-delta
+plus-minus is a seventh form**, and it is genuinely new information rather
+than an access or detection gap.
+
+★ And the validator refused my detector too: `FLOOR` / `CEILING` /
+`APPROXIMATE` are in Kyle's block but not in `vocab._CLOSED['rangeForm']`, so
+`+rangeForm` produced a `SPEC_INVALID`. **Second time the vocabulary has
+caught its own toolchain.**
+
+---
+
+## ★★★ 51. RE-DERIVED IN IGNORANCE — A NEW FORM OF THE DISCARD PATTERN
+
+Not *"computed and discarded"* but **"re-derived in ignorance, and worse"**.
+Kyle authored a `periodDisambiguation` pair into the data that `period.py`
+had implemented more carefully since the classifier was built. Same root, and
+the waste lands on the **authoring** side.
+
+> **Before authoring a rule into the data, ask whether the code already
+> implements it.**
+
+And the companion, which cost the first real fire of a first-fire code:
+
+> **When bucketing a result, bucket on the RICHEST available field, not the
+> cheapest.** I bucketed by `value is None` when `reasonCode` was sitting
+> right there.

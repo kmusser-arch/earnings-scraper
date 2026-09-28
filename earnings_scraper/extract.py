@@ -30,6 +30,7 @@ line sees a label with no number and a number with no label.
 import math
 import re
 
+from . import frames as _frames
 from . import priority as _priority
 from . import vocab as _vocab
 from . import registry
@@ -147,7 +148,10 @@ def dewrap_mapped(text):
         pos += len(raw)
         del nl
     flush()
-    return ''.join(out_parts), segs
+    # ★ THE RESULT IS DEWRAPPED AND NOW SAYS SO. Five defects came
+    # from an offset measured in one frame and used in another.
+    _out = ''.join(out_parts), segs
+    return (_frames.framed(_out[0], _frames.DEWRAPPED), _out[1])
 
 
 def to_original(segs, pos):
@@ -1324,6 +1328,11 @@ def value_for(text, row, window=260, record=None):
                     specViolations=[list(b) for b in _bad],
                     why=('SPEC: %s=%r %s' % _bad[0])[:300])
 
+    # ★ THE ENTRY POINT NAMES ITS FRAME. value_for dewraps what it is
+    # handed, so being handed already-dewrapped text dewraps it twice --
+    # frame defect n=5, a silent hero refusal.
+    _frames.expect(text, _frames.RAW, 'value_for')
+
     mark = len(READER_FAILURES)
     try:
         got = _value_for(text, row, window=window, record=record)
@@ -1443,6 +1452,7 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
         # resolved standalone and refused as an operand, and the derived
         # hero above it refused with it. Frame defect n=5: raw, dewrapped,
         # stripped, kept, and now dewrapped TWICE.
+        _frames.expect(text, _frames.RAW, 'derived.derive')
         _d = _derived.derive(text, row, record) or {}
         if _d.get('value') is not None:
             return dict(value=_d['value'], value_musd=None,

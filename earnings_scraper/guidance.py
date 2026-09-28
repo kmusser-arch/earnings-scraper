@@ -95,11 +95,24 @@ def guide_sections(text, anchors):
             norm.endswith(' ' + w) for w in wanted if ' ' not in w)
         if not hit:
             continue
+        # ★★★ AN EMPTY SPAN IS NOT A SECTION. DELL stacks its guidance
+        # headings -- 'Guidance Summary', then 'Third-Quarter Guidance',
+        # then 'Full-Year Guidance' -- so closing at the VERY NEXT heading
+        # produced spans of 18, 49, 51 and 75 characters: the heading and
+        # nothing else. Four guide rows then refused for want of a value
+        # that was never inside the fence. A close must close AFTER the
+        # content, so consecutive headings are skipped until one follows
+        # something.
         end, closer = len(text or ''), None
+        seen_content = False
         for j in range(i + 1, len(lines)):
             if extract.is_section_heading(lines, j):
-                end, closer = offs[j], lines[j].strip()
-                break
+                if seen_content:
+                    end, closer = offs[j], lines[j].strip()
+                    break
+                continue
+            if lines[j].strip():
+                seen_content = True
         out.append((ln.strip(), offs[i], end, heading_period(ln), closer))
     return out
 

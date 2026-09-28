@@ -29,6 +29,7 @@ sys.path.insert(0, HERE)
 from earnings_scraper import extract as X          # noqa: E402
 from earnings_scraper import parallel as PAR       # noqa: E402
 from earnings_scraper import firstfire as FF      # noqa: E402
+from earnings_scraper import frames as FR         # noqa: E402
 from earnings_scraper import reasons as RE        # noqa: E402
 from earnings_scraper import registry as R         # noqa: E402
 from earnings_scraper import sweep as SW           # noqa: E402
@@ -64,6 +65,7 @@ def main():
                     help='write scraperRead and sweepVerdict into the library')
     args = ap.parse_args()
 
+    FR.clear()
     lib = json.load(io.open(LIB, encoding='utf-8'))
     recs = {r['id']: r for r in lib['records']}
 
@@ -210,6 +212,18 @@ def main():
         print('')
         print('   codes that have STILL never met real prose (%d of %d): %s'
               % (len(_unfired), len(RE.CODES), ', '.join(_unfired)))
+
+    if FR.VIOLATIONS:
+        print('')
+        print('=' * 100)
+        print('FRAME VIOLATIONS — %d cross-frame use(s) this run'
+              % len(FR.VIOLATIONS))
+        print('   An offset is meaningless without the text it was measured '
+              'in. Five defects')
+        print('   came from this and none was caught by vigilance.')
+        for v in sorted(set(FR.VIOLATIONS)):
+            print('   %s' % v)
+        raise SystemExit('refusing to write across a frame boundary')
 
     if misdescribed:
         print('')

@@ -348,3 +348,69 @@ def heading_on_unseen_shapes():
 
 
 heading_on_unseen_shapes()
+
+
+def frame_type():
+    """★★★ POSITIONS CARRY THEIR FRAME, OR THERE IS A SIXTH.
+
+    Five failures, none caught by vigilance: dewrap (pos emitted DEWRAPPED,
+    persisted as RAW), cell_offset (indent added twice), the probe (a
+    DEWRAPPED line index handed to a RAW document, reporting the EXACT
+    OPPOSITE of the truth), the heading rule (blank lines in a frame that
+    has none), and derive (handed already-dewrapped text and dewrapping it
+    AGAIN, refusing a priority-1 hero SILENTLY).
+
+    ★ IT RECORDS, IT DOES NOT RAISE. An exception costs the whole card; the
+    point is to make the mistake VISIBLE, not fatal at 4:31.
+    """
+    from earnings_scraper import extract as X3
+    from earnings_scraper import frames as F
+
+    hpe = os.path.join(HERE, 'fixtures', 'releases', 'HPE-2026-09-02.txt')
+    lib = os.path.join('C:' + os.sep, 'Users', 'Trader', 'Documents',
+                       'Claude', 'Projects', 'earnings Model',
+                       'earnings-library.json')
+    if not (os.path.exists(hpe) and os.path.exists(lib)):
+        print('SKIP fixture or library not reachable')
+        return
+    body = io.open(hpe, encoding='utf-8').read()
+    rec = {r['id']: r for r in json.load(io.open(lib, encoding='utf-8'))
+           ['records']}['HPE-2026Q3']
+    row = rec['preEarnings']['keyKPIs'][0]
+
+    check(F.frame_of(body) == F.RAW,
+          'a plain str is assumed RAW, so nothing had to be rewritten to '
+          'adopt the type')
+    src, _segs = X3.dewrap_mapped(body)
+    check(F.frame_of(src) == F.DEWRAPPED and str(src) == str(src),
+          'and dewrap_mapped TAGS its output %s while returning the same '
+          'text' % F.frame_of(src))
+
+    # ── the correct path reports nothing ─────────────────────────────────
+    F.clear()
+    good = X3.value_for(body, row, record=rec) or {}
+    check(good.get('value') == 4.485 and not F.VIOLATIONS,
+          'the RAW path reads 4.485 and records NO violation')
+
+    # ── ★ DRIVEN RED: the exact n=5 defect ───────────────────────────────
+    F.clear()
+    bad = X3.value_for(src, row, record=rec) or {}
+    check(bad.get('value') is None and F.VIOLATIONS,
+          'handing value_for DEWRAPPED text still refuses the row — but now '
+          'it is NAMED: %r' % (F.VIOLATIONS[0] if F.VIOLATIONS else None))
+    check(any('derive' in v for v in F.VIOLATIONS),
+          'and the inner call is named too, so the frame is traceable to '
+          'the function that crossed it: %s' % F.VIOLATIONS[1:2])
+    F.clear()
+
+    # ★ ANTI-VACUOUS: expect() must also PASS, or every check above holds
+    # on a function that always complains.
+    check(F.expect(body, F.RAW, 'probe') is True and not F.VIOLATIONS,
+          'expect() returns True and records nothing on a matching frame — '
+          'a check, not a blanket')
+    check(F.expect(src, F.RAW, 'probe') is False and len(F.VIOLATIONS) == 1,
+          'and False exactly once on a mismatch')
+    F.clear()
+
+
+frame_type()
