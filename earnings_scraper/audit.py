@@ -478,7 +478,50 @@ def _priority_one_hero(rec):
                     'fire for this ticker')]
 
 
+def _extraction_spec_coverage(rec):
+    """A priority-1 row with no extraction spec cannot be read from the wire.
+
+    ★★★ NON-NEGOTIABLE 0b: THE EXTRACTION SPEC IS AN OUTPUT OF EVERY
+    PRE-EARNINGS BUILD. The spec is the SAME INFORMATION the build already
+    gathers -- a build opens the prior quarter's release for context and
+    identifies the hero KPIs, and the fence, the label and the magnitude are
+    printed in that same document. They were read and not written down.
+
+    ★★ THIS IS THE PROFILE FAILURE REPEATING ONE FIELD OVER. 34 of 57
+    tickers had a scored record and no profile because builds identified the
+    heroes and never persisted them; 8 of 57 spec'd is the same shape.
+    Non-negotiable 0 became enforceable only after 34 tickers had been
+    missed. This one is enforceable from zero.
+
+    ★ SOFT, DELIBERATELY AND BY REQUEST. The author will be the one tripping
+    it while coverage builds one earnings season at a time, and a blocked
+    build is worse than a visible count. It covers nothing retroactively:
+    tickers already scored stay unspec'd until they print again.
+    """
+    from . import priority as _prio
+    rows = (rec.get('preEarnings') or {}).get('keyKPIs') or []
+    if not rows:
+        return []
+    missing = []
+    for i, row in enumerate(rows):
+        spec = row.get('extraction')
+        if spec:
+            continue
+        p = _prio.row_priority(row, spec, rows)
+        if p == 1:
+            missing.append('[%d] %s' % (i, (row.get('name') or '')[:34]))
+    if not missing:
+        return []
+    return [Finding('extraction-spec-coverage', 'SOFT',
+                    'non-negotiable 0b: %d priority-1 row(s) carry no '
+                    'extraction spec, so the wire cannot read them: %s'
+                    % (len(missing), '; '.join(missing[:4])))]
+
+
 RULES = [
+    Rule('extraction-spec-coverage', STORED, _extraction_spec_coverage,
+         'non-negotiable 0b: the extraction spec is an output of every '
+         'pre-earnings build'),
     Rule('overall-weighting', STORED, _overall_weighting,
          'scores.overall must equal the 0.2/0.3/0.3/0.2 weighting'),
     Rule('alignment-length', STORED, _alignment_length,

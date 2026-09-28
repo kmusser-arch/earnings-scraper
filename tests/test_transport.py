@@ -481,3 +481,64 @@ def one_vocabulary_and_typed_spans():
 
 
 one_vocabulary_and_typed_spans()
+
+
+def non_negotiable_0b():
+    """★★★ THE EXTRACTION SPEC IS AN OUTPUT OF EVERY PRE-EARNINGS BUILD.
+
+    The spec is the SAME INFORMATION the build already gathers: a build opens
+    the prior quarter's release for context and identifies the hero KPIs, and
+    the fence, the label and the magnitude are printed in that same document.
+    They were read and not written down.
+
+    ★★ THIS IS THE PROFILE FAILURE REPEATING ONE FIELD OVER. 34 of 57 tickers
+    had a scored record and no profile for exactly this reason. Non-negotiable
+    0 became enforceable only after 34 had been missed; 0b is enforceable from
+    zero.
+
+    ★ SOFT BY REQUEST — the author trips it while coverage builds one season
+    at a time, and a blocked build is worse than a visible count.
+    """
+    from earnings_scraper import audit as A
+
+    clean = {'preEarnings': {'keyKPIs': [
+        {'name': u'\u2605\u2605\u2605 Hero', 'extraction': {'specState': 'X'}},
+        {'name': u'\u2605 Other'}]}}
+    check(not A._extraction_spec_coverage(clean),
+          'a record whose priority-1 rows all carry a spec passes')
+
+    missing = {'preEarnings': {'keyKPIs': [
+        {'name': u'\u2605\u2605\u2605 Hero'},
+        {'name': u'\u2605 Other'}]}}
+    got = A._extraction_spec_coverage(missing)
+    check(got and got[0].severity == 'SOFT',
+          'a priority-1 row with no spec trips it as %s, not a hard failure'
+          % (got[0].severity if got else None))
+    check(got and 'priority-1' in got[0].detail and 'Hero' in got[0].detail,
+          'and the finding NAMES the rows: %r'
+          % (got[0].detail[:64] if got else None))
+
+    # ★ ANTI-VACUOUS: a supporting row missing a spec must NOT trip it.
+    supporting = {'preEarnings': {'keyKPIs': [
+        {'name': u'\u2605\u2605\u2605 Hero', 'extraction': {'specState': 'X'}},
+        {'name': u'\u2605 Other'}]}}
+    check(not A._extraction_spec_coverage(supporting),
+          'while a SUPPORTING row without a spec does not — the rule is '
+          'about priority-1, not about completeness')
+    check(not A._extraction_spec_coverage({'preEarnings': {'keyKPIs': []}}),
+          'and an empty card trips nothing')
+
+    # ── the live count, so the number is real and not a fixture ──────────
+    lib = os.path.join('C:' + os.sep, 'Users', 'Trader', 'Documents',
+                       'Claude', 'Projects', 'earnings Model',
+                       'earnings-library.json')
+    if not os.path.exists(lib):
+        return
+    recs = json.load(io.open(lib, encoding='utf-8'))['records']
+    trip = [r['id'] for r in recs if A._extraction_spec_coverage(r)]
+    check(trip,
+          'library-wide it trips on %d record(s) today — the count is the '
+          'point, and it can only fall from here' % len(trip))
+
+
+non_negotiable_0b()

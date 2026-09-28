@@ -31,6 +31,7 @@ from earnings_scraper import parallel as PAR       # noqa: E402
 from earnings_scraper import firstfire as FF      # noqa: E402
 from earnings_scraper import frames as FR         # noqa: E402
 from earnings_scraper import spans as SP          # noqa: E402
+from earnings_scraper import priority as PRIO     # noqa: E402
 from earnings_scraper import vocab as VOC         # noqa: E402
 from earnings_scraper import reasons as RE        # noqa: E402
 from earnings_scraper import registry as R         # noqa: E402
@@ -167,10 +168,33 @@ def main():
                 slot['reasonCode'] = _code
                 slot['firstFire'] = _first or None
 
+    # ★★★ NON-NEGOTIABLE 0b, LIBRARY-WIDE. The extraction spec is an output
+    # of every pre-earnings build: the same information the build already
+    # gathers, read out of the prior quarter's release and not written down.
+    # SOFT by request -- the author is the one tripping it while coverage
+    # builds one earnings season at a time, and a blocked build is worse
+    # than a visible count.
+    _p1 = _miss = _recs = _trip = 0
+    for _rec in lib['records']:
+        _pre = (_rec.get('preEarnings') or {}).get('keyKPIs') or []
+        _ones = [r for r in _pre
+                 if PRIO.row_priority(r, r.get('extraction'), _pre) == 1]
+        if not _ones:
+            continue
+        _recs += 1
+        _p1 += len(_ones)
+        _m = [r for r in _ones if not r.get('extraction')]
+        _miss += len(_m)
+        _trip += 1 if _m else 0
+
     print('=' * 100)
     print('SWEEP — one writer, all six verdicts, denominator attached')
     print('=' * 100)
     print(SW.report(counts, rows_seen))
+    if _p1:
+        print('   NON-NEGOTIABLE 0b — extraction spec on every priority-1 '
+              'row: %d of %d MISSING across %d record(s) (%d clean). SOFT.'
+              % (_miss, _p1, _trip, _recs - _trip))
     # ★★ THE SPLIT IS PART OF THE SWEEP NOW, not a separate script. Report
     # coverage as EVIDENCE-BEARING ROWS, never as declared rows.
     print('   MATCH %d = %d with >=1 DISCRIMINATING check + %d ALL-VACUOUS'
