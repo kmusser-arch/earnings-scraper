@@ -55,7 +55,19 @@ def row_priority(pre_row, spec=None, pre_rows=None):
     `pre_rows` is the whole card, because whether a star count MEANS anything
     is a property of the card, not of the row.
     """
-    declared = (spec or {}).get('priority')
+    # ★★★ THE ROW IS WHERE PRIORITY BELONGS, AND IT IS WHERE IT WAS
+    # AUTHORED. 614 rows carry `priority` on the ROW and ZERO carry it
+    # inside `extraction`, because priority is a property of the CARD ROW --
+    # which KPI decides the print -- not of the extraction spec, which is
+    # about how to read a document. This read the spec only, so 0b stayed
+    # at 164 of 195 after the whole library was authored.
+    #
+    # One condition, two places. The row is checked FIRST because it is the
+    # correct home; the spec is still honoured so a spec-level override
+    # keeps working.
+    declared = (pre_row or {}).get('priority')
+    if declared not in (1, 2, 3):
+        declared = (spec or {}).get('priority')
     if declared in (1, 2, 3):
         return declared
     if not card_uses_star_scale(pre_rows):

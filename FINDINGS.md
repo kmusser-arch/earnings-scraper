@@ -1546,3 +1546,52 @@ CANDIDATE TIE  47%  ->  THE FENCE      sectionAnchor + spanTerminator
 UNIT           31%  ->  THE MAGNITUDE  documentUnit as the issuer prints it
 NO LABEL       22%  ->  THE LABEL      the issuer's literal string
 ```
+
+---
+
+## ★★★ 66. PRIORITY WAS AUTHORED ON THE ROW AND READ FROM THE SPEC
+
+```
+priority on the ROW          614
+priority inside `extraction`   0
+```
+
+`row_priority` read `spec.get('priority')` only, so **0b stayed at 164 of 195
+after the whole library was authored.** One condition, two places — and the
+**row is the correct home**: priority is a property of the card row (which
+KPI decides the print), not of the extraction spec (how to read a document).
+
+```
+before  164 of 195 missing · 5 clean
+after   159 of 199 missing · 8 clean     verdicts UNCHANGED
+```
+
+---
+
+## ★★★ 67. NON-NEGOTIABLE 3 IS IMPLEMENTED, AND READS A DIFFERENT PRIORITY
+
+The cap exists and is correct — **and better than its own statement.** The
+docstring says *"caps Current Quarter at 0.0"*; the code applies it as a
+**ceiling**, not a value:
+
+```python
+out['hardCapped'] = True
+score, why = _negative_band(...)
+out['score'] = min(0.0, score)
+# "the negative bands still decide how far below it lands. Treating the cap
+#  as the final answer scores APP Q2 and CBRS Q2 at 0.0 when both are -1.5."
+```
+
+★ **But it reads `profiles[ticker].heroKPIs` with `priority == 1` and
+`appliesTo == 'currentQuarter'`, not the library row priority.** So it was
+never blocked on row-level priority:
+
+```
+60 profiles · 53 with a priority-1 currentQuarter hero — NN3 CAN fire
+              7 without one — ANET · AXTI · KLAC · QCOM · STX · TER
+```
+
+**NN3 has been applicable to 53 of 60 profiles, not 3.6% of the library.**
+What was blocked at 3.6% was *row-level* priority, which governs the basis
+and period strict arms and 0b — a different set of rules. Two fields named
+`priority`, on two objects, feeding two rule families.
