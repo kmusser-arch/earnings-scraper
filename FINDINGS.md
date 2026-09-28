@@ -41,6 +41,8 @@ Not a changelog. Each entry is a defect *shape* with its instances.
 | P10 | **STATE THE ACCESS/INFORMATION TYPE AND THE JUNCTION** — naming the fact is not naming the fix. If no junction can be named, it is a trace request, not a prediction | before any access hypothesis |
 | P11 | **WAS THIS FACT EVER COMPUTED ANYWHERE IN THE CALL PATH?** — and, for the author: does the code already implement this rule? | before writing any new rule |
 | P12 | **BUCKET ON THE RICHEST AVAILABLE FIELD, NOT THE CHEAPEST** | before reporting any tally |
+| P13 | **WRITE THE CANDIDATE OWNERS DOWN BEFORE CHECKING ANY OF THEM** — for a standing defect there is no baseline to revert to, so the first plausible owner keeps the blame. The list is the artifact | before assigning blame with no baseline |
+| P14 | **WHICH AXES HAVE A SAFE DEFAULT WHEN THE DOCUMENT IS SILENT?** — and when carrying a ruling across axes, **carry the whole ruling, not the enforcement half** | before any cross-axis carry |
 
 **P9 and P10 are new.** They are the protocol forms of two rules that were
 violated by their authors: *"exclusion is two operations"* and *"price
@@ -1457,3 +1459,51 @@ axis was missing a state the other axis already had.
 > **For a REPORTED row, silence is the default. For a GUIDE row, silence
 > cannot support a publish.** The strict arm belongs on guide rows only,
 > which costs 2 priority-1 rows rather than 11.
+
+---
+
+## ★★★ 63. THE AXES ARE NOT SYMMETRIC — WHICH HAVE A SAFE DEFAULT?
+
+> **A REPORTED figure has exactly ONE possible period: the reporting period.
+> A GUIDE figure has SEVERAL, in the same release and often the same table.**
+> Silence is **informative** for a reported row and **empty** for a guide row.
+
+| axis | default when the document is silent |
+|---|---|
+| `period` | the reporting period — **safe, but only for REPORTED rows** |
+| `basis` | **★★★★ NONE.** Every US release prints GAAP and non-GAAP side by side for the same metric. **Silence is never permission** |
+| `currency` | USD for a US issuer — generally safe, which is why it has cost less |
+| `unit` | no default needed; the table header supplies it |
+
+**Basis is the only axis with no safe default, and that is why it has cost
+the most.** CBRS: GAAP missed 7.0% while "core" beat 9.9%. WDC: GAAP $8.21
+against a $3.29 street estimate. **Every one is silence read as permission on
+the one axis with nothing to fall back on.**
+
+So the strict arm is **unconditional for basis** and **guide-rows-only for
+period**. Landed: 0 of 102 corpus rows move, and the arm is driven red in the
+suite because it fires on none of them.
+
+> **WHEN CARRYING A RULING ACROSS AXES, CARRY THE WHOLE RULING, NOT THE
+> ENFORCEMENT HALF.** The enforcement is the memorable part; the safety is
+> what makes it survivable. The basis ruling required *positive evidence that
+> the reader looked*; the period carry initially left that behind and would
+> have blanked 11 correct heroes.
+
+---
+
+## ★★★ 64. A FENCE LOCATES; IT DOES NOT ANNOUNCE THAT IT IS GUIDANCE
+
+```
+ADBE[2]  anchor 'fourth quarter FY2026 targets'  -> GUIDE_NEXT_Q
+ADBE[3]  anchor 'Fourth Quarter Fiscal 2026'     -> UNRESOLVED
+```
+
+**Both name the period. Only one carries the word `targets`.**
+`classify_candidate` wants a guidance VERB, and a *fence* has no reason to
+carry one — its job is to locate. Refusing ADBE[3] on that difference would
+have been a false refusal of a priority-1 hero, and it was caught only
+because the arm was priced one row at a time before landing.
+
+An anchor on a row that **already declares** a guide period needs to supply
+only the **scope**, and `period.py`'s own quarter/year precedence reads it.

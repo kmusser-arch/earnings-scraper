@@ -1281,6 +1281,45 @@ def period_basis(fragment):
     return ('EXPLICIT', m.group(0)) if m else ('INFERRED', None)
 
 
+def _period_evidence(text, spec, pos, quarter=None):
+    """READ | ABSENT_IN_DOCUMENT | UNREAD | NOT_GUIDE for a row's period.
+
+    ★★★ A FENCE LOCATES; IT DOES NOT ANNOUNCE THAT IT IS GUIDANCE. ADBE[3]
+    fences to 'Fourth Quarter Fiscal 2026', which names the period plainly,
+    and classify_candidate returns UNRESOLVED for it because that function
+    wants a guidance VERB -- while ADBE[2]'s 'fourth quarter FY2026 targets'
+    classifies, purely because it happens to carry the word 'targets'.
+    Refusing ADBE[3] on that difference would be a FALSE REFUSAL.
+    So an anchor on a row that ALREADY DECLARES a guide period only has to
+    supply the SCOPE, and period.py's own quarter/year precedence is what
+    reads it.
+
+    ★★ AND ABSENT_IN_DOCUMENT REQUIRES POSITIVE EVIDENCE THAT THE READER
+    LOOKED, exactly as the basis ruling required.
+    """
+    want = (spec or {}).get('period')
+    want = {'FY_GUIDE': _period_mod.GUIDE_FY}.get(want, want)
+    if want not in (_period_mod.GUIDE_FY, _period_mod.GUIDE_NEXT_Q):
+        return 'NOT_GUIDE'
+    for anchor in ((spec or {}).get('sectionAnchor') or []):
+        if _period_mod._QUARTER_SCOPE.search(anchor or '') or                 _period_mod._WHOLE_YEAR.search(anchor or ''):
+            return 'READ'
+        if _period_mod.classify_candidate(anchor, quarter) !=                 _period_mod.UNRESOLVED:
+            return 'READ'
+    if not isinstance(pos, int) or not text:
+        return 'UNREAD'
+    frag = governing_context(text, pos)
+    if not frag:
+        return 'UNREAD'
+    if _period_mod.classify_candidate(frag, quarter) !=             _period_mod.UNRESOLVED:
+        return 'READ'
+    if _period_mod._QUARTER_SCOPE.search(frag) or             _period_mod._WHOLE_YEAR.search(frag):
+        return 'READ'
+    # the reader looked at the anchor, the clause AND its section heading,
+    # and none named a period: that is a fact about the RELEASE
+    return 'ABSENT_IN_DOCUMENT'
+
+
 def period_conflict(text, pos, spec, quarter=None):
     """Why this row may not take a value at `pos`, or None.
 
@@ -1940,6 +1979,36 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
                     reasonCode='CANDIDATE_TIE',
                     why='%d candidates tie on unit and role — refusing: %s'
                         % (len(vals), ', '.join(c['raw'] for c in pool[:6])))
+    # ★★★ THE PERIOD STRICT ARM — GUIDE ROWS ONLY.
+    #
+    # A REPORTED figure has exactly ONE possible period: the reporting
+    # period. A GUIDE figure has SEVERAL, in the same release and often the
+    # same table. Silence is INFORMATIVE for a reported row and EMPTY for a
+    # guide row, so the arm belongs only on the second.
+    #
+    # ★★ AND THE SAFETY HALF IS CARRIED, NOT JUST THE ENFORCEMENT. The basis
+    # ruling required POSITIVE EVIDENCE THAT THE READER LOOKED before
+    # claiming the document silent. Carrying only the REFUSE arm to period
+    # would have blanked 11 correct heroes. The enforcement is the memorable
+    # half; the safety is what makes it survivable.
+    _pv = _period_evidence(src, spec, (pool[0].get('gpos') if pool else None),
+                           (record or {}).get('fiscalQuarter'))
+    if _pv == 'ABSENT_IN_DOCUMENT':
+        _pprio = _priority.row_priority(
+            row, spec, ((record or {}).get('preEarnings') or {}).get('keyKPIs'))
+        if _pprio == 1:
+            return dict(value=None, specState=state,
+                        periodEvidence=_pv, rowPriority=_pprio,
+                        reasonCode='PERIOD_ABSENT',
+                        candidates=[c['raw'] for c in seen],
+                        why=('PERIOD: this GUIDE row declares %s and nothing '
+                             'in the document locates the figure in a '
+                             'period — a guide figure has several possible '
+                             'periods in the same release, so silence '
+                             'cannot support a publish on a priority-1 hero'
+                             % spec.get('period')),
+                        rejected=rejected)
+
     best = pool[0]
     # ★ THE DECLARED PERIOD IS CONSULTED, NOT MERELY AVAILABLE AS A
     # TIE-BREAKER. A single candidate formed no tie, so nothing ever asked

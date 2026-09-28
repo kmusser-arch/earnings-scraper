@@ -176,3 +176,70 @@ def main():
 
 
 main()
+
+
+def period_strict_arm():
+    """★★★ THE PERIOD ARM IS GUIDE-ROWS-ONLY, AND THE AXES ARE NOT SYMMETRIC.
+
+        A REPORTED figure has exactly ONE possible period: the reporting one.
+        A GUIDE figure has SEVERAL, in the same release and often the same
+        table.
+
+    So silence is INFORMATIVE for a reported row and EMPTY for a guide row.
+    Carrying the basis REFUSE arm to period unconditionally would have
+    blanked 11 correct heroes.
+
+    ★★ WHICH AXES HAVE A SAFE DEFAULT WHEN THE DOCUMENT IS SILENT?
+        period    the reporting period — SAFE, but only for REPORTED rows
+        basis     ★★★★ NONE. Every US release prints GAAP and non-GAAP side
+                  by side for the same metric. SILENCE IS NEVER PERMISSION,
+                  which is why basis has cost the most: CBRS, WDC.
+        currency  USD for a US issuer — generally safe
+        unit      no default needed; the table header supplies it
+
+    ★ AND THE ARM FIRES ON ZERO CORPUS ROWS, so it is driven here.
+    """
+    from earnings_scraper import extract as X2
+
+    check(X2._period_evidence('', {'period': 'REPORTED'}, None) == 'NOT_GUIDE',
+          'a REPORTED row is outside the arm entirely — the reporting period '
+          'is the default and silence never refuses it')
+    check(X2._period_evidence('', {'period': 'GUIDE_FY',
+                                   'sectionAnchor': ['Fourth Quarter Fiscal '
+                                                     '2026']},
+                              None) == 'READ',
+          'a fence naming a period SUPPLIES it, even with no guidance verb — '
+          'a fence LOCATES, it does not announce that it is guidance')
+    check(X2._period_evidence('nothing here at all', {'period': 'GUIDE_FY'},
+                              5) == 'ABSENT_IN_DOCUMENT',
+          'and only where the anchor, the clause AND its heading all say '
+          'nothing is the document called silent')
+    check(X2._period_evidence('x', {'period': 'GUIDE_FY'}, None) == 'UNREAD',
+          'while an unreadable position is UNREAD, not ABSENT — the safety '
+          'half, carried across with the enforcement')
+
+    # ── DRIVEN RED end to end ────────────────────────────────────────────
+    if not (os.path.exists(AVGO) and os.path.exists(LIB)):
+        return
+    body = io.open(AVGO, encoding='utf-8').read()
+    rec = {r['id']: r for r in json.load(io.open(LIB, encoding='utf-8'))
+           ['records']}['AVGO-2026Q3']
+    row = rec['preEarnings']['keyKPIs'][1]          # a Q4 guide row
+    real = X2._period_evidence
+    X2._period_evidence = lambda *a, **k: 'ABSENT_IN_DOCUMENT'
+    try:
+        hero = dict(row, name=u'\u2605\u2605\u2605 ' + (row.get('name') or ''))
+        out = X2.value_for(body, hero, record=rec) or {}
+        low = X2.value_for(body, dict(row, name=u'\u2605 x'), record=rec) or {}
+    finally:
+        X2._period_evidence = real
+    check(out.get('value') is None
+          and out.get('reasonCode') == 'PERIOD_ABSENT',
+          'with the period ABSENT a priority-1 GUIDE row REFUSES: %r'
+          % (out.get('why') or '')[:70])
+    check(low.get('value') is not None,
+          'while a supporting row still publishes (%s) — accept and flag, '
+          'never accept silently' % low.get('value'))
+
+
+period_strict_arm()

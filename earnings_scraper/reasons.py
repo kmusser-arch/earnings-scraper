@@ -34,7 +34,7 @@ CODES = ('NO_LABEL', 'NO_LABEL_AFTER_FILTERS', 'UNIT_MISMATCH',
          'CANDIDATE_TIE', 'PERIOD', 'CURRENCY', 'ALL_DELTA', 'BASIS',
          'BASIS_ABSENT', 'BASIS_CONTRADICTS', 'DERIVED_OPERAND',
          'READER_CRASHED', 'SPEC_STATE', 'BAND_COLLAPSED',
-         'SPEC_INVALID')
+         'SPEC_INVALID', 'PERIOD_ABSENT')
 
 
 def verify(text, row, spec, record, got):
@@ -114,6 +114,12 @@ def verify(text, row, spec, record, got):
         if not rf or rf == 'POINT':
             return False, ('BAND_COLLAPSED on a row whose rangeForm is %r — '
                            'there was no band to collapse' % rf)
+    if code == 'PERIOD_ABSENT':
+        want = (spec or {}).get('period')
+        if want not in ('GUIDE_FY', 'GUIDE_NEXT_Q', 'FY_GUIDE'):
+            return False, ('PERIOD_ABSENT on a row that does not declare a '
+                           'GUIDE period (%r) -- a REPORTED figure has '
+                           'exactly one possible period' % want)
     if code == 'SPEC_INVALID':
         from . import vocab
         if not vocab.violations(spec):
