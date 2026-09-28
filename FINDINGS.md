@@ -11,8 +11,21 @@ Not a changelog. Each entry is a defect *shape* with its instances.
 >
 > **A RULE is a test you must remember to apply, and you remember when you
 > are uncertain. A PROTOCOL is a step you run before knowing whether you
-> need it.** Confidence is exactly the state in which a rule goes
-> unconsulted, and exactly the state in which the expensive errors happen.
+> need it.** Confidence is the OCCASION.
+
+> ## ★★★★ THE DESIGN CRITERION: DOES FOLLOWING IT LEAVE AN ARTIFACT?
+>
+> **The artifact is the MECHANISM.** An artifact leaves evidence someone
+> else can check, cannot be satisfied by believing you did it, and **its
+> absence is detectable**. A judgement leaves no residue proving it was
+> skipped.
+>
+> **If following a candidate protocol leaves no artifact, it is not a
+> protocol — it is a rule, and it will be violated when its author is
+> confident.** Test every new one against this before writing it down.
+>
+> Every protocol below produces one: a diff, a snapshot, a document
+> excerpt, a red gate, a list, a named junction.
 
 | # | protocol | run it |
 |---|---|---|
@@ -1271,3 +1284,57 @@ dollar table.
 **One refusal bucket, five unrelated causes now** — HPE[3]/[8]/[12], AVGO[6],
 DELL × 3, AAPL[3]. **A refusal code is a bucket, not a cause**, and every
 split has been visible only from the document. That is the evidence for P1.
+
+---
+
+## ★★★ 56. THE JUNCTION, NAMED — `clip()` RETURNS AN EMPTY WINDOW
+
+```
+DELL[16]  label 'Revenue'   hit 3233..3240, INSIDE the fence, not disqualified
+raw window  src[3240:3500]  '$ 49.0 81 % GAAP diluted EPS $ 6.10 168 % ...'
+clip(raw, ['PROSE','RANGE','TABLE'])   ->   ''
+candidates('')                         ->   []
+verdict                                ->   UNIT_MISMATCH, candidates []
+```
+
+**The pool is empty by construction, and the refusal blames the unit.**
+
+★ **And `clip`'s own docstring names this defect, one layout over:** *"in a
+vertically exploded table [a blank line] separates two cells of the SAME
+row… So the prose rule clipped all four guide windows to '' and the selector
+refused a candidate set that was empty by construction."* It was fixed for
+ADBE by routing on `tabular` — and `tabular` requires `PROSE` to be **absent**
+from `whereKind`.
+
+> **`whereKind` is a ROUTING declaration, and declaring all three is worse
+> than declaring one.** A generator — or an author who is unsure — that lists
+> `['PROSE','RANGE','TABLE']` to be safe gets the prose stop rule and an
+> empty window. **Breadth in a routing field is not caution; it is a
+> selection of the first branch.**
+
+★★ **This is not the whole blocker.** With `whereKind=['TABLE']` alone the
+row still refuses, by a different path — the table pass requires a parseable
+row at the label hit. **Two junctions on one row**, and only the first is
+named. The second is the next trace.
+
+---
+
+## ★★★ 57. FISCAL-PERIOD NOTATION DECOMPOSES INTO CANDIDATES
+
+`Q3FY27` yields candidates **3** and **27**, inside the fence a guide row
+selects.
+
+Not a DELL quirk — the notation is universal in this market: `Q3FY27` ·
+`FQ1-27` · `1Q26` · `FY2027` · `2Q FY26` · `4Q25`. **Every one decomposes
+into small integers that look like levels**, and they sit in exactly the
+region a guide row fences to. A polluted pool produces `CANDIDATE_TIE`, the
+largest refusal bucket on the held-out set.
+
+**Convention-based, so worth more on a ninth issuer than on the corpus** —
+the same property as the boilerplate exclusion.
+
+Discard question, asked first: `★periodMarkers` exists in
+`globalDocumentLabelMap` and `period.py` carries `_QUARTER_SCOPE` — **one of
+them may already recognise the token and simply not be consulted before
+candidate selection.** Junction not yet named; this is a trace request, not a
+prediction.
