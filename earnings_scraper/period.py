@@ -65,7 +65,11 @@ _FY_SCOPE = re.compile(
 #: a NAMED QUARTER. Distinct from the fiscal-year LABEL a quarter
 #: carries: 'Q2 FY 2027' names a quarter, 'FY 2027' alone names a year.
 _QUARTER_SCOPE = re.compile(
-    r'\bQ[1-4]\b|\b(?:first|second|third|fourth)\s+quarter\b'
+    # ★ HYPHENATED TOO. DELL heads its section 'Third-Quarter Guidance' and
+    # the whitespace-only form read it as no quarter at all, which under the
+    # both-or-neither rule makes it UNRESOLVED -- a guide section nobody can
+    # date.
+    r'\bQ[1-4]\b|\b(?:first|second|third|fourth)[\s-]+quarter\b'
     r'|\b(?:three|3)\s+months\s+ended\b', re.I)
 
 #: a claim about the WHOLE year, as opposed to the year's label

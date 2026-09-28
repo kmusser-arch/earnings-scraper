@@ -987,3 +987,57 @@ it.
 
 Frames now: **raw · dewrapped · stripped · kept · dewrapped-twice.**
 The fix is the original document, not the caller's frame.
+
+---
+
+## ★★★ 48. THE GUIDE SECTION LEVER — MEASURED ON THE HELD-OUT FIVE
+
+Kyle's four new blocks turn an existing metric label into a guide row. Read
+as `guidance.py` and run against the five held-out tickers:
+
+```
+13 guide sections found across 8 of 10 captured documents
+ 8 of 13 resolve a period (GUIDE_FY / GUIDE_NEXT_Q)
+10 of 10 forward rows reach a guide section — none is un-located
+ 0 of 10 publish a value
+```
+
+**The section lever works. The residue is one field per row, not structure:**
+
+| refusal | n | the hand work |
+|---|---|---|
+| `BAND_COLLAPSED` | 4 | the value is FOUND; the range parser does not recover both endpoints from that layout |
+| `UNIT_MISMATCH` | 4 | `documentUnit` guessed from the row name; the issuer uses another denomination |
+| `CANDIDATE_TIE` | 1 | needs a narrower fence |
+| `NO_LABEL` | 1 | needs the issuer's literal wording |
+
+★ **"Section found, read nothing" was my own mislabel.** I bucketed by
+`value is None` without reading the reason — they *read* and were then
+*refused by a guard*. The reason gate exists for exactly that and I did not
+consult it. `BAND_COLLAPSED` first-fires on real prose here, which is what
+the first-fire ledger was built to surface.
+
+★★ **And the vocabulary validator refused a spec this module generated.**
+Six of ten forward rows failed `SPEC_INVALID` because `guidance.py` wrote
+`period: UNRESOLVED`. **UNRESOLVED is not a period, it is the absence of
+one** — declaring it declares a period we do not have, and an inferred period
+may RANK, never EXCLUDE. It is now `periodHint`. The validator catching its
+own toolchain is the strongest evidence it works.
+
+★★★ **And the precedence already existed.** `period.py` has carried
+`_QUARTER_SCOPE` and `_WHOLE_YEAR` since the classifier was built, with
+`_WHOLE_YEAR` deliberately *"full year / full fiscal / annual"* and **not** a
+bare *"fiscal year"* — because in `Fourth Quarter Fiscal Year 2026 Business
+Outlook` the year **qualifies** the quarter rather than competing with it. A
+second pair written in `guidance.py` would have made that heading UNRESOLVED.
+**Was this fact ever computed anywhere in the call path?** It was.
+
+One widening, in one place: `_QUARTER_SCOPE` now allows a hyphen, so DELL's
+`Third-Quarter Guidance` dates.
+
+★ **And a span needs a close — including in code I had just written.**
+`guide_sections` computes `(lo, hi)` and the first `specs_for` passed only the
+heading NAME, so `section_spans` re-derived a fence with no terminator: MDB's
+716-character guidance section became 3,192 characters running to the end of
+the document. The close was computed and discarded one line before it was
+needed.
