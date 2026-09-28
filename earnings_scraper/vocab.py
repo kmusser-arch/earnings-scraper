@@ -1,0 +1,85 @@
+# -*- coding: utf-8 -*-
+"""A FIELD IS STRUCTURAL BY ITS CONTENT, NOT BY ITS NAME.
+
+★★★ AN ALLOWLIST BY NAME WAS THE VULNERABILITY. `structural_only` fenced the
+global label map by KEY, and prose crossed anyway — into `basis`, a key on
+that very allowlist. Five of six `basis` fields carried the ANSWER VALUE:
+
+    ORCL[12]  'non-GAAP (8,151) — GAAP is 6,728'   stored actual 8.151
+    ADBE[12]  'non-GAAP ($2,974). ★ GAAP is $2,354...'
+
+So every field a matcher acts on is validated against a CLOSED VOCABULARY at
+load, and anything else fails loudly. Not by trusting a key again — including
+the ones just cleaned.
+
+★★ AND THE FIRST THING IT CAUGHT WAS TWO SPELLINGS OF ONE VALUE: `non-GAAP`
+on 14 rows and `NON_GAAP` on 5. oneConditionTwoNames, n=17, inside the field
+that was cleaned this week. A validator that normalises is why that is a
+report rather than five silent basis-check failures.
+
+★ FAILING LOUDLY IS NOT RAISING. A raise costs the card; a violation refuses
+ONE ROW with reasonCode SPEC_INVALID and is printed by the sweep.
+"""
+
+#: canonical value -> the spellings seen in the wild
+_BASIS = {'non-GAAP': ('non-gaap', 'nongaap', 'non gaap'),
+          'GAAP': ('gaap',),
+          'core': ('core',),
+          'adjusted': ('adjusted', 'adj'),
+          'cash': ('cash',)}
+
+_CLOSED = {
+    'period': ('REPORTED', 'GUIDE_NEXT_Q', 'GUIDE_FY', 'FY_GUIDE'),
+    'currencyBasis': ('USD', 'CONSTANT_CURRENCY', 'REPORTED'),
+    'tableLayout': ('HORIZONTAL', 'VERTICAL'),
+    'rangeForm': ('POINT', 'SEPARATOR', 'BETWEEN_AND', 'COLUMNS',
+                  'PLUS_MINUS'),
+    'specState': ('EXTRACTABLE', 'NOT_EXTRACTABLE', 'NEEDS_REMAP'),
+    'basisLocation': ('COLUMN_HEADER', 'ROW_LABEL', 'SECTION'),
+    'exclusionClass': ('NOT_IN_PR', 'CALL_SOURCED', 'QUALITATIVE',
+                       'NOT_AUTOMATABLE'),
+    'rowDisposition': ('CARD_DEFECT', 'UNSPECD'),
+}
+
+#: a matcher field may never be this long -- prose, not a declaration
+MAX_TOKEN = 24
+
+
+def canonical_basis(value):
+    """The canonical basis for any accepted spelling, or None."""
+    if value is None:
+        return None
+    t = str(value).strip().lower().replace('_', '-')
+    for canon, forms in _BASIS.items():
+        for f in forms:
+            if t == f or t == f.replace('-', ' ') or t == f.replace('-', ''):
+                return canon
+    return None
+
+
+def violations(spec):
+    """[(field, value, why)] for every matcher field that is not a token."""
+    out = []
+    if not spec:
+        return out
+    for field, allowed in _CLOSED.items():
+        v = spec.get(field)
+        if v is None:
+            continue
+        if not isinstance(v, str) or v not in allowed:
+            out.append((field, str(v)[:60],
+                        'not in the closed vocabulary %s' % (allowed,)))
+    b = spec.get('basis')
+    if b is not None:
+        if not isinstance(b, str):
+            out.append(('basis', str(b)[:60], 'not a string'))
+        elif len(b) > MAX_TOKEN:
+            out.append(('basis', b[:60],
+                        'longer than %d characters — a declaration, not a '
+                        'paragraph. Prose belongs in basisNote, which no '
+                        'reader may touch' % MAX_TOKEN))
+        elif canonical_basis(b) is None:
+            out.append(('basis', b,
+                        'not a recognised basis token %s'
+                        % (tuple(_BASIS),)))
+    return out

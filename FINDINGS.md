@@ -825,3 +825,77 @@ the document's** — the verdict's first real fire was a false one.
 Earlier patches asserted `chr(8) not in s`; later ones stopped. The assertion
 is now a **repo-wide test**, with an anti-vacuous half proving the scanner can
 see a control character when one is there.
+
+---
+
+## ★★★ 40. CAPABILITIES WERE BUILT PER-AXIS AND NEVER GENERALISED
+
+Three separate findings are one finding:
+
+| capability | existed for | missing for |
+|---|---|---|
+| whole-token matching | labels | **basis** → `'gaap' in low` |
+| qualifier spans | currency | **basis** → nothing until this week |
+| prose policing | `extraction` as a key | **`basis`, a key on the allowlist** |
+
+**The axis with the worst historical cost in this project received the least
+engineering.** That is why basis sat near zero all session while fence and
+period climbed. **0 → 3 → 5 → 8** is the recovery.
+
+**The predictive pass, run once as asked — no new gap.** `unit` looked bare on
+a name-based inventory and is not: `denomination()` reads it from the table
+header (18 of 37 values), `denominationFinding` records a disagreement with
+`documentUnit` (5 rows), and `unitUnverified` flags the unchecked case (2
+rows). **Differently-named mechanisms, same coverage.** `fence` is row-level
+by nature — 0 of 11 on the sibling test — and gains nothing from a cell-level
+mechanism. **We stop here.**
+
+---
+
+## ★★★ 41. AN ALLOWLIST BY NAME WAS THE VULNERABILITY
+
+> **A FIELD IS STRUCTURAL BY ITS CONTENT, NOT BY ITS NAME.**
+
+`structural_only` fenced the global map **by key** — and prose crossed into
+`basis`, a key on that very allowlist. Six rows carried prose there and
+**five contained the answer value** (ORCL[12]: `'non-GAAP (8,151)…'` against a
+stored actual of 8.151).
+
+`vocab.violations()` now validates every matcher field against a **closed
+vocabulary**, and a violation refuses **one row** with `SPEC_INVALID` —
+loudly, with its own code — rather than raising and costing the card.
+
+**The first thing it caught: two spellings of one value.** `non-GAAP` on 14
+rows, `NON_GAAP` on 5 — inside the field cleaned this week, and
+`_same_basis` did not normalise underscores, so five rows failed the basis
+comparison silently. `oneConditionTwoNames`, **n=17**. One canonicaliser now,
+not a second normalisation rule. Library-wide violations today: **0**.
+
+---
+
+## ★★★ 42. THE DEFINITIONAL BLOCK — LABELS ONLY, CLOSED AT THE NEXT HEADING
+
+> *"Exclude this section"* conflates **do not MATCH LABELS here** with **do
+> not TAKE VALUES here**, and for the reconciliation block the correct
+> answers are **opposite**: its labels are definitional noise, its values are
+> the authority.
+
+So `RECONCILIATION` is deliberately **absent** from the pattern, and the span
+governs **label matching only**.
+
+```
+4 spans across 8 documents · digit density 0.0% – 0.6%
+39 label hits fall inside, across 10 rows
+0 of 102 corpus rows change value or verdict
+```
+
+The digit density **is** the check that no reconciliation table was caught:
+a definitional block prints no figures. Worth more on a document nobody has
+spec'd than on these eight — which is why it ships with a zero.
+
+**It immediately made one reason true:** AVGO[6] moved `UNIT_MISMATCH` →
+`NO_LABEL`. It was never a unit problem; its only label hit was in the
+boilerplate. **And the reason gate caught itself going stale** — it still
+counted those hits and called the new claim false, until it was taught the
+same filter. A gate that drifts from its own reader is the thing it exists to
+prevent.

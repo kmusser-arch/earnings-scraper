@@ -102,9 +102,14 @@ def basis_token(value):
 
 
 def _same_basis(a, b):
-    na = basis_token(a).lower().replace(' ', '').replace('-', '')
-    nb = basis_token(b).lower().replace(' ', '').replace('-', '')
-    return na == nb
+    # ★ TWO SPELLINGS OF ONE VALUE: 'non-GAAP' on 14 rows and 'NON_GAAP' on
+    # 5, inside the field cleaned this week. The underscore form failed
+    # every comparison silently. oneConditionTwoNames, n=17, and the answer
+    # is ONE canonicaliser rather than a second normalisation rule here.
+    from . import vocab
+    na = vocab.canonical_basis(basis_token(a))
+    nb = vocab.canonical_basis(basis_token(b))
+    return na is not None and na == nb
 
 
 def _fence_ok(text, pos, spec):

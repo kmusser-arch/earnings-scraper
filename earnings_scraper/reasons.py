@@ -33,7 +33,8 @@ from . import registry
 CODES = ('NO_LABEL', 'NO_LABEL_AFTER_FILTERS', 'UNIT_MISMATCH',
          'CANDIDATE_TIE', 'PERIOD', 'CURRENCY', 'ALL_DELTA', 'BASIS',
          'BASIS_ABSENT', 'BASIS_CONTRADICTS', 'DERIVED_OPERAND',
-         'READER_CRASHED', 'SPEC_STATE', 'BAND_COLLAPSED')
+         'READER_CRASHED', 'SPEC_STATE', 'BAND_COLLAPSED',
+         'SPEC_INVALID')
 
 
 def verify(text, row, spec, record, got):
@@ -54,6 +55,15 @@ def verify(text, row, spec, record, got):
     if 'WRAPPED' in kinds or 'PROSE' in kinds or 'HEADLINE' in kinds:
         src, _segs = extract.dewrap_mapped(text)
     hits = registry.label_hits(src, spec) if spec else []
+    # ★ THE GATE RE-DERIVES WHAT THE READER DID, so it applies the same
+    # definitional filter. It caught this itself the moment the filter
+    # landed: AVGO[6] reported NO_LABEL while this function still counted
+    # the boilerplate hits and called the claim false. A gate that goes
+    # stale against its own reader is the thing it exists to prevent.
+    _defs = extract.definitional_spans(src)
+    if _defs and hits:
+        hits = [h for h in hits
+                if not any(lo <= h[0] < hi for lo, hi in _defs)]
 
     # ★ A DERIVED ROW IS NOT IN THE DOCUMENT, so no label-path code can
     # honestly describe its failure. This is the exact defect that sent two
@@ -104,6 +114,11 @@ def verify(text, row, spec, record, got):
         if not rf or rf == 'POINT':
             return False, ('BAND_COLLAPSED on a row whose rangeForm is %r — '
                            'there was no band to collapse' % rf)
+    if code == 'SPEC_INVALID':
+        from . import vocab
+        if not vocab.violations(spec):
+            return False, ('SPEC_INVALID on a spec whose every matcher '
+                           'field is in its vocabulary')
     if code == 'SPEC_STATE' and registry.status_of(spec) == 'EXTRACTABLE':
         return False, 'SPEC_STATE refusal on an EXTRACTABLE row'
     return True, None

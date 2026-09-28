@@ -1097,6 +1097,49 @@ def is_heading(line):
     return figs * 2 <= len(t.split())
 
 
+#: THE NON-GAAP DEFINITIONAL BLOCK, which every US release carries BY
+#: CONVENTION rather than by issuer. It NAMES every metric and PRINTS NO
+#: NUMBERS, so a label matching there has matched a DEFINITION, not a row.
+#:
+#: THE MEASUREMENT: 4 spans across 8 documents, digit density 0.0% to 0.6%.
+#: A definitional block prints no figures, so that density is the check that
+#: no RECONCILIATION table was caught by mistake.
+#:
+#: 'RECONCILIATION' IS DELIBERATELY ABSENT. "Exclude this section" conflates
+#: two operations and for that block the correct answers are OPPOSITE: its
+#: LABELS are definitional noise, its VALUES are the authority. One flag
+#: cannot express both, so this governs LABEL MATCHING ONLY, never
+#: value-taking.
+DEFINITIONAL = re.compile(
+    r'^\s*(?:use of\s+)?(?:certain\s+)?non[- ]gaap financial '
+    r'(?:measures|information)\s*:?\s*$'
+    r'|^\s*about non[- ]gaap(?: financial measures)?\s*:?\s*$', re.I)
+
+
+def definitional_spans(text):
+    """[(start, end)] for each non-GAAP definitional block.
+
+    CLOSED AT THE NEXT HEADING, never by a length.
+    """
+    lines = (text or '').split(chr(10))
+    offs, run = [], 0
+    for ln in lines:
+        offs.append(run)
+        run += len(ln) + 1
+    out = []
+    for i, ln in enumerate(lines):
+        if not DEFINITIONAL.match(ln.strip()):
+            continue
+        end = len(text or '')
+        for j in range(i + 1, len(lines)):
+            if is_heading(lines[j]) and not DEFINITIONAL.match(
+                    lines[j].strip()):
+                end = offs[j]
+                break
+        out.append((offs[i], end))
+    return out
+
+
 def heading_above(text, pos, max_lines=400):
     """The nearest preceding section heading, or ''.
 
@@ -1217,6 +1260,19 @@ def value_for(text, row, window=260, record=None):
     anything -- costs this ROW and nothing else. The scorer above it sees an
     ordinary refusal and every other row still renders.
     """
+    # ★★★ A FIELD IS STRUCTURAL BY ITS CONTENT, NOT BY ITS NAME. An
+    # allowlist by KEY was the vulnerability: prose crossed into `basis`, a
+    # key on that very allowlist, and five of six such fields carried the
+    # ANSWER VALUE. So every matcher field is validated against a CLOSED
+    # VOCABULARY here, and a violation refuses ONE ROW -- loudly, with its
+    # own code -- rather than raising and costing the card.
+    from . import vocab as _vocab
+    _bad = _vocab.violations(registry.spec_for(row))
+    if _bad:
+        return dict(value=None, reasonCode='SPEC_INVALID',
+                    specViolations=[list(b) for b in _bad],
+                    why=('SPEC: %s=%r %s' % _bad[0])[:300])
+
     mark = len(READER_FAILURES)
     try:
         got = _value_for(text, row, window=window, record=record)
@@ -1356,6 +1412,15 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
                         why=_d['why'])
 
     hits = registry.label_hits(src, spec)
+    # A LABEL HIT INSIDE THE DEFINITIONAL BLOCK IS NOT A LABEL HIT. HPE[8]
+    # matched 'Non-GAAP diluted net earnings per share' in the boilerplate
+    # and then took the nearest number, which was a dividend. The block is
+    # present BY CONVENTION, so this is worth more on a document nobody has
+    # spec'd than on the eight that are: 0 of 102 corpus rows move.
+    _defs = definitional_spans(src)
+    if _defs and hits:
+        hits = [h for h in hits
+                if not any(lo <= h[0] < hi for lo, hi in _defs)]
     if hit_pred is not None:
         hits = [h for h in hits if hit_pred(src, h)]
         if not hits:
