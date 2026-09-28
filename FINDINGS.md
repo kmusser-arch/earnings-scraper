@@ -1406,3 +1406,54 @@ and never excludes — correctly, by the standing rule — so nothing stopped it
 **Two right and four wrong is worse than six refusals.** The generator stays
 a measurement tool and is not wired into `value_for`. **Reading more is not
 progress until the period can exclude.**
+
+---
+
+## ★★★ 61. THE ROW'S OWN FENCE NAMES THE PERIOD, AND NOTHING READ IT
+
+```
+ADBE[2]  sectionAnchor ['fourth quarter FY2026 targets']
+SNOW[1]  sectionAnchor ['For the full-year of fiscal 2027, the company expects:']
+```
+
+**Authored, literal period phrases — the strongest evidence in the system —
+and `_period_ok` read the governing sentence and never the anchor.** It also
+read the bare sentence rather than `governing_context`, so it never saw the
+section heading either: **the heading finding was made FOR the period check
+and applied only to basis.** Per-axis asymmetry, n=5.
+
+```
+period evidence   20 -> 28
+all-vacuous MATCH  6 -> 4
+verdicts           UNCHANGED
+```
+
+---
+
+## ★★★ 62. READ THE SIGNAL BEFORE RULING ON ITS ABSENCE
+
+The UNRESOLVED ruling — *refuse a priority-1 row whose period has no signal*
+— was priced **before** the fence was read and **after**:
+
+```
+before   18 vacuous · 11 priority-1 · all 11 currently CORRECT
+after    10 vacuous ·  6 priority-1 · all  6 currently CORRECT
+```
+
+**Refusing 11 correct heroes would have blamed the document for a signal we
+declined to read.** That is the `ABSENT_IN_DOCUMENT` vs `UNREAD_BY_GRID`
+distinction — **which the same author ruled for BASIS on 25 September and
+omitted from the PERIOD ruling.** The standing question answers itself:
+*when you rule on an axis, does the ruling apply to the others?* Here the
+axis was missing a state the other axis already had.
+
+★ **And the remaining 10 split cleanly by declared period:**
+
+| | n | silence means |
+|---|---|---|
+| `REPORTED` | 5 | **the reporting quarter** — the release is *about* it |
+| guide rows | 5 | **nothing** — a guide must be located |
+
+> **For a REPORTED row, silence is the default. For a GUIDE row, silence
+> cannot support a publish.** The strict arm belongs on guide rows only,
+> which costs 2 priority-1 rows rather than 11.

@@ -255,9 +255,36 @@ def _period_ok(text, pos, spec, quarter=None, axes=None, record=None):
             # ★ CANNOT TELL A CALENDAR-LABELLED COLUMN FROM A WRONG ONE.
             return True, None, VACUOUS
 
+    # ★★★ THE ROW'S OWN FENCE NAMES THE PERIOD, AND NOTHING READ IT. ADBE[2]
+    # declares sectionAnchor ['fourth quarter FY2026 targets'] and SNOW[1]
+    # declares ['For the full-year of fiscal 2027, the company expects:'].
+    # Both are AUTHORED, LITERAL period phrases -- the strongest evidence in
+    # the system -- and this function read the governing sentence and never
+    # the anchor. 18 rows reported VACUOUS while carrying the answer on
+    # their own spec.
+    #
+    # ★★ WHICH IS WHY THE STRICT ARM COULD NOT LAND FIRST: 11 of those 18
+    # are priority-1 and every one is CORRECT. Refusing them would have
+    # blamed the document for a signal we declined to read -- the
+    # false-refusal shape, one axis over from where it was first found.
+    for anchor in ((spec or {}).get('sectionAnchor') or []):
+        a_class = period_mod.classify_candidate(anchor, quarter)
+        if a_class == period_mod.UNRESOLVED:
+            continue
+        if extract.period_basis(anchor)[0] != 'EXPLICIT':
+            continue
+        if a_class == want:
+            return True, None, EVIDENCE
+        return (False, 'the row fences to %r, which is %s, and declares %s'
+                % (anchor[:40], a_class, want), EVIDENCE)
+
     if not isinstance(pos, int):
         return True, None, VACUOUS
-    frag = extract._governing_sentence(text, pos)
+    # ★ AND THE HEADING IS READ HERE TOO. governing_context prepends the
+    # section heading; _basis_ok has used it since the heading finding
+    # landed and this check -- the one that finding was MADE for -- was
+    # still reading the bare sentence. Per-axis asymmetry, n=5.
+    frag = extract.governing_context(text, pos)
     if not frag:
         return True, None, VACUOUS
     klass = period_mod.classify_candidate(frag, quarter)
