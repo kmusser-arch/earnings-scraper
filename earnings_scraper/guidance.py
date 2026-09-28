@@ -33,6 +33,7 @@ import re
 
 from . import extract
 from . import period as period_mod
+from . import spans as spans_mod
 
 #: ★ THE PRECEDENCE ALREADY EXISTS. period.py has carried _QUARTER_SCOPE and
 #: _WHOLE_YEAR since the classifier was built, and _WHOLE_YEAR is
@@ -113,7 +114,14 @@ def guide_sections(text, anchors):
                 continue
             if lines[j].strip():
                 seen_content = True
-        out.append((ln.strip(), offs[i], end, heading_period(ln), closer))
+        # ★ THE SPAN KNOWS HOW IT WAS CLOSED, and says so when it cannot be
+        # trusted. Six violations of a-span-needs-a-CLOSE, one of them in
+        # this very function.
+        sp = spans_mod.Span(offs[i], end,
+                            spans_mod.BY_HEADING if closer
+                            else spans_mod.BY_DOCUMENT_END, ln.strip())
+        spans_mod.check(sp, text, 'guidance.guide_sections')
+        out.append((ln.strip(), sp[0], sp[1], heading_period(ln), closer))
     return out
 
 

@@ -1122,3 +1122,74 @@ And the companion, which cost the first real fire of a first-fire code:
 > **When bucketing a result, bucket on the RICHEST available field, not the
 > cheapest.** I bucketed by `value is None` when `reasonCode` was sitting
 > right there.
+
+---
+
+## ★★★ 52. ONE VOCABULARY, READ AT RUNTIME
+
+Two `rangeForm` lists existed: nine values authored into
+`ticker-profiles.json`, five hardcoded in `vocab.py`. The validator refused a
+form the author had already blessed. **The drift was the defect, not either
+list — and syncing is what produced it.**
+
+`vocab._range_forms()` now reads `★CLOSED_LIST_AUTHORITATIVE` from the data,
+per this project's own rule that frameworks live in the data so a revision
+propagates without a code change. The hardcoded tuple survives only as a
+**named** fallback: `range_form_source()` reports `data` or
+`FALLBACK — data unreachable`, because a vocabulary that quietly narrowed
+would refuse authored forms and report them as spec defects.
+
+---
+
+## ★★★ 53. THE SPAN TYPE — SIX VIOLATIONS, ONE INSIDE THE ENFORCEMENT
+
+```
+1  spans                zero-width fences
+2  absence claims       a bounded search describes its BOUND
+3  recursion            a depth count is a length; re-entry is the close
+4  headings             is_heading by LINE LENGTH; MDB wraps at 66
+5  its own enforcement  guide_sections computed (lo,hi); specs_for passed
+                        only the heading NAME — MDB 716 -> 3,192
+6  heading adjacency    DELL's stacked headings -> 18, 49, 51, 75 chars
+```
+
+`Span` is a `tuple` subclass that remembers **how it was closed** and whether
+it **holds content below its heading** — adopted without rewriting anything,
+recording rather than raising. Driven red on all three failure modes:
+zero-width, heading-only, and closed-by-length.
+
+**The invariant: an empty span is not a section, and a close must close after
+the content.**
+
+---
+
+## ★★★ 54. THE TRACE STARTS FROM THE DOCUMENT — UNIT_MISMATCH × 4
+
+Traced from the release rather than from the code or the reason:
+
+```
+DELL[16] 'Q3 FY27 Revenue Guide ($B)'   hand 49.0
+document   'Q3FY27 (% Y/Y) Revenue $ 49.0 81 %'      at 3271
+span       'Third-Quarter Guidance' 3152..3339        value INSIDE
+denomination at that point            ('$B', '(in billions, ...)')
+verdict    UNIT_MISMATCH
+```
+
+**The value is inside the fence, the denomination is correct, and the row
+still refuses.** DELL[4] `$192.0 billion` and DELL[5] `$25.50` are likewise
+printed plainly, three times each.
+
+**The true root: `_unit_ok` tests the CANDIDATE for a magnitude word and
+never consults the denomination the table header supplies.** A bare cell
+`$ 49.0` under `(in billions, except percentages…)` carries no magnitude word
+of its own, so a `$B` row rejects it.
+
+So Kyle's access instinct was right about *which fact* — `denomination()` —
+and wrong about *which junction*. It is not `documentUnit` on the spec, which
+was already correct. It is the candidate unit test.
+
+★ AAPL[3] is a different row entirely: `F4Q Revenue Guide (% YoY)` with a
+hand read of `10.0`, a **percent growth** figure, in a section that prints
+only dollars. Its three `10` matches are coincidental digits inside a dollar
+table. That row is probably derived or not-in-PR, **not** a unit failure —
+one bucket, two unrelated causes, which is why the trace had to run.

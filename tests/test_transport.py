@@ -414,3 +414,70 @@ def frame_type():
 
 
 frame_type()
+
+
+def one_vocabulary_and_typed_spans():
+    """★★★★ ONE LIST, READ AT RUNTIME — and a span that knows how it closed.
+
+    Two rangeForm vocabularies existed: nine values authored into
+    ticker-profiles.json and five hardcoded in vocab.py. The validator
+    refused a form the author had already blessed. THE DRIFT WAS THE DEFECT,
+    NOT EITHER LIST, and syncing is what produced it — so the code derives
+    the list from the data, per this project's own rule that frameworks live
+    in the data so a revision propagates without a code change.
+
+    And a-span-needs-a-CLOSE is at SIX violations, one inside the code
+    enforcing it. Same evidence that justified the frame type at n=5, so the
+    same shape: a tuple subclass that remembers, adopted without rewriting
+    anything, RECORDING rather than RAISING.
+    """
+    from earnings_scraper import spans as S
+    from earnings_scraper import vocab as V
+
+    forms = V._range_forms()
+    check(V.range_form_source() == 'data',
+          'the rangeForm vocabulary is read FROM THE DATA (%s), not '
+          'duplicated in code' % V.range_form_source())
+    check('PLUS_MINUS_PCT' in forms and 'FLOOR' in forms
+          and 'CEILING' in forms and 'APPROXIMATE' in forms,
+          'so the four forms the author added are accepted WITHOUT a code '
+          'change (%d values)' % len(forms))
+    check(bool(V.violations({'rangeForm': 'WOBBLE'})),
+          'while an unknown form is still refused — derived, not disabled')
+
+    # ★ ANTI-VACUOUS: the fallback must be NAMED, not silent.
+    check(len(forms) > len(V._CLOSED['rangeForm']),
+          'and the derived list is LARGER than the hardcoded fallback (%d vs '
+          '%d), so this test would fail if derivation silently fell back'
+          % (len(forms), len(V._CLOSED['rangeForm'])))
+
+    # ── the Span type, DRIVEN RED ────────────────────────────────────────
+    doc = 'Guidance Summary\nThird-Quarter Guidance\nRevenue $1.0\n'
+    S.clear()
+    empty = S.Span(0, 17, S.BY_HEADING, 'Guidance Summary')
+    check(not S.check(empty, doc, 'probe') and S.VIOLATIONS,
+          'a span holding only its own heading is REFUSED: %r'
+          % (S.VIOLATIONS[0][:64] if S.VIOLATIONS else None))
+    S.clear()
+    zero = S.Span(10, 10, S.BY_HEADING)
+    check(not S.check(zero, doc, 'probe')
+          and 'ZERO-WIDTH' in S.VIOLATIONS[0],
+          'a zero-width fence is REFUSED')
+    S.clear()
+    bylen = S.Span(0, 40, S.BY_LENGTH)
+    check(not S.check(bylen, doc, 'probe')
+          and any('LENGTH' in v for v in S.VIOLATIONS),
+          'and a span closed by a LENGTH is refused even when it holds '
+          'content — a length is a guess about a document nobody read')
+    S.clear()
+    good = S.Span(0, len(doc), S.BY_HEADING, 'Guidance Summary')
+    check(S.check(good, doc, 'probe') and not S.VIOLATIONS,
+          'while a terminator-closed span with content PASSES — a check, '
+          'not a blanket')
+    check(good.width == len(doc) and tuple(good) == (0, len(doc)),
+          'and it still unpacks as a plain (lo, hi) tuple, so nothing had '
+          'to be rewritten to adopt it')
+    S.clear()
+
+
+one_vocabulary_and_typed_spans()

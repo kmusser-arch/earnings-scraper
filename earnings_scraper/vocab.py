@@ -32,6 +32,9 @@ _CLOSED = {
     'period': ('REPORTED', 'GUIDE_NEXT_Q', 'GUIDE_FY', 'FY_GUIDE'),
     'currencyBasis': ('USD', 'CONSTANT_CURRENCY', 'REPORTED'),
     'tableLayout': ('HORIZONTAL', 'VERTICAL'),
+    # ★★★★ DERIVED AT RUNTIME, NEVER DUPLICATED. See _range_forms() below:
+    # this entry is a FALLBACK for when the data file is unreachable, and
+    # the authoritative list lives in ticker-profiles.json.
     'rangeForm': ('POINT', 'SEPARATOR', 'BETWEEN_AND', 'COLUMNS',
                   'PLUS_MINUS'),
     'specState': ('EXTRACTABLE', 'NOT_EXTRACTABLE', 'NEEDS_REMAP'),
@@ -57,12 +60,61 @@ def canonical_basis(value):
     return None
 
 
+#: cache: the data file is read once, not on the hot path
+_RANGE_FORMS = [None]
+
+
+def _range_forms():
+    """The rangeForm vocabulary, READ FROM THE DATA rather than duplicated.
+
+    ★★★★ THE FRAMEWORKS LIVE IN THE DATA, NOT IN CODE. Two rangeForm lists
+    existed -- nine values authored into ticker-profiles.json and five
+    hardcoded here -- and the validator caught its own toolchain refusing a
+    form the author had already blessed. THE DRIFT WAS THE DEFECT, NOT
+    EITHER LIST, so there is now one list and this reads it.
+
+    ★ SYNCING IS WHAT PRODUCED THE DRIFT, so nothing is synced: a revision in
+    the data propagates with no code change, which is the whole point of the
+    project's framework rule.
+    """
+    if _RANGE_FORMS[0] is not None:
+        return _RANGE_FORMS[0]
+    forms = None
+    try:
+        from . import config
+        import io as _io
+        import json as _json
+        gmap = (_json.load(_io.open(config.PROFILES_PATH, encoding='utf-8'))
+                .get('globalDocumentLabelMap') or {})
+        block = gmap.get(chr(0x2605) + 'guidanceRangeForms') or {}
+        closed = block.get(chr(0x2605) + 'CLOSED_LIST_AUTHORITATIVE') or {}
+        vals = closed.get('values')
+        if isinstance(vals, list) and vals:
+            forms = tuple(str(v) for v in vals)
+    except Exception:                                   # noqa: BLE001
+        forms = None
+    # ★ THE FALLBACK IS NAMED, NOT SILENT. A vocabulary that quietly
+    # narrowed because a file was unreachable would refuse authored forms
+    # and report them as spec defects.
+    _RANGE_FORMS[0] = forms or _CLOSED['rangeForm']
+    _RANGE_FORMS.append('data' if forms else 'FALLBACK — data unreachable')
+    return _RANGE_FORMS[0]
+
+
+def range_form_source():
+    """Where the rangeForm vocabulary came from, for the sweep to report."""
+    _range_forms()
+    return _RANGE_FORMS[1] if len(_RANGE_FORMS) > 1 else 'unknown'
+
+
 def violations(spec):
     """[(field, value, why)] for every matcher field that is not a token."""
     out = []
     if not spec:
         return out
     for field, allowed in _CLOSED.items():
+        if field == 'rangeForm':
+            allowed = _range_forms()
         v = spec.get(field)
         if v is None:
             continue
