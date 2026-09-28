@@ -1141,6 +1141,57 @@ def definitional_spans(text):
     return out
 
 
+#: a data bullet, not a section heading
+_BULLET = re.compile(r'^\s*(?:--+|[-*•–])\s')
+#: a heading NAMES a section; a line carrying a FIGURE is reporting one
+_HAS_FIGURE = re.compile(r'[$\u00a3\u20ac]\s*\d|\d\s*%'
+                         r'|\bbillion\b|\bmillion\b', re.I)
+
+
+def is_section_heading(lines, k):
+    """Is line `k` a SECTION HEADING, judged STRUCTURALLY?
+
+    is_heading ALONE OVER-TRIGGERS ON HARD-WRAPPED PROSE. MDB wraps at
+    about 66 characters, so 54 of its lines passed the short-line test,
+    and heading_above would have handed the period classifier
+    '-- Revenue: Total revenue was $771.8 million for the second quarte'
+    as the section a value sits under. The eight spec'd documents are
+    double-spaced, so the corpus could never have shown it -- WHICH CODE
+    PATHS GET EXERCISED IS DECIDED BY WHICH ISSUERS WE HAPPENED TO SPEC.
+
+    Three structural discriminators, none of them a word list:
+      - ADJACENT TO A BLANK LINE: a heading stands alone
+      - not a BULLET: a data point is not a section
+      - carries NO FIGURE: a line reporting a number is reporting one,
+        not naming a section
+
+    MDB 54 -> 6, and the six are the real ones, including 'Third Quarter
+    Fiscal 2027 Guidance'. HPE's three Outlook headings survive.
+    """
+    if not (0 <= k < len(lines)):
+        return False
+    line = lines[k]
+    if not is_heading(line):
+        return False
+    if _BULLET.match(line) or _HAS_FIGURE.search(line):
+        return False
+    prev = lines[k - 1].strip() if k > 0 else ''
+    nxt = lines[k + 1].strip() if k + 1 < len(lines) else ''
+    if prev == '' or nxt == '':
+        return True
+    # A RULE THAT NEEDS BLANK LINES CANNOT BE APPLIED WHERE THERE ARE NONE.
+    # dewrap_mapped joins wrapped prose, so the dewrapped frame has almost
+    # no blank lines at all -- and requiring adjacency there silently lost
+    # HPE's 'Fiscal 2026 Full Year Outlook' and refused a derived hero. The
+    # FIFTH frame defect: raw, dewrapped, stripped, kept, and now a rule
+    # whose evidence exists in one frame and not the other. Where the
+    # neighbourhood has no blanks the test cannot discriminate, so it is not
+    # applied; the bullet and figure tests still are.
+    near = [lines[j].strip() for j in range(max(0, k - 3),
+                                            min(len(lines), k + 4))]
+    return not any(x == '' for x in near)
+
+
 def heading_above(text, pos, max_lines=400):
     """The nearest preceding section heading, or ''.
 
@@ -1153,7 +1204,7 @@ def heading_above(text, pos, max_lines=400):
     lines = text.split(chr(10))
     idx = text.count(chr(10), 0, pos)
     for k in range(idx, max(-1, idx - max_lines), -1):
-        if 0 <= k < len(lines) and k != idx and is_heading(lines[k]):
+        if k != idx and is_section_heading(lines, k):
             return lines[k].strip()
     return ''
 
@@ -1385,7 +1436,14 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
     # `sourceRows`; nothing read either field until now.
     if (spec or {}).get('derived') and (spec or {}).get('sourceRows'):
         from . import derived as _derived
-        _d = _derived.derive(src, row, record) or {}
+        # ★★★ THE ORIGINAL DOCUMENT, NOT THIS FRAME. derive() re-enters
+        # value_for to resolve a card-row operand, and value_for dewraps
+        # what it is handed -- so passing `src` DEWRAPS A SECOND TIME and
+        # every offset inside the operand's own read shifts. HPE[3]
+        # resolved standalone and refused as an operand, and the derived
+        # hero above it refused with it. Frame defect n=5: raw, dewrapped,
+        # stripped, kept, and now dewrapped TWICE.
+        _d = _derived.derive(text, row, record) or {}
         if _d.get('value') is not None:
             return dict(value=_d['value'], value_musd=None,
                         unit=doc_unit(spec), specState=state,

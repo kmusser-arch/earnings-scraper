@@ -273,3 +273,78 @@ def one_canonicaliser():
 
 
 one_canonicaliser()
+
+
+def heading_on_unseen_shapes():
+    """★★★ WHICH CODE PATHS GET EXERCISED IS DECIDED BY WHICH ISSUERS WE
+    HAPPENED TO SPEC.
+
+    is_heading judged a heading by LINE LENGTH. MDB hard-wraps at ~66
+    characters, so 54 of its lines passed — and heading_above would have
+    handed the period classifier
+    '-- Revenue: Total revenue was $771.8 million for the second quarte'
+    as the section a value sits under. The eight spec'd documents are
+    DOUBLE-SPACED, so the corpus could never have shown it. MDB has no spec
+    and was never scored; it is only in this suite as a captured FRAME.
+
+    Three structural discriminators, no word list — and the blank-line one
+    is applied only where blank lines exist to apply it, because the
+    DEWRAPPED frame has none.
+    """
+    from earnings_scraper import extract as X2
+
+    mdb = os.path.join(PENDING, '20260901-160503-MDB.json')
+    hpe = os.path.join(HERE, 'fixtures', 'releases', 'HPE-2026-09-02.txt')
+    if not (os.path.exists(mdb) and os.path.exists(hpe)):
+        print('SKIP MDB frame or HPE fixture not reachable')
+        return
+
+    body = json.load(io.open(mdb, encoding='utf-8'))['rawItem']['body']
+    lines = body.split(chr(10))
+    loose = [l for l in lines if X2.is_heading(l)]
+    tight = [lines[k].strip() for k in range(len(lines))
+             if X2.is_section_heading(lines, k)]
+    check(len(loose) > 40 and len(tight) < 12,
+          'MDB: line-length alone calls %d lines headings; structurally it '
+          'is %d' % (len(loose), len(tight)))
+    check('Third Quarter Fiscal 2027 Guidance' in tight
+          and 'Full Year Fiscal 2027 Guidance' in tight,
+          'and the ones that survive are the PERIOD-BEARING sections a '
+          'classifier needs')
+    check(not [t for t in tight if t.startswith('--')],
+          'no data bullet survives — a data point is not a section')
+
+    hb = io.open(hpe, encoding='utf-8').read()
+    hl = hb.split(chr(10))
+    kept = [hl[k].strip() for k in range(len(hl))
+            if X2.is_section_heading(hl, k) and 'Outlook' in hl[k]]
+    check(len(kept) >= 3,
+          'and HPE keeps its Outlook headings (%s) — the tightening must '
+          'not cost the row it was built for' % kept[:3])
+
+    # ── ★ THE DEWRAPPED FRAME HAS NO BLANK LINES ─────────────────────────
+    src, _segs = X2.dewrap_mapped(hb)
+    pos = src.find('3.75 to $3.85')
+    check(X2.heading_above(src, pos) == 'Fiscal 2026 Full Year Outlook',
+          'the heading is still found in the DEWRAPPED frame, where the '
+          'blank-line test cannot discriminate and is not applied')
+
+    # ── ★ AND derive() GETS THE ORIGINAL DOCUMENT, NOT A FRAME ───────────
+    lib = os.path.join('C:' + os.sep, 'Users', 'Trader', 'Documents',
+                       'Claude', 'Projects', 'earnings Model',
+                       'earnings-library.json')
+    if not os.path.exists(lib):
+        return
+    rec = {r['id']: r for r in json.load(io.open(lib, encoding='utf-8'))
+           ['records']}['HPE-2026Q3']
+    out = X2.value_for(hb, rec['preEarnings']['keyKPIs'][0], record=rec) or {}
+    check(out.get('value') == 4.485
+          and (out.get('rangeLow'), out.get('rangeHigh')) == (4.35, 4.62),
+          'HPE[0] derives %s with its band $%s-$%s — derive() re-enters '
+          'value_for, which dewraps what it is handed, so passing the '
+          'CALLER FRAME dewrapped a second time and every offset in the '
+          'operand read shifted. Frame defect n=5.'
+          % (out.get('value'), out.get('rangeLow'), out.get('rangeHigh')))
+
+
+heading_on_unseen_shapes()

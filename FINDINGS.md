@@ -899,3 +899,91 @@ boilerplate. **And the reason gate caught itself going stale** — it still
 counted those hits and called the new claim false, until it was taught the
 same filter. A gate that drifts from its own reader is the thing it exists to
 prevent.
+
+---
+
+## ★★★ 43. REVERT BEFORE ATTRIBUTING
+
+> **Before attributing a regression to a change, REVERT THAT CHANGE ALONE
+> AND CONFIRM THE METRIC RETURNS.**
+
+MATCH fell 36 → 33 the moment Kyle normalised `basis` to `NON_GAAP`. I was
+one sentence from reporting *"your cleanup cost three rows."* It did not: it
+**exposed five call sites that were never consistent**, three of them masked
+by a single spelling in the data. Had that stood, the fix would have been
+reverted and five `basis` fields **containing the answer value** put back into
+a matcher field — to protect three MATCHes that were never real.
+
+**And it is systematic, not bad luck.** A recent, visible, plausible change is
+the cheapest available explanation for any metric move, and latent defects are
+invisible by construction. **The explanation that costs least to reach is the
+one that gets reached.** Applies in both directions.
+
+---
+
+## ★★★ 44. A NAME IS NOT A TYPE — AND THE SOUND FORM OF THE ASSERTION
+
+| | |
+|---|---|
+| **UNSOUND** | *"no site mishandles `basis`"* — requires knowing every site |
+| **SOUND** | *"every module that compares a spec basis imports the canonicaliser"* + *"every spelling in the library resolves"* |
+
+The sound form enumerates the **behaviour**, not the **string**.
+
+My first attempt was the unsound one: a negative scan for the token `basis`,
+which in this codebase names **four different things** — the GAAP axis,
+`period_basis`'s EXPLICIT/INFERRED, `score.py`'s unit scale, and
+`basisLocation`. It flagged all four as defects. `parse.py` and `tables.py`
+compare a *document*-derived basis against a literal and never meet a spec
+value at all.
+
+**Same finding as the allowlist:** an allowlist by name assumed a field held
+structure; a negative scan by name assumed a token held one meaning. Both
+trusted a string to stand for a behaviour.
+
+---
+
+## ★★★ 45. A CONSISTENT REASON AND A TRUE REASON ARE DIFFERENT CLAIMS
+
+The reason gate verifies **presuppositions** — a tie presupposes a label hit.
+It proves **consistency, not root cause**. AVGO[6] moved `UNIT_MISMATCH` →
+`NO_LABEL` only when the boilerplate filter landed; **the gate had passed it
+as consistent the whole time.** Only the first claim is gated, so every
+refusal still has to be traced.
+
+---
+
+## ★★★ 46. WHICH CODE PATHS GET EXERCISED IS DECIDED BY WHICH ISSUERS WE SPEC'D
+
+`is_heading` judged by **line length**. MDB hard-wraps at ~66 characters, so
+**54 of its lines passed**, and the period classifier would have been handed
+
+```
+-- Revenue: Total revenue was $771.8 million for the second quarte
+```
+
+as the section a value sits under. **All eight spec'd documents are
+double-spaced**, so the corpus could never have shown it. MDB is in the repo
+only as a captured *frame*.
+
+Three structural discriminators, no word list — blank-line adjacency, not a
+bullet, carries no figure. **MDB 54 → 8**, and what survives is
+`Third Quarter Fiscal 2027 Guidance` and `Full Year Fiscal 2027 Guidance`.
+
+★ **And the blank-line test is applied only where blank lines exist**: the
+dewrapped frame has almost none, and requiring adjacency there silently lost
+HPE's `Fiscal 2026 Full Year Outlook`.
+
+---
+
+## ★★★ 47. FRAME DEFECT n=5 — DEWRAPPED TWICE
+
+`derive()` re-enters `value_for` to resolve a card-row operand, and
+`value_for` **dewraps what it is handed**. It was being passed the caller's
+already-dewrapped `src`, so the operand's own read happened in a
+**doubly-dewrapped** frame and every offset shifted. HPE[3] resolved
+standalone and refused as an operand; the derived hero above it refused with
+it.
+
+Frames now: **raw · dewrapped · stripped · kept · dewrapped-twice.**
+The fix is the original document, not the caller's frame.
