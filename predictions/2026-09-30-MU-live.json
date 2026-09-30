@@ -1,0 +1,74 @@
+{
+  "★whyThisFileExists": "MU-2026Q4 is the first record whose extraction specs were AUTHORED BEFORE THE DOCUMENT EXISTED. Pre-registered it is a weak test; stated after the run it is a description. Committed before the 4:01pm ET release so the ordering is provable. Nothing below was written after seeing a result.",
+  "recordedAt": "2026-09-30",
+  "recordedBefore": "the MU F4Q26 release, 4:01pm ET",
+  "record": "MU-2026Q4",
+  "population": "9 spec'd rows of 11. [9] shareholder returns and [10] segment mix carry no spec and will not be attempted.",
+
+  "★independence": "REAL, AND THE FIRST OF ITS KIND IN THIS REPO. Every earlier measurement ran against documents the specs were fitted to, over weeks, by looking at what failed. This spec was written blind from MU's prior format. The pre-registration of 2026-09-21 says 'There is no holdout in this repo'; this is the first row of one.",
+
+  "preflightFindings": {
+    "SPEC_INVALID": "22 violations on the first pull: specState carried a provenance string, tableLayout an invented LABEL_THEN_COLUMNS, period CURRENT_Q on four rows. All fixed by the author before this file was written. Vocabulary violations now 0.",
+    "★stringAnchors": "sectionAnchor and spanTerminator were authored as BARE STRINGS on all 9 rows. section_spans iterated them AS CHARACTERS - 47 spans instead of one on a synthetic probe, the fence landing wherever a letter appeared. The reader now coerces a string to a single-element list, as registry.where_kind has done since it was written. 18 shape warnings remain, as WARNINGS rather than refusals.",
+    "★whatThisMeans": "Had the string anchors gone unfound, all 9 rows would have read from a fence covering the whole document. That is not a refusal - it is a WRONG VALUE IN GREEN on every row, and it would have looked like success."
+  },
+
+  "predictions": {
+    "★theSinglePointOfFailure": {
+      "anchor": "FQ1-27 GUIDANCE",
+      "carries": "rows [0] [1] [2] - the three guide rows, which are the trade",
+      "kylePosition": "authored blind from MU's prior format; if it misses, that is a SPEC failure with the anchor named, not an extractor failure",
+      "agentProbabilityTheLiteralStringIsPresent": 0.55,
+      "★agentReasoning": "section_spans matches a SUBSTRING, case-insensitively, so the anchor need not be the whole heading - that raises the odds well above an exact-heading match. Against it, 'FQ1-27' with that exact hyphenation is a specific notation: 'FQ1 2027', 'Q1 FY27', 'FIRST QUARTER FISCAL 2027' and 'Fiscal Q1 2027' are all plausible and all miss. 55% is a coin weighted slightly toward the author, who has read the prior release and I have not.",
+      "ifItMisses": "all three refuse TOGETHER with NO_LABEL or CANDIDATE_TIE - a CORRELATED failure, not three independent ones. Record it as ONE spec defect, not three extractor misses."
+    },
+
+    "explicitPeriodClassifications": {
+      "predicted": 5,
+      "band": "3 to 7",
+      "★basis": "'FQ1-27 GUIDANCE' classifies GUIDE_NEXT_Q - verified at pre-flight - but only because the word GUIDANCE is a guidance marker. 'FQ1-27' ALONE classifies UNRESOLVED, because _QUARTER_SCOPE requires a word boundary before Q and 'FQ1' has none. So the three guide rows resolve IF the anchor matches; the four REPORTED rows are outside the strict arm by ruling; rows [4] and [8] are GUIDE_FY fenced to the press-release title, which names no period.",
+      "powerFloor": {
+        "atLeast8Resolve": "the test RAN and its result stands",
+        "4to7Resolve": "INCONCLUSIVE - pool with the next live print",
+        "under4Resolve": "NO TEST RAN. Do not read the rejection count as evidence either way."
+      }
+    },
+
+    "correctValuesRejected": {
+      "predicted": 0,
+      "failureThreshold": "one or more correct values rejected by a period or basis filter -> the filter does not ship as-is",
+      "★note": "the same prediction made on 2026-09-21 and met in-corpus. Tonight is the first time it is asked of a document the rule was not built against."
+    },
+
+    "verdictsAcrossTheNine": {
+      "MATCH": 3,
+      "FALSE_MATCH": 0,
+      "MISMATCH": 0,
+      "REFUSED": 6,
+      "★band": "MATCH 1-5, REFUSED 4-8. A single anchor carries three of the nine, so the distribution is BIMODAL rather than smooth: if the anchor hits, MATCH 3-5; if it misses, MATCH 0-2.",
+      "★reasoning": "Of the 8 spec'd releases, 48.7% of extractable rows fill - and every one of those specs was fitted to its document. A blind spec should do worse. The REPORTED rows [5][6][7] are the likeliest fills: a consolidated results table is the most conventional structure in the document and the labels are standard. The PROSE rows [3][4][8] are the least likely: LTA bits coverage, FY27 capex and CY2027 EPS framing are narrative figures that may not be printed as levels at all."
+    },
+
+    "firstFireCodes": {
+      "★watch": "eleven codes have never met real prose; any that fires carries firstFire on the card and must be HAND-CHECKED before it informs anything",
+      "mostLikely": ["BAND_COLLAPSED", "NO_LABEL_AFTER_FILTERS", "BASIS_ABSENT"],
+      "★disagreementOnRecord": "Kyle names BAND_COLLAPSED as the live risk from the PLUS_MINUS guides. I disagree: requiresRangePair with rangeForm PLUS_MINUS routes through plus_minus_pair(), which is built and pinned. The real gap is PLUS_MINUS_PCT - '$X +/- 5%' - which is in the authoritative vocabulary with NO PARSER behind it. MU has guided with an ABSOLUTE delta for multiple quarters, so Kyle puts the probability low but not zero, and we agree it would be an UNBUILT PARSER rather than a spec error if it fires. NOT BUILT TODAY, deliberately.",
+      "SPEC_INVALID": "RETIRED IN ADVANCE - 22 violations found at pre-flight and fixed before the print. This is the one code that was retirable by looking, and looking is what retired it."
+    },
+
+    "transport": {
+      "fetchOutcome": null,
+      "elapsedMs": null,
+      "★whyBlank": "STILL NO BASIS. The network leg has never been exercised: the client, the subscription mode, and whether frames arrive at all are untested. Guessing a latency here would be inventing a number for the one surface with no evidence behind it.",
+      "watchlist": "REBUILT 2026-09-30T14:11:48 and DERIVED FROM THE LIBRARY, wide - every ticker the library indexes for today. MU present. The previous list was ADBE/ORCL built 2026-09-10, under which a MU frame would have been counted off_watchlist and never processed."
+    }
+  },
+
+  "★notPredicted": [
+    "whether the values, if read, are RIGHT - that is what the hand read decides, and Kyle scores the release in parallel",
+    "anything about the narrative category, the takeaways or the branch match: those need the call",
+    "what any of this says about the NEXT live print. One document is one document, and the power floor above is the only honest reading of a single night."
+  ],
+
+  "★theRuleForTonight": "NO FIXES, WHATEVER HAPPENS. A frame captured is worth more than a fix applied at speed, and a spec that fails on its first real document is THE RESULT, not a defect to be patched out of existence before it is recorded."
+}

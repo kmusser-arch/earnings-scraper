@@ -69,6 +69,26 @@ def parse_pasted(text):
     return out
 
 
+def build_wide(today=None, model=None, extra=()):
+    """Today's watchlist DERIVED FROM THE LIBRARY, wide.
+
+    A FALSE POSITIVE COSTS A BANNER; A FALSE NEGATIVE COSTS THE PRINT.
+    An off-watchlist frame is counted and dropped, so a ticker missing
+    from a hand-pasted list is invisible at 4:01 with no second chance.
+    The NO_CARD path is tested and safe -- error NO_CARD, rawFigures
+    extracted, banner printed, nothing graded -- so the cost of watching
+    too much is a line of output.
+
+    Every ticker the library indexes for `today`, plus anything named by
+    hand. The hand list is a SUPPLEMENT, never the source.
+    """
+    model = model or Model()
+    today = today or time.strftime('%Y-%m-%d')
+    names = sorted(set(model.index_for(today).keys())
+                   | {str(t).upper().strip() for t in (extra or []) if t})
+    return build(chr(10).join(names), today=today, model=model)
+
+
 def build(pasted_text, today=None, model=None):
     """Build today's watchlist with expectations warmed.
 

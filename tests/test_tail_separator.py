@@ -100,7 +100,14 @@ def main():
                              ('CSCO', 'PERCENT'), ('INTC', 'PERCENT'),
                              ('NFLX', 'PERCENT'), ('LULU', 'PERCENT'),
                              ('NET', 'PERCENT'), ('NVDA', 'DOLLAR'),
-                             ('ALAB', 'DOLLAR'), ('MU', 'UNCLASSIFIED')):
+                             ('ALAB', 'DOLLAR'),
+                             # ★ MU WAS 'UNCLASSIFIED' BECAUSE IT HAD NO
+                             # PROFILE. One was authored 2026-09-30 for
+                             # the live print, and its priority-1
+                             # currentQuarter hero is 'F4Q FY26 Non-GAAP
+                             # EPS ($)' -- a DOLLAR hero. The pin was
+                             # recording a GAP, and the gap is closed.
+                             ('MU', 'DOLLAR')):
         prof = model.profiles.get(ticker) or {}
         h = [x for x in (prof.get('heroKPIs') or [])
              if x.get('priority') == 1 and x.get('appliesTo') == 'currentQuarter']

@@ -131,6 +131,30 @@ def routing_breadth(spec):
     return out
 
 
+#: fields a reader iterates: a bare string there is one anchor, not a list
+LIST_FIELDS = ('sectionAnchor', 'spanTerminator', 'documentLabels',
+               'disqualify', 'excludeSections', 'sourceRows',
+               'spanStartAfter')
+
+
+def shape_warnings(spec):
+    """[(field, value)] for list-fields authored as a bare string.
+
+    ★★★★ THE VALIDATOR CHECKED VOCABULARIES AND NOT SHAPES. A bare string
+    where a LIST is expected passes every vocabulary test and is then
+    ITERATED AS CHARACTERS: MU's live card produced 47 spans instead of one,
+    the fence landing wherever a letter appeared. registry.where_kind has
+    coerced a string to a single-element list since it was written;
+    section_spans never did.
+
+    ★ WARNED, NOT REFUSED. The reader now coerces, so the card works --
+    refusing here would blank nine rows over a shape the code handles. The
+    warning exists so the authoring habit is visible, not so it is punished.
+    """
+    return [(f, str(spec.get(f))[:60]) for f in LIST_FIELDS
+            if isinstance(spec.get(f), str)]
+
+
 def violations(spec):
     """[(field, value, why)] for every matcher field that is not a token."""
     out = []

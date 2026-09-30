@@ -351,6 +351,16 @@ def section_spans(text, anchors, terminators=None, start_after=None):
     operating-margin and tax-rate reconciliations), so narrowing the anchor
     cannot separate them and only an explicit open/close can.
     """
+    # ★★★★ A STRING IS ONE ANCHOR, NOT A LIST OF CHARACTERS. MU's live card
+    # authored sectionAnchor as a bare string, and iterating it searched for
+    # 'F', then 'Q', then '1' -- 47 spans instead of one, the fence landing
+    # wherever a letter appears. registry.where_kind has coerced a string to
+    # a single-element list since it was written; section_spans never did.
+    # Found at pre-flight on a live card three hours before a print.
+    if isinstance(anchors, str):
+        anchors = [anchors]
+    if isinstance(terminators, str):
+        terminators = [terminators]
     text = text or ''
     low = text.lower()
     floor = 0
