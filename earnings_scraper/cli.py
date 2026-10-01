@@ -213,6 +213,107 @@ def _iter_log(path):
             continue
 
 
+def _report_edgar(seen):
+    """Is the account entitled to SEC EDGAR filings?
+
+    ★★ ENTITLED-AND-SILENT IS NOT UNENTITLED, and a count of zero
+    cannot tell the two apart. An 8-K feed between prints is genuinely
+    quiet, so a bare 0 would read as a refusal and send someone to
+    whoever provisions the gateway over nothing. The honest report names
+    which of the two questions the sample could not answer.
+    """
+    print('SEC EDGAR (source EDG, msg_type edgar_item)')
+    mt = seen['by_msgtype']
+    if mt:
+        print('   msg_type mix: %s'
+              % ', '.join('%s=%d' % (k, v) for k, v in
+                          sorted(mt.items(), key=lambda kv: -kv[1])))
+    if seen['edgar']:
+        print('   ENTITLED - %d filing frame(s) arrived.' % seen['edgar'])
+        print('   fields on the first one (body omitted):')
+        for k, v in sorted((seen['edgar_sample'] or {}).items()):
+            print('      %-22s %s' % (k, v))
+        print('')
+        print('   ★ AN 8-K IS NOT NECESSARILY AN EARNINGS RELEASE.')
+        print('     They are also filed for executive changes, debt and')
+        print('     material agreements. Match the filing to a pending')
+        print('     wire frame for the same ticker, or verify the exhibit')
+        print('     carries the metrics the card declares, before it is')
+        print('     scored against.')
+        return
+    print('   NO FILING FRAMES IN THIS SAMPLE, which is TWO answers this')
+    print('   run cannot tell apart:')
+    print('      (a) the account is not entitled to EDG, or')
+    print('      (b) it is entitled and no 8-K was filed in the window.')
+    print('   Filings cluster after the close. Re-run across 16:00-16:15')
+    print('   ET, when 8-Ks land ~90s behind the wire, before concluding.')
+
+
+def cmd_corpus(args):
+    """Fetch the 8-K exhibit corpus for every ticker in the library.
+
+    ★ LIBRARY-DRIVEN, exactly as the watchlist is. No ticker list,
+    no per-ticker config: a ticker is covered the moment its record
+    exists, and every future pre-earnings build inherits this with no
+    extra step.
+    """
+    from . import corpus
+    from . import sec
+    if not sec.user_agent():
+        print('SEC_CONTACT is not set.')
+        print('')
+        print('   www.sec.gov rejects a User-Agent it cannot read as')
+        print('   a contact. Put a real address in .env, which is')
+        print('   already gitignored:')
+        print('')
+        print('      SEC_CONTACT=you@example.com')
+        return 1
+    names = [t.upper() for t in (args.tickers or [])] or None
+    corpus.sweep(tickers=names, quarters=args.quarters)
+    return 0
+
+
+def cmd_specaudit(args):
+    """Assert every authored string against the exhibit it targets.
+
+    ★★ ABSENT MEANS DEFECT, NOT RISK. This is the machine half of
+    non-negotiable 0c. It checks PRESENCE and COUNT; whether the right
+    NUMBER sits inside the fence still needs a read.
+    """
+    from . import specaudit
+    from .model import Model
+    model = Model()
+    want = set(t.upper() for t in (args.tickers or []))
+    total = 0
+    missing = 0
+    audited = 0
+    for rec in model.records:
+        rid = rec.get('id') or ''
+        tick = rid.rsplit('-', 1)[0] if '-' in rid else rid
+        if want and tick.upper() not in want:
+            continue
+        strings = specaudit.authored_strings(rec)
+        if not strings:
+            continue
+        doc = specaudit.exhibit_for(rec, tick, prior=args.prior)
+        if doc is None:
+            print('  %-14s NO EXHIBIT CACHED' % rid)
+            continue
+        audited += 1
+        miss, n = specaudit.report(rec, doc['text'], log=lambda _s: None)
+        total += n
+        missing += miss
+        print('  %-14s exhibit %-12s %3d strings  %s'
+              % (rid, doc.get('filingDate'), n,
+                 'OK' if not miss else '%d ABSENT' % miss))
+        if miss:
+            specaudit.report(rec, doc['text'])
+    print('')
+    print('%d record(s) audited - %d of %d authored strings ABSENT'
+          % (audited, missing, total))
+    return 1 if missing else 0
+
+
 def cmd_wirecheck(args):
     """Subscribe to every entitled source and prove frames arrive.
 
@@ -225,7 +326,8 @@ def cmd_wirecheck(args):
 
     seen = dict(n=0, news=0, first=None, by_source={}, first_headline=None,
                 subscribed=None, dead=False, error=None,
-                with_body=0, body_by_source={}, body_sample=None)
+                with_body=0, body_by_source={}, body_sample=None,
+                by_msgtype={}, edgar=0, edgar_sample=None)
     t0 = time.time()
 
     def on_frame(item):
@@ -244,6 +346,19 @@ def cmd_wirecheck(args):
             seen['first'] = time.time() - t0
             seen['first_headline'] = (item.get('headline') or '')[:66]
         seen['news'] += 1
+        # ★ EDGAR IS NOT A SEPARATE TRANSPORT. It arrives on this same
+        # stream as source 'EDG' with msg_type='edgar_item', so the
+        # entitlement answer was always in these frames and was simply never
+        # reported. Counted by msg_type as well as by source, because a feed
+        # can be entitled and silent.
+        mt = item.get('msg_type') or '?'
+        seen['by_msgtype'][mt] = seen['by_msgtype'].get(mt, 0) + 1
+        if mt == 'edgar_item' or item.get('source') == 'EDG':
+            seen['edgar'] += 1
+            if seen['edgar_sample'] is None:
+                seen['edgar_sample'] = dict(
+                    (k, str(v)[:70]) for k, v in sorted(item.items())
+                    if k != 'body')
         src = item.get('source') or item.get('msg_type') or '?'
         seen['by_source'][src] = seen['by_source'].get(src, 0) + 1
         # ★ GRANTED IS NOT DELIVERED. The gateway echoing mode='full' says the
@@ -393,6 +508,8 @@ def cmd_wirecheck(args):
         wires = [k for k in seen['by_source'] if k in config.WIRE_SOURCES]
         print('   earnings wires seen: %s' % (', '.join(sorted(wires)) or
                                               'none yet (they are low volume)'))
+        print('')
+        _report_edgar(seen)
         return 0
 
     hour = time.gmtime().tm_hour
@@ -692,6 +809,20 @@ def build_parser():
     wc.add_argument('--frames', type=int, default=1,
                     help='how many frames constitute a PASS (default 1)')
     wc.set_defaults(func=cmd_wirecheck)
+
+    cp = sub.add_parser('corpus',
+                        help='fetch the 8-K exhibit corpus from EDGAR')
+    cp.add_argument('tickers', nargs='*',
+                    help='default: every ticker in the library')
+    cp.add_argument('--quarters', type=int, default=2)
+    cp.set_defaults(func=cmd_corpus)
+
+    sa = sub.add_parser('specaudit',
+                        help='assert authored strings against the 8-K')
+    sa.add_argument('tickers', nargs='*')
+    sa.add_argument('--prior', action='store_true',
+                    help='audit against the PRIOR quarter, which is what 0c requires while a spec is being authored')
+    sa.set_defaults(func=cmd_specaudit)
 
     st = sub.add_parser('selftest',
                         help='grade a synthetic release against a real card')

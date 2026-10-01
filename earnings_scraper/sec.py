@@ -54,11 +54,20 @@ NO_CIK = 'NO_CIK'
 NO_FILING = 'NO_FILING'
 NO_EXHIBIT = 'NO_EXHIBIT'
 NO_STRUCTURE = 'NO_STRUCTURE'
+NOT_EARNINGS = 'NOT_EARNINGS'
 FETCH_FAILED = 'FETCH_FAILED'
 
-#: the press release is filed as EX-99.1, occasionally EX-99.2. The 8-K
-#: itself (mu-20260930.htm) is the COVER PAGE and carries no table.
-_EXHIBIT = re.compile(r'(?i)ex-?99|pressrelease|earnings')
+#: A RANK HINT, NEVER A FILTER -- see exhibit_candidates for why.
+_EXHIBIT = re.compile(r'(?i)ex.{0,8}99|pressrelease|earnings|[^a-z]pr\.')
+
+#: R1.htm, R2.htm ... are the XBRL viewer's rendering stubs, not documents.
+_RENDER_STUB = re.compile(r'(?i)^r\d+\.htm')
+
+#: how many documents in one accession are worth reading before giving up.
+#: An earnings 8-K carries the release plus perhaps a CFO commentary; more
+#: than a handful means the ranking is wrong, not that the release is deep
+#: in the list.
+MAX_CANDIDATES = 4
 
 _TICKERS = {}
 
@@ -76,6 +85,22 @@ def user_agent():
     return 'shelnewsapi/1.0 (earnings research; contact: %s)' % contact
 
 
+#: SEC asks for no more than ten requests a second. A live print spends
+#: three; a corpus sweep over 57 tickers spends a few hundred, which is the
+#: only time this matters -- so the pace is enforced here rather than left
+#: to each caller to remember.
+MIN_INTERVAL = 0.12
+_last_request = [0.0]
+
+
+def _throttle():
+    import time as _t
+    wait = MIN_INTERVAL - (_t.time() - _last_request[0])
+    if wait > 0:
+        _t.sleep(wait)
+    _last_request[0] = _t.time()
+
+
 def _get(url, timeout, fetcher=None):
     """(text, status) or (None, None). NEVER raises."""
     if fetcher is not None:
@@ -83,6 +108,7 @@ def _get(url, timeout, fetcher=None):
     ua = user_agent()
     if not ua:
         return None, None
+    _throttle()
     import urllib.request
     req = urllib.request.Request(
         url, headers={'User-Agent': ua, 'Accept-Encoding': 'identity'})
@@ -115,6 +141,12 @@ def filing_on(cik, on=None, timeout=DEFAULT_TIMEOUT, fetcher=None):
     8-K' would hand back August's governance filing when tonight's earnings
     8-K has not posted yet, and a stale document that parses cleanly is the
     worst thing this module could produce.
+
+    ★★ AND THE DATE IS NOT ENOUGH ON ITS OWN. An issuer can file two 8-Ks
+    in one afternoon -- results at 16:02 and a director appointment at
+    16:40 -- so the date alone would be a coin flip between them. Item 2.02
+    is the filer's own declaration of which is which, and this is the LIVE
+    path, where picking the wrong one costs a fabricated read on the card.
     """
     body, _ = _get(SUBMISSIONS_URL % int(cik), timeout, fetcher)
     if not body:
@@ -123,19 +155,103 @@ def filing_on(cik, on=None, timeout=DEFAULT_TIMEOUT, fetcher=None):
         recent = json.loads(body)['filings']['recent']
     except Exception:                                   # noqa: BLE001
         return None, None
+    n = len(recent.get('form') or [])
+    items = recent.get('items') or [''] * n
+    accepted = recent.get('acceptanceDateTime') or [None] * n
     on = on or time.strftime('%Y-%m-%d')
     for i, form in enumerate(recent.get('form') or []):
-        if form == '8-K' and recent['filingDate'][i] == on:
-            return (recent['accessionNumber'][i],
-                    (recent.get('acceptanceDateTime') or [None] * (i + 1))[i])
+        if (form == '8-K' and recent['filingDate'][i] == on
+                and EARNINGS_ITEM in (items[i] or '')):
+            return recent['accessionNumber'][i], accepted[i]
     return None, None
 
 
-def exhibit_url(cik, accession, timeout=DEFAULT_TIMEOUT, fetcher=None):
-    """The URL of the press-release exhibit inside an accession, or None.
+#: ★★★ 8-K ITEM 2.02 -- 'Results of Operations and Financial Condition'.
+#: THE ISSUER DECLARES THIS ITSELF, and the submissions API carries it in
+#: the `items` field, so filtering on it costs NO extra request.
+#:
+#: MEASURED ACROSS ALL 57 LIBRARY TICKERS: 3,893 8-Ks, of which 1,495 carry
+#: Item 2.02 -- SIXTY-TWO PERCENT OF 8-Ks ARE NOT EARNINGS. Taking 'the
+#: most recent 8-K' would therefore be wrong about twice as often as right.
+EARNINGS_ITEM = '2.02'
 
-    Largest match wins: the cover page and the exhibit both match on name,
-    and the exhibit is the one with the tables in it.
+
+def recent_8ks(cik, limit=4, timeout=DEFAULT_TIMEOUT, fetcher=None,
+               earnings_only=True):
+    """[(accession, filingDate, accepted)] newest first.
+
+    ★ THE ISSUER ALREADY ANSWERED THE QUESTION. An 8-K is filed for
+    executive changes, debt and material agreements as well as results, and
+    guessing from the filename or the date would be re-deriving in
+    ignorance something the filer stated outright in the item code.
+    """
+    body, _ = _get(SUBMISSIONS_URL % int(cik), timeout, fetcher)
+    if not body:
+        return []
+    try:
+        recent = json.loads(body)['filings']['recent']
+    except Exception:                                   # noqa: BLE001
+        return []
+    n = len(recent.get('form') or [])
+    accepted = recent.get('acceptanceDateTime') or [None] * n
+    items = recent.get('items') or [''] * n
+    out = []
+    for i, form in enumerate(recent.get('form') or []):
+        if form != '8-K':
+            continue
+        if earnings_only and EARNINGS_ITEM not in (items[i] or ''):
+            continue
+        out.append((recent['accessionNumber'][i], recent['filingDate'][i],
+                    accepted[i] if i < len(accepted) else None))
+        if len(out) >= limit:
+            break
+    return out
+
+
+#: Phrases that appear in an earnings release and essentially nowhere else
+#: in the 8-K population.
+_EARNINGS_MARKERS = (
+    'diluted', 'gross margin', 'per share', 'operating income',
+    'revenue', 'net income', 'guidance', 'outlook', 'fourth quarter',
+    'first quarter', 'second quarter', 'third quarter', 'fiscal',
+)
+
+
+def looks_like_earnings(text, need=4):
+    """Does this exhibit carry the furniture of an earnings release?
+
+    ★★ AN 8-K ON EARNINGS DAY IS NOT NECESSARILY THE EARNINGS RELEASE. They
+    are also filed for executive changes, debt issuance and material
+    agreements, and a company can file two in one afternoon. A departure
+    announcement that parsed cleanly and scored as a print would be a
+    fabricated read with full provenance behind it, which is worse than a
+    refusal by exactly the margin that makes it believable.
+
+    Deliberately a WEAK test used as a DISQUALIFIER, never as proof: it
+    throws out obvious non-earnings filings and leaves the real check --
+    does this exhibit carry the metrics the card declares -- to the caller,
+    who alone knows what the card declares.
+    """
+    low = (text or '').lower()
+    return sum(1 for m in _EARNINGS_MARKERS if m in low) >= need
+
+
+def exhibit_candidates(cik, accession, timeout=DEFAULT_TIMEOUT, fetcher=None):
+    """Every plausible exhibit URL in an accession, best first.
+
+    ★★★ A FILENAME ALLOWLIST WAS THE DEFECT. Requiring 'ex99' or
+    'pressrelease' in the name threw away SEVENTEEN OF FIFTY-SEVEN tickers
+    and reported NO_EXHIBIT -- a reader miss wearing the clothes of a data
+    absence. The releases it could not see were named q2fy27pr.htm (NVDA),
+    exhibit991.htm (TSLA) and googexhibit991q22026.htm (GOOGL); the last
+    even contains '99' and still failed, because 'ex-?99' does not match
+    'exhibit991'.
+
+    So the name is a RANK HINT and never a filter. Candidates are ordered
+    by (looks like an exhibit, size) and the CALLER decides by READING
+    them: a document identifies itself by what is in it, not by what it is
+    called. Only the index pages and the XBRL rendering stubs are dropped,
+    and those by exact role rather than by guess.
     """
     base = ARCHIVE_URL % (int(cik), str(accession).replace('-', ''))
     body, _ = _get(base + 'index.json', timeout, fetcher)
@@ -145,20 +261,29 @@ def exhibit_url(cik, accession, timeout=DEFAULT_TIMEOUT, fetcher=None):
         items = json.loads(body)['directory']['item']
     except Exception:                                   # noqa: BLE001
         return None
-    best, best_size = None, -1
+    out = []
     for it in items:
         name = str(it.get('name') or '')
-        if not name.lower().endswith(('.htm', '.html')):
+        low = name.lower()
+        if not low.endswith(('.htm', '.html')):
             continue
-        if 'index' in name.lower() or not _EXHIBIT.search(name):
+        # the EDGAR index pages and the XBRL viewer's rendering stubs
+        # (R1.htm, R2.htm ...) are never the release
+        if 'index' in low or _RENDER_STUB.match(low):
             continue
         try:
             size = int(it.get('size') or 0)
         except Exception:                               # noqa: BLE001
             size = 0
-        if size > best_size:
-            best, best_size = name, size
-    return (base + best) if best else None
+        out.append((1 if _EXHIBIT.search(low) else 0, size, base + name))
+    out.sort(reverse=True)
+    return [u for _h, _s, u in out]
+
+
+def exhibit_url(cik, accession, timeout=DEFAULT_TIMEOUT, fetcher=None):
+    """The single best-guess exhibit URL, or None. Prefer exhibit_text()."""
+    found = exhibit_candidates(cik, accession, timeout, fetcher)
+    return found[0] if found else None
 
 
 def to_text(html):
@@ -172,6 +297,38 @@ def to_text(html):
     """
     import html as _h
     return backfill._strip_html(_h.unescape(html or ''))
+
+
+def exhibit_text(cik, accession, timeout=DEFAULT_TIMEOUT, fetcher=None):
+    """(text, outcome, url) for one accession. The shared leg.
+
+    ★ ONE CODE PATH FOR THE LIVE CARD AND THE CORPUS. A sweep that fetched
+    documents by a different route than the 4:15pm path would be measuring
+    a transport nothing actually uses, and every number it produced would
+    carry a silent asterisk.
+    """
+    found = exhibit_candidates(cik, accession, timeout, fetcher)
+    if not found:
+        return None, NO_EXHIBIT, None
+    # ★ READ, THEN DECIDE. The ranking is a hint; the document is the
+    # evidence. Walking the candidates and keeping the first that is both
+    # structured and recognisably an earnings release is what let the
+    # filename allowlist go, and with it the seventeen false NO_EXHIBITs.
+    best = (None, NO_EXHIBIT, found[0])
+    for url in found[:MAX_CANDIDATES]:
+        html, _status = _get(url, timeout, fetcher)
+        if not html:
+            best = (None, FETCH_FAILED, url)
+            continue
+        text = to_text(html)
+        if not extract.has_line_structure(text):
+            best = (None, NO_STRUCTURE, url)
+            continue
+        if not looks_like_earnings(text):
+            best = (None, NOT_EARNINGS, url)
+            continue
+        return text, OK, url
+    return best
 
 
 def press_release(ticker, on=None, timeout=DEFAULT_TIMEOUT, fetcher=None):
@@ -192,16 +349,8 @@ def press_release(ticker, on=None, timeout=DEFAULT_TIMEOUT, fetcher=None):
     accession, _accepted = filing_on(cik, on, timeout, fetcher)
     if not accession:
         return done(None, NO_FILING)
-    url = exhibit_url(cik, accession, timeout, fetcher)
-    if not url:
-        return done(None, NO_EXHIBIT)
-    html, _status = _get(url, timeout, fetcher)
-    if not html:
-        return done(None, FETCH_FAILED, url)
-    text = to_text(html)
-    # ★ THE ONLY REASON THIS MODULE EXISTS IS STRUCTURE. Returning a capture
-    # that has none would swap one unreadable document for another while
-    # reporting success.
-    if not extract.has_line_structure(text):
-        return done(None, NO_STRUCTURE, url)
-    return done(text, OK, url)
+    # ★ THE ONLY REASON THIS MODULE EXISTS IS STRUCTURE. exhibit_text
+    # discards a capture that has none, rather than swapping one unreadable
+    # document for another while reporting success.
+    text, outcome, url = exhibit_text(cik, accession, timeout, fetcher)
+    return done(text, outcome, url)

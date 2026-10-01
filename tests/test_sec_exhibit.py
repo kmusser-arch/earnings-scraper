@@ -28,7 +28,9 @@ SUBS = ('{"filings":{"recent":{'
         '"filingDate":["2026-09-30","2026-08-26"],'
         '"acceptanceDateTime":["2026-09-30T20:02:22.000Z",'
         '"2026-08-26T12:06:55.000Z"],'
-        '"accessionNumber":["0000723125-26-000018","0001104659-26-101067"]}}}')
+        '"items":["2.02,9.01","5.02"],'
+        '"accessionNumber":["0000723125-26-000018",'
+        '"0001104659-26-101067"]}}}')
 INDEX = ('{"directory":{"item":['
          '{"name":"mu-20260930.htm","size":"28747"},'
          '{"name":"a2026q4ex991-pressrelease.htm","size":"356891"},'
@@ -37,11 +39,23 @@ INDEX = ('{"directory":{"item":['
 
 #: a structured exhibit, and the entity EDGAR actually writes for +/-
 EXHIBIT = ('<html><body><p>Business Outlook</p>'
+           + '<p>Fourth quarter fiscal 2026 results</p>'
+           + '<p>GAAP net income, or per share, diluted</p>'
+           + '<p>Gross margin and operating income guidance</p>'
            + ''.join('<tr><td>Revenue</td><td>$61.5 billion &#177; $1.5 '
                      'billion</td></tr>' for _ in range(40))
            + '</body></html>')
 
-FLAT = '<html><body><p>' + ('word ' * 3000) + '</p></body></html>'
+FLAT = ('<html><body><p>' + ('revenue gross margin per share fiscal ' * 400)
+        + '</p></body></html>')
+
+#: ★ an 8-K that is NOT an earnings release. Structured, fetches cleanly,
+#: and must still be refused -- 62% of 8-Ks look like this.
+DEPARTURE = ('<html><body>'
+             + ''.join('<p>On September 30, 2026 the Board appointed a new '
+                       'director pursuant to the agreement.</p>'
+                       for _ in range(40))
+             + '</body></html>')
 
 
 def fake(exhibit=EXHIBIT, index=INDEX, subs=SUBS, tickers=TICKERS):
@@ -99,6 +113,29 @@ def main():
           'contract is "a better-shaped document, or nothing", and '
           'returning a flat document while reporting OK would make the '
           'caller discard a wire body it could still have read' % out)
+
+    # ── ★★★ 62% OF 8-Ks ARE NOT EARNINGS ─────────────────────────────────
+    # Measured over all 57 library tickers: 3,893 8-Ks, 1,495 carrying Item
+    # 2.02. A departure announcement that parsed cleanly and scored as a
+    # print would be a fabricated read with full provenance behind it.
+    sec._TICKERS = {}
+    _t, out, _ms, _u = sec.press_release('MU', '2026-09-30',
+                                         fetcher=fake(exhibit=DEPARTURE))
+    check(out == sec.NOT_EARNINGS and _t is None,
+          'a STRUCTURED 8-K that is not an earnings release is refused '
+          '(%s) — it fetches cleanly and parses, and that is exactly what '
+          'makes it dangerous' % out)
+
+    # ── ★★ ITEM 2.02 IS THE ISSUER'S OWN ANSWER ──────────────────────────
+    SUBS_NO_202 = SUBS.replace('"2.02,9.01"', '"5.02"')
+    sec._TICKERS = {}
+    _t, out, _ms, _u = sec.press_release('MU', '2026-09-30',
+                                         fetcher=fake(subs=SUBS_NO_202))
+    check(out == sec.NO_FILING,
+          'an 8-K filed under Item 5.02 (departures) is not even fetched '
+          '(%s) — the filer declared what it was, and guessing from the '
+          'date would be re-deriving in ignorance something already stated'
+          % out)
 
     # ── the unresolvable paths ───────────────────────────────────────────
     sec._TICKERS = {}
