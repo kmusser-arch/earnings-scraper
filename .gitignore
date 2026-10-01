@@ -34,3 +34,6 @@ desktop.ini
 # these directories is created on demand by cli.py, listener.py and
 # watchlist.py, so nothing needs a placeholder.
 earnings_scraper/state/
+
+# scratch paste for `watch -f`
+nke.txt
