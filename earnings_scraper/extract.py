@@ -762,12 +762,52 @@ def guarded(label, fn, *args, **kwargs):
 #: threshold sits an order of magnitude clear of both sides.
 MAX_CHARS_PER_LINE = 400
 
+#: ★★★★ A FLOOR WAS PROPOSED HERE AND THE PREMISE WAS FALSE. KEPT AS A
+#: MEASUREMENT, DELIBERATELY NOT WIRED.
+#:
+#: The reasoning was: ORCL's exhibit renders ONE TABLE CELL PER LINE --
+#: 7,496 lines, 82.6% blank -- so no horizontal reader can assemble a row,
+#: and unlike the ceiling it fails by PUBLISHING A FRAGMENT rather than
+#: refusing (0.001 against a key of 6.582, three of the four mismatches in
+#: the five-spec corpus run). Measured over 109 exhibits, 20 separated the
+#: 12 fragmented documents from a healthy band at p25=45.5.
+#:
+#: ★★★ THEN THE WIRE FIXTURES SAID NO. The real HPE and SNOW wire bodies
+#: are 2.8 and 2.4 CHARS PER LINE -- more fragmented than ORCL -- and the
+#: table reader reads them CORRECTLY today:
+#:
+#:     HPE wire, 'Net revenue\n\n\n$\n\n\n12,213\n\n\n', 94% blank lines
+#:     -> tables.row_value_cells_at returns 12213.0, and has all along
+#:
+#: So one-cell-per-line is NOT an unreadable shape; it is a shape this
+#: reader already handles. The floor would have refused 18 assertions'
+#: worth of working rows on real wire bodies. ORCL's mismatches have some
+#: other cause, still unfound.
+#:
+#: THE CORPUS ALONE COULD NOT HAVE CAUGHT THIS: the false positives live
+#: in the WIRE fixtures, which is where the shape is most extreme.
+MIN_CHARS_PER_LINE = 20
+
 
 def chars_per_line(text):
     """How much text sits between line breaks. Large means NO STRUCTURE."""
     if not text:
         return 0.0
     return float(len(text)) / max(1, text.count(chr(10)))
+
+
+def is_fragmented(text):
+    """MEASUREMENT ONLY -- one cell per line. NOT a refusal condition.
+
+    ★★★ NOTHING CALLS THIS AS A GATE, AND THAT IS THE FINDING. See
+    MIN_CHARS_PER_LINE: the real HPE and SNOW wire bodies sit at 2.8 and
+    2.4 chars per line and their table rows read correctly, so a low ratio
+    does not mean unreadable. Kept so the shape can be REPORTED -- it is
+    still a useful thing to know about a document -- and so the next person
+    to propose this floor finds the disproof instead of re-deriving it.
+    """
+    cpl = chars_per_line(text)
+    return 0 < cpl < MIN_CHARS_PER_LINE
 
 
 def has_line_structure(text):
@@ -1435,6 +1475,20 @@ def value_for(text, row, window=260, record=None):
                          'reader to work on. Refusing rather than inventing '
                          'a cell boundary.'
                          % (chars_per_line(text), MAX_CHARS_PER_LINE)))
+
+    # ★★★★ AND THE SAME REFUSAL FROM THE OTHER END. One cell per line is
+    # not a readable table either, and it fails in the EXPENSIVE direction:
+    # the ceiling REFUSES, the floor PUBLISHES A FRAGMENT. Three of the four
+    # mismatches in the five-spec corpus run came from a document like this.
+    #
+    # ★★★ BUT IT DISABLES THE TABLE PATH, NOT THE ROW. whereKind is an
+    # ORDERED PREFERENCE, and a fragmented document is still perfectly
+    # readable as PROSE. My first cut of this gate refused on 'TABLE in
+    # kinds' and cost ORCL[7] its correct 1.92 -- a row that declares
+    # ['TABLE','PROSE','WRAPPED'] and had actually read the figure from the
+    # sentence 'non-GAAP Earnings per Share up 30% ... to $1.92'. Killing a
+    # correct value to prevent a wrong one is not the trade; dropping the
+    # reader that cannot work and keeping the ones that can is.
 
     mark = len(READER_FAILURES)
     try:

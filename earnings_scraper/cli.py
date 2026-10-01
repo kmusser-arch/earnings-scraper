@@ -300,6 +300,13 @@ def cmd_specaudit(args):
             print('  %-14s NO EXHIBIT CACHED' % rid)
             continue
         audited += 1
+        if args.fences:
+            print('')
+            print('=' * 96)
+            print('%s  fenced regions, exhibit %s' % (rid, doc.get('filingDate')))
+            print('=' * 96)
+            specaudit.dump_fences(rec, doc['text'], head=args.head)
+            print('')
         miss, n = specaudit.report(rec, doc['text'], log=lambda _s: None)
         total += n
         missing += miss
@@ -822,6 +829,12 @@ def build_parser():
     sa.add_argument('tickers', nargs='*')
     sa.add_argument('--prior', action='store_true',
                     help='audit against the PRIOR quarter, which is what 0c requires while a spec is being authored')
+    sa.add_argument('--fences', action='store_true',
+                    help='DUMP WHAT FALLS INSIDE EACH FENCE. Presence is '
+                         'necessary, not sufficient: SNOW passed the string '
+                         'audit and still fenced the customer counts.')
+    sa.add_argument('--head', type=int, default=0,
+                    help='show only the first N lines of each span')
     sa.set_defaults(func=cmd_specaudit)
 
     st = sub.add_parser('selftest',

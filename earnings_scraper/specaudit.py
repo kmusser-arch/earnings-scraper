@@ -24,11 +24,21 @@ right NUMBER sits inside the fence; only a read can.
 """
 
 from . import corpus
+from . import extract
 from . import registry
 
 #: the authored strings that must occur in the document VERBATIM. Every one
 #: is matched by the reader as a literal substring, case-insensitively.
-MATCHED_FIELDS = ('sectionAnchor', 'spanTerminator', 'documentLabel')
+#:
+#: ★★★ documentLabelS, PLURAL, AND THE SINGULAR HERE WAS A REAL DEFECT.
+#: The first cut of this auditor listed 'documentLabel'. Every one of the
+#: 111 spec'd rows in the library writes 'documentLabels', so the auditor
+#: checked ZERO labels and reported "21 of 79 absent" on anchors and
+#: terminators alone -- a clean-looking number over a field it never read.
+#: Exactly the failure this module exists to catch, in the module itself:
+#: a check that cannot fail is not a check.
+MATCHED_FIELDS = ('sectionAnchor', 'spanTerminator', 'documentLabels',
+                  'documentLabel')
 
 
 def authored_strings(record):
@@ -79,6 +89,67 @@ def exhibit_for(record, ticker=None, prior=False, out_dir=None):
         return same[0] if same else None
     earlier = [d for d in docs if (d.get('filingDate') or '') < on]
     return earlier[0] if earlier else None
+
+
+def fenced_regions(record, text):
+    """[(row, anchor, terminator, [(start, end, body), ...])] per spec'd row.
+
+    ★★★★ "DID MY STRING APPEAR" IS THE CHEAP QUESTION. THIS IS THE REAL ONE.
+
+    SNOW's anchor PASSED the presence audit and still fenced the wrong
+    region: the row wanted product revenue of $1,491.9M and the tied
+    candidates were 828 and 829, the CUSTOMER COUNTS. Presence is necessary
+    and not sufficient, and nothing short of looking at what falls inside
+    the fence can tell the two apart.
+
+    ★ A ROW WITH NO ANCHOR IS NOT AN EMPTY FENCE, IT IS THE WHOLE DOCUMENT.
+    Reported as such, because 'no fence' and 'a fence that found nothing'
+    are opposite problems: the first searches everything and ties, the
+    second searches nothing and refuses.
+    """
+    out = []
+    rows = (record.get('preEarnings') or {}).get('keyKPIs') or []
+    for i, row in enumerate(rows):
+        spec = registry.spec_for(row) or {}
+        if registry.status_of(spec) != 'EXTRACTABLE':
+            continue
+        anchor = spec.get('sectionAnchor')
+        term = spec.get('spanTerminator')
+        if not anchor:
+            out.append((i, None, term, [(0, len(text or ''), None)]))
+            continue
+        spans = extract.section_spans(text, anchor, term) or []
+        out.append((i, anchor, term,
+                    [(s[0], s[1], (text or '')[s[0]:s[1]]) for s in spans]))
+    return out
+
+
+def dump_fences(record, text, log=None, width=96, head=0):
+    """Print what actually falls inside each row's fence."""
+    log = log if log is not None else print
+    rows = (record.get('preEarnings') or {}).get('keyKPIs') or []
+    for i, anchor, term, spans in fenced_regions(record, text):
+        name = ((rows[i] or {}).get('name') or '')[:46]
+        log('')
+        log('-' * width)
+        log('[%-2d] %s' % (i, name))
+        log('     anchor     %r' % (anchor,))
+        log('     terminator %r' % (term,))
+        if anchor is None:
+            log('     ** NO ANCHOR — this row searches the WHOLE document **')
+            continue
+        if not spans:
+            log('     ** 0 SPANS — the anchor is not in this document **')
+            continue
+        log('     %d span(s)' % len(spans))
+        for k, (a, b, body) in enumerate(spans):
+            lines = (body or '').split(chr(10))
+            shown = lines[:head] if head else lines
+            log('     --- span %d: chars %d..%d, %d lines%s ---'
+                % (k + 1, a, b, len(lines),
+                   '' if not head else ' (first %d)' % head))
+            for ln in shown:
+                log('       | %s' % ln[:width - 9])
 
 
 def report(record, text, log=None):
