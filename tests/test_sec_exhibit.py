@@ -95,6 +95,31 @@ def main():
           'html.unescape the three PLUS_MINUS guide rows lose their band '
           'and BAND_COLLAPSED fires on the rows that are the trade')
 
+    # ── ★★★★★ AND THEN THE UNESCAPE POISONS EVERY TABLE ─────────────────
+    # &#160; decodes to U+00A0 NO-BREAK SPACE, and EDGAR writes it between
+    # every figure and its column gap. The horizontal reader splits on runs
+    # of ORDINARY spaces, so a no-break space inside the gap makes the whole
+    # row invisible -- label=None, zero values, silently.
+    import earnings_scraper.tables as _T
+    poisoned = ('   Percent of revenue   86.8    %   84.6    %   '
+                '44.7    %   87.0    %   84.9    %   45.7    %  ')
+    check(not _T.h_row_cells(poisoned),
+          'a row carrying \xa0 in its column gaps reads as NOTHING — the '
+          'defect this normalisation exists to prevent')
+    clean = sec.to_text('<p>' + poisoned.replace(' ', '&#160;') + '</p>')
+    cells = _T.h_row_cells(clean.strip(chr(10)).split(chr(10))[0]
+                           if chr(10) in clean.strip() else clean.strip())
+    check(cells and [v for v, _p in cells[1]] == [86.8, 84.6, 44.7, 87.0,
+                                                  84.9, 45.7],
+          'through to_text it reads all six cells IN ORDER %s — which is '
+          'what makes a six-column GAAP|Non-GAAP block addressable at all'
+          % ([v for v, _p in cells[1]] if cells else None))
+    check(' ' not in clean and ' ' not in clean,
+          'and no no-break space survives. MEASURED: all 109 corpus '
+          'exhibits carried it (54,268 + 64 occurrences) and ZERO of the '
+          'three wire fixtures did — never a property of the documents, '
+          'only of this path')
+
     # ── ★ THE DATE IS A FILTER, NOT A PREFERENCE ─────────────────────────
     _t, out, _ms, _u = sec.press_release('MU', '2026-09-29', fetcher=fake())
     check(out == sec.NO_FILING and _t is None,

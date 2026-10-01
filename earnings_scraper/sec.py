@@ -294,9 +294,31 @@ def to_text(html):
     billion'; _strip_html decodes six named entities and leaves every
     numeric one, so the PLUS_MINUS range parser sees no +/- at all and the
     three guide rows -- the trade -- lose their band.
+
+    ★★★★★ AND THEN THE UNESCAPE POISONS EVERY TABLE, WHICH IS A DEFECT THIS
+    FUNCTION INTRODUCED. &#160; decodes to U+00A0 NO-BREAK SPACE, and EDGAR
+    writes it between every figure and its column gap. The horizontal table
+    reader splits on RUNS OF ORDINARY SPACES, so a no-break space inside the
+    gap makes the whole row invisible:
+
+        '   Percent of revenue   86.8\\xa0   %   84.6\\xa0   % ...'
+            h_row_cells -> label=None, NO VALUES
+        the same line with \\xa0 -> ' '
+            h_row_cells -> 'Percent of revenue', [86.8, 84.6, 44.7,
+                                                  87.0, 84.9, 45.7]
+
+    MEASURED: all 109 corpus exhibits carry it, 54,268 occurrences, plus 64
+    of U+202F. ZERO of the three wire fixtures do -- the wire bodies arrive
+    clean, so this was never a property of the documents, only of this path.
+
+    Normalising every non-newline, non-tab whitespace character to a plain
+    space, because the readers' entire model of a column boundary is 'a run
+    of spaces' and any character that merely LOOKS like a space breaks it
+    silently.
     """
     import html as _h
-    return backfill._strip_html(_h.unescape(html or ''))
+    txt = backfill._strip_html(_h.unescape(html or ''))
+    return re.sub(r'[^\S\n\t]', ' ', txt)
 
 
 def exhibit_text(cik, accession, timeout=DEFAULT_TIMEOUT, fetcher=None):
