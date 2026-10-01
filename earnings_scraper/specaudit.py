@@ -37,8 +37,8 @@ from . import registry
 #: terminators alone -- a clean-looking number over a field it never read.
 #: Exactly the failure this module exists to catch, in the module itself:
 #: a check that cannot fail is not a check.
-MATCHED_FIELDS = ('sectionAnchor', 'spanTerminator', 'documentLabels',
-                  'documentLabel')
+MATCHED_FIELDS = ('sectionAnchor', 'spanTerminator', 'spanStartAfter',
+                  'documentLabels', 'documentLabel')
 
 
 def authored_strings(record):
@@ -92,7 +92,7 @@ def exhibit_for(record, ticker=None, prior=False, out_dir=None):
 
 
 def fenced_regions(record, text):
-    """[(row, anchor, terminator, [(start, end, body), ...])] per spec'd row.
+    """[(row, anchor, startAfter, terminator, [(start,end,body)...])] per row.
 
     ★★★★ "DID MY STRING APPEAR" IS THE CHEAP QUESTION. THIS IS THE REAL ONE.
 
@@ -116,10 +116,19 @@ def fenced_regions(record, text):
         anchor = spec.get('sectionAnchor')
         term = spec.get('spanTerminator')
         if not anchor:
-            out.append((i, None, term, [(0, len(text or ''), None)]))
+            out.append((i, None, spec.get('spanStartAfter'), term,
+                        [(0, len(text or ''), None)]))
             continue
-        spans = extract.section_spans(text, anchor, term) or []
-        out.append((i, anchor, term,
+        # ★★★ spanStartAfter, AND LEAVING IT OUT MADE THIS DUMP A LIE.
+        # The reader passes it (extract.py:1670); the first cut of this
+        # function did not, so a two-level fence -- anchor pins the TABLE,
+        # spanStartAfter pins the region INSIDE it -- would have been
+        # dumped at its UNTIGHTENED width and reported as still broken.
+        # An authoring check that does not read the field the author just
+        # set is the documentLabel/documentLabels defect a third time.
+        spans = extract.section_spans(text, anchor, term,
+                                      spec.get('spanStartAfter')) or []
+        out.append((i, anchor, spec.get('spanStartAfter'), term,
                     [(s[0], s[1], (text or '')[s[0]:s[1]]) for s in spans]))
     return out
 
@@ -128,12 +137,13 @@ def dump_fences(record, text, log=None, width=96, head=0):
     """Print what actually falls inside each row's fence."""
     log = log if log is not None else print
     rows = (record.get('preEarnings') or {}).get('keyKPIs') or []
-    for i, anchor, term, spans in fenced_regions(record, text):
+    for i, anchor, startafter, term, spans in fenced_regions(record, text):
         name = ((rows[i] or {}).get('name') or '')[:46]
         log('')
         log('-' * width)
         log('[%-2d] %s' % (i, name))
         log('     anchor     %r' % (anchor,))
+        log('     startAfter %r' % (startafter,))
         log('     terminator %r' % (term,))
         if anchor is None:
             log('     ** NO ANCHOR — this row searches the WHOLE document **')
