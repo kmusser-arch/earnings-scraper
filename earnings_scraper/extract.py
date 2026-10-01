@@ -1668,6 +1668,36 @@ def _value_for_pass(text, row, window=260, record=None, hit_pred=None):
     anchors = section_spans(src, spec.get('sectionAnchor'),
                             spec.get('spanTerminator'),
                             spec.get('spanStartAfter'))
+
+    # ★★★★★ AN EMPTY FENCE IS NOT A PERMISSIVE FENCE. The region filter
+    # below reads `if anchors and not in_any(...)`, so an EMPTY list makes
+    # the whole check vanish and the entire document becomes the fence.
+    # That is "absence treated as permission" -- the same defect as
+    # `(column_basis(desc) or want) == want` keeping an unlabelled column.
+    #
+    # It converts an AUTHORING MISTAKE INTO A WRONG NUMBER instead of a
+    # refusal. NKE[8] and NKE[9] had ZERO spans and published anyway:
+    # Converse 3.0 against a true 263, EMEA 0.001 against a true $3.2B.
+    #
+    # MEASURED report-only over the corpus AND the wire fixtures and
+    # captures -- 312 row/document pairs, 28 with an anchor declared and
+    # not found:
+    #     18  already refuse, no change
+    #     10  publish from an empty fence  <- all become refusals
+    #      0  CORRECT VALUES LOST
+    # The ten include SNDK 31.5 against a hand-read 45.0, WDC 51.5 against
+    # 55.5 and ORCL 60.0 against 67.0, so this is not only NKE's two.
+    if spec.get('sectionAnchor') and not anchors:
+        return dict(value=None, specState=spec.get('specState'),
+                    candidates=[], reasonCode='EMPTY_FENCE',
+                    why=('EMPTY FENCE: sectionAnchor %r is declared and '
+                         'matches NOTHING in this document, so there is no '
+                         'region to read. Refusing rather than falling back '
+                         'to the whole release, which is how an anchor that '
+                         'was never found publishes a number from somewhere '
+                         'else entirely.'
+                         % (spec.get('sectionAnchor'),))[:400])
+
     excludes = section_spans(src, spec.get('excludeSections'))
 
     #: whereKind ROUTING IS NOT ENFORCED HERE, AND THAT IS MEASURED.

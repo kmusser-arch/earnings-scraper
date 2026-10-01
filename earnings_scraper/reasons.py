@@ -34,7 +34,8 @@ CODES = ('NO_LABEL', 'NO_LABEL_AFTER_FILTERS', 'UNIT_MISMATCH',
          'CANDIDATE_TIE', 'PERIOD', 'CURRENCY', 'ALL_DELTA', 'BASIS',
          'BASIS_ABSENT', 'BASIS_CONTRADICTS', 'DERIVED_OPERAND',
          'READER_CRASHED', 'SPEC_STATE', 'BAND_COLLAPSED',
-         'SPEC_INVALID', 'PERIOD_ABSENT', 'NO_LINE_STRUCTURE')
+         'SPEC_INVALID', 'PERIOD_ABSENT', 'NO_LINE_STRUCTURE',
+         'EMPTY_FENCE')
 
 
 def verify(text, row, spec, record, got):
@@ -123,6 +124,18 @@ def verify(text, row, spec, record, got):
         if 'TABLE' not in (registry.where_kind(spec) or []):
             return False, ('NO_LINE_STRUCTURE on a row that does not declare '
                            'TABLE -- a prose row needs no line structure')
+    if code == 'EMPTY_FENCE':
+        from . import extract as _x
+        anchor = (spec or {}).get('sectionAnchor')
+        if not anchor:
+            return False, ('EMPTY_FENCE on a row that declares NO '
+                           'sectionAnchor -- an undeclared fence is the '
+                           'whole document by design, not an empty one')
+        if _x.section_spans(text, anchor,
+                            (spec or {}).get('spanTerminator'),
+                            (spec or {}).get('spanStartAfter')):
+            return False, ('EMPTY_FENCE on a row whose anchor %r DOES '
+                           'match in this document' % (anchor,))
     if code == 'PERIOD_ABSENT':
         want = (spec or {}).get('period')
         if want not in ('GUIDE_FY', 'GUIDE_NEXT_Q', 'FY_GUIDE'):
