@@ -542,3 +542,90 @@ def non_negotiable_0b():
 
 
 non_negotiable_0b()
+
+
+def no_line_structure():
+    """★★★★ A TABLE READER CANNOT READ A BODY WITH NO LINES.
+
+    MU's Globe Newswire body is TEN newlines in 18,592 characters -- one
+    continuous string:
+
+        Revenue$61.5 billion +- $1.5 billion$61.5 billion +- $1.5 billion
+
+    You cannot tell from that where the GAAP column ends and Non-GAAP
+    begins: the values are IDENTICAL AND CONCATENATED, and the only reason
+    anyone knows there are two columns is that they read the PDF.
+
+    EVERY READER BUILT THIS MONTH DEPENDS ON LINE STRUCTURE -- hgrid's dash
+    rules, sgrid's stacked cells, vtables' columns, is_section_heading's
+    blank-line adjacency, definitional_spans and guide_sections walking
+    lines. All eight corpus documents have it, so none of this was reachable
+    until a ninth wire delivered a card.
+
+    ★ DETECT AND REFUSE, NEVER REFLOW. Reflowing would INVENT a boundary on
+    the rows that decide trades, and it would be a SIXTH coordinate frame --
+    one WE fabricated rather than one the pipeline created.
+    """
+    from earnings_scraper import extract as X4
+
+    caps = real_frames()
+    if not caps:
+        print('SKIP no captured frames')
+        return
+    dens = {}
+    for name, item, card in caps:
+        t = (card.get('ticker') or '?').upper()
+        dens[t] = (item.get('source'), X4.chars_per_line(item['body']))
+
+    structured = {t: v for t, v in dens.items() if v[1] <= 400}
+    flat = {t: v for t, v in dens.items() if v[1] > 400}
+    check(len(structured) >= 10 and len(flat) >= 1,
+          'SAMPLE FRAME: %d captured frames have line structure, %d do not '
+          '(%s)' % (len(structured), len(flat),
+                    ', '.join('%s %s %.0f/line' % (t, v[0], v[1])
+                              for t, v in flat.items())))
+    check(all(v[1] <= 120 for v in structured.values()),
+          'and every structured one is at or under 120 chars per line, so '
+          'the 400 ceiling sits an order of magnitude clear of both sides')
+
+    # ── DRIVEN RED on the real body ──────────────────────────────────────
+    mu = [i for _n, i, c in caps if (c.get('ticker') or '') == 'MU']
+    if not mu:
+        return
+    body = mu[0]['body']
+    check(not X4.has_line_structure(body),
+          'MU is detected as structureless (%.0f chars per line)'
+          % X4.chars_per_line(body))
+
+    spec = {'specState': 'EXTRACTABLE', 'whereKind': ['TABLE'],
+            'documentLabels': ['Revenue'], 'documentUnit': '$B'}
+    got = X4.value_for(body, {'name': 'x', 'extraction': spec}) or {}
+    check(got.get('value') is None
+          and got.get('reasonCode') == 'NO_LINE_STRUCTURE',
+          'a TABLE row on it REFUSES with the wire shape named, not a '
+          'misleading NO_LABEL: %r' % (got.get('why') or '')[:60])
+    check(got.get('charsPerLine', 0) > 400,
+          'and the refusal carries the measurement (%s), so the claim can '
+          'be checked rather than believed' % got.get('charsPerLine'))
+
+    # ★ ANTI-VACUOUS: a STRUCTURED body must NOT trip it, or every TABLE row
+    # in the corpus would refuse and the suite would still look fine.
+    hpe = os.path.join(HERE, 'fixtures', 'releases', 'HPE-2026-09-02.txt')
+    if os.path.exists(hpe):
+        ok = io.open(hpe, encoding='utf-8').read()
+        check(X4.has_line_structure(ok),
+              'HPE at %.0f chars per line is NOT tripped — the gate is a '
+              'check, not a blanket' % X4.chars_per_line(ok))
+        g2 = X4.value_for(ok, {'name': 'x', 'extraction': spec}) or {}
+        check(g2.get('reasonCode') != 'NO_LINE_STRUCTURE',
+              'and a TABLE row on a structured body is not refused by it')
+
+    # ── and a PROSE row is untouched: it needs no lines ──────────────────
+    prose = dict(spec, whereKind=['PROSE'])
+    g3 = X4.value_for(body, {'name': 'x', 'extraction': prose}) or {}
+    check(g3.get('reasonCode') != 'NO_LINE_STRUCTURE',
+          'a PROSE row on the same body is NOT refused for line structure — '
+          'prose does not need lines (%s)' % g3.get('reasonCode'))
+
+
+no_line_structure()

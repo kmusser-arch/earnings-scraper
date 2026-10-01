@@ -110,6 +110,42 @@ class Listener:
 
     # --- the hot path ---------------------------------------------------------
 
+    def _live_entry(self, ticker):
+        """The card AS IT IS NOW, not as it was when the watchlist was built.
+
+        THE WATCHLIST FROZE THE CONTENT. build_wide derives MEMBERSHIP
+        from the library at runtime and then snapshots the whole
+        prepared card into the entry, so the listener scored a 14:11
+        copy of a card fixed before 15:00 -- every spec'd row refusing
+        SPEC_INVALID on fields the author had already corrected, with
+        nothing erroring and the stale read invisible.
+
+        MEMBERSHIP stays frozen on purpose: who is watched tonight is a
+        decision, and a ticker should not appear or vanish mid-session.
+        CONTENT is re-read, because the card is the config and a config
+        read once at startup is a config that silently goes stale.
+
+        Falls back to the frozen entry on any failure: a re-read that
+        raises must cost nothing, because the frozen card still scores.
+        """
+        frozen = self.entries.get(ticker) or {}
+        if self.model is None:
+            return frozen, 'no model: frozen entry'
+        try:
+            rec = self.model.index_for(
+                time.strftime('%Y-%m-%d')).get(ticker)
+            if rec is None:
+                return frozen, 'not indexed today: frozen entry'
+            fresh = self.model.prepare_from_record(rec)
+        except Exception as exc:                        # noqa: BLE001
+            return frozen, 'live read failed (%s): frozen entry' % (
+                type(exc).__name__,)
+        fresh['note'] = frozen.get('note')
+        fresh['error'] = frozen.get('error')
+        drift = _spec_drift(frozen, fresh)
+        return fresh, drift
+
+
     def handle(self, item):
         self.stats['items'] += 1
         if self.first_frame_at is None:
@@ -205,7 +241,10 @@ class Listener:
         parsed = parse.parse_release(item)
 
         for ticker in matched:
-            entry = self.entries[ticker]
+            # ONE SOURCE, READ AT SCORING TIME.
+            entry, _drift = self._live_entry(ticker)
+            if _drift:
+                print('   * %s: %s' % (ticker, _drift))
             meta = dict(
                 wire=config.WIRE_NAMES.get(item.get('source'), item.get('source')),
                 wireCode=item.get('source'),
@@ -390,6 +429,24 @@ def _raw_figures(parsed):
         out['%s guide ($M)' % key] = '%s-%s (mid %s)' % (g['low'], g['high'],
                                                          g['mid'])
     return out
+
+
+def _spec_drift(frozen, fresh):
+    """A one-line note when the live card differs from the frozen one.
+
+    Silence is the failure mode this exists to end: the stale read cost
+    a whole print and produced no error of any kind.
+    """
+    a = frozen.get('keyKPIs') or []
+    b = fresh.get('keyKPIs') or []
+    if len(a) != len(b):
+        return 'card RE-READ LIVE: %d rows -> %d' % (len(a), len(b))
+    moved = sum(1 for x, y in zip(a, b)
+                if (x or {}).get('extraction') != (y or {}).get('extraction'))
+    if moved:
+        return ('card RE-READ LIVE: %d row spec(s) changed '
+                'since the watchlist was built' % moved)
+    return None
 
 
 def subscribe(client, listener, sources=None, mode=None):

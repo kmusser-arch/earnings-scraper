@@ -1595,3 +1595,94 @@ never blocked on row-level priority:
 What was blocked at 3.6% was *row-level* priority, which governs the basis
 and period strict arms and 0b — a different set of rules. Two fields named
 `priority`, on two objects, feeding two rule families.
+
+---
+
+## ★★★★ 68. THE MU LIVE RUN — WHAT ACTUALLY HAPPENED
+
+**1 of 11 rows resolved, and it did not come from the extraction spec.**
+
+```
+refusalReason recorded at run time, ALL NINE spec'd rows:
+   SPEC: tableLayout='LABEL_THEN_COLUMNS' not in the closed vocabulary
+   SPEC: period='CURRENT_Q' not in the closed vocabulary
+```
+
+**Every spec'd row refused `SPEC_INVALID`. The extractor never ran.**
+Row [2]'s 61.5 came from `score.py`'s generic guidance parser —
+`guides.get('nextQ')`, matching on `'revenue' in name`, nothing to do with
+`sectionAnchor`.
+
+**Cause: the watchlist froze the card.** `build_wide` derives *membership*
+from the library at runtime and then **snapshots the whole prepared card**.
+It was built 14:11, the card was fixed before 15:00, and the listener scored
+the 14:11 copy. **Nothing errored.** Fixed: the card is re-read live at
+scoring time, membership stays frozen, and a drift line prints when the two
+differ.
+
+---
+
+## ★★★★ 69. "N VIOLATIONS" IS MEANINGLESS WITHOUT "ACROSS M FIELDS OF K DECLARED"
+
+`documentUnit` had **no closed list**, so `USD` / `PCT` / `USD_B` passed
+validation and then matched nothing — `unit_class` recognises only `%` and a
+leading `$`. **Zero violations meant zero fields checked**, and that is what
+made a pre-flight call a live card clean three hours before a print on which
+every row refused.
+
+Same shape as basis evidence reading healthy because it was not looking.
+**A preflight that cannot be trusted is worse than none.**
+
+```
+SPEC VALIDATION COVERAGE — 531 of 866 declared matcher fields CHECKED (61%)
+   UNVALIDATED: documentLabels x111 · whereKind x111 · sectionAnchor x31
+                spanTerminator x31 · requiresRangePair x28 · derived x12
+```
+
+★ **And `sectionAnchor` being unvalidated is exactly what let both wrong
+anchors through.** There is no closed vocabulary for free text — but there is
+a cheaper check: **assert the anchor is present in a captured body for that
+ticker at spec-write time**, and flag `UNVERIFIED_ANCHOR` where no capture
+exists. It costs a substring search and would have caught this at 2pm.
+
+---
+
+## ★★★★ 70. NO LINE STRUCTURE — THE WIRE SHAPE NOBODY HAD SEEN
+
+```
+source  chars    newlines   chars/line
+BUS     120,417   35,206        3
+PRN      10,146      101      100
+PZM      18,592       10    1,859     <- MU
+```
+
+MU's Globe Newswire body is **one continuous string**:
+
+```
+Revenue$61.5 billion +- $1.5 billion$61.5 billion +- $1.5 billion
+```
+
+**You cannot tell where the GAAP column ends and Non-GAAP begins.** The
+values are identical and concatenated, and the only reason anyone knows there
+are two columns is that they read the PDF.
+
+**Every reader built this month depends on line structure** — `hgrid`'s dash
+rules, `sgrid`'s stacked cells, `vtables`' columns, `is_section_heading`'s
+blank-line adjacency, `definitional_spans` and `guide_sections` walking
+lines. All eight corpus documents have it, so none of this was reachable
+until a ninth wire delivered a card.
+
+> **DETECT AND REFUSE, NEVER REFLOW.** Reflowing would **invent** a boundary
+> on the rows that decide trades, and it would be a **sixth coordinate
+> frame — one we fabricated** rather than one the pipeline created. `hgrid`
+> is not wrong here; its input is empty.
+
+`NO_LINE_STRUCTURE` is a first-class refusal carrying the measurement.
+Six MU rows now name the wire shape instead of reporting a misleading
+`NO_LABEL`. Prose rows are untouched — prose needs no lines.
+
+★ **And the anchors were authored from the formatted release**, not from a
+captured body. `"FQ1-27 GUIDANCE"` does not exist on the wire; it is
+`FQ1-27GAAP(1) Outlook` with no space. The headline is not repeated in the
+body at all, so six rows fenced to a string that was never there.
+**The document the scraper sees is not the document a person reads.**

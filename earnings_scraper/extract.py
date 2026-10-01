@@ -756,6 +756,43 @@ def guarded(label, fn, *args, **kwargs):
         return None
 
 
+#: a body with fewer than one line break per this many characters carries
+#: no readable structure. MEASURED, NOT PICKED: across 12 captured frames
+#: BUS runs 3-12 chars per line, PRN 78-112, and MU on PZM is 1,859. The
+#: threshold sits an order of magnitude clear of both sides.
+MAX_CHARS_PER_LINE = 400
+
+
+def chars_per_line(text):
+    """How much text sits between line breaks. Large means NO STRUCTURE."""
+    if not text:
+        return 0.0
+    return float(len(text)) / max(1, text.count(chr(10)))
+
+
+def has_line_structure(text):
+    """Can a TABLE reader work on this body at all?
+
+    ★★★★ EVERY READER BUILT THIS MONTH DEPENDS ON LINE STRUCTURE. hgrid reads
+    dash rules, sgrid reads stacked cells, vtables reads columns,
+    is_section_heading reads blank-line adjacency, definitional_spans and
+    guide_sections walk lines. MU's Globe Newswire body has TEN newlines in
+    18,592 characters and arrives as one continuous string:
+
+        Revenue$61.5 billion +- $1.5 billion$61.5 billion +- $1.5 billion
+
+    You cannot tell from that where the GAAP column ends and Non-GAAP
+    begins. The values are IDENTICAL AND CONCATENATED, and the only reason
+    anyone knows there are two columns is that they read the PDF.
+
+    ★★ SO THIS DETECTS AND REFUSES. It does not reflow: reflowing would
+    INVENT a boundary on the rows that decide trades, and it would be a
+    sixth coordinate frame -- one WE fabricated rather than one the pipeline
+    created. hgrid is not wrong here; its input is empty.
+    """
+    return chars_per_line(text) <= MAX_CHARS_PER_LINE
+
+
 def cell_offset(text, line_idx, x=0, stripped=True):
     """Document offset of column `x` on the STRIPPED line `line_idx`.
 
@@ -1381,6 +1418,23 @@ def value_for(text, row, window=260, record=None):
     # handed, so being handed already-dewrapped text dewraps it twice --
     # frame defect n=5, a silent hero refusal.
     _frames.expect(text, _frames.RAW, 'value_for')
+
+    # ★★★★ A TABLE READER CANNOT READ A BODY WITH NO LINES. Refusing NAMES
+    # the wire shape; guessing a cell boundary would be a wrong number in
+    # green on the rows that decide trades.
+    _sp0 = registry.spec_for(row) or {}
+    _kinds0 = registry.where_kind(_sp0) or []
+    if 'TABLE' in _kinds0 and not has_line_structure(text):
+        return dict(value=None, specState=_sp0.get('specState'),
+                    reasonCode='NO_LINE_STRUCTURE',
+                    charsPerLine=round(chars_per_line(text), 1),
+                    why=('NO LINE STRUCTURE: %d characters per line against a '
+                         'ceiling of %d. This wire delivers the body as one '
+                         'continuous string, so there are no dash rules, no '
+                         'column alignment and no blank lines for a table '
+                         'reader to work on. Refusing rather than inventing '
+                         'a cell boundary.'
+                         % (chars_per_line(text), MAX_CHARS_PER_LINE)))
 
     mark = len(READER_FAILURES)
     try:

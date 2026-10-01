@@ -174,6 +174,22 @@ def main():
     # SOFT by request -- the author is the one tripping it while coverage
     # builds one earnings season at a time, and a blocked build is worse
     # than a visible count.
+    # ★★★★ 'N VIOLATIONS' IS MEANINGLESS WITHOUT 'ACROSS M FIELDS OF K
+    # DECLARED'. documentUnit had no closed list, so it contributed zero
+    # violations because zero of its values were checked.
+    _chk = _dec = 0
+    _unval = collections.Counter()
+    for _rec in lib['records']:
+        for _r in ((_rec.get('preEarnings') or {}).get('keyKPIs') or []):
+            _sp = _r.get('extraction')
+            if not _sp:
+                continue
+            _c, _d, _u = VOC.coverage(_sp)
+            _chk += len(_c)
+            _dec += len(_d)
+            for _f in _u:
+                _unval[_f] += 1
+
     _p1 = _miss = _recs = _trip = 0
     for _rec in lib['records']:
         _pre = (_rec.get('preEarnings') or {}).get('keyKPIs') or []
@@ -191,6 +207,13 @@ def main():
     print('SWEEP — one writer, all six verdicts, denominator attached')
     print('=' * 100)
     print(SW.report(counts, rows_seen))
+    if _dec:
+        print('   SPEC VALIDATION COVERAGE — %d of %d declared matcher fields '
+              'CHECKED (%.0f%%)' % (_chk, _dec, 100.0 * _chk / _dec))
+        if _unval:
+            print('      UNVALIDATED (no closed list, so silently passing): '
+                  '%s' % ', '.join('%s x%d' % kv
+                                   for kv in _unval.most_common(6)))
     if _p1:
         print('   NON-NEGOTIABLE 0b — extraction spec on every priority-1 '
               'row: %d of %d MISSING across %d record(s) (%d clean). SOFT.'

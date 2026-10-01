@@ -34,7 +34,7 @@ CODES = ('NO_LABEL', 'NO_LABEL_AFTER_FILTERS', 'UNIT_MISMATCH',
          'CANDIDATE_TIE', 'PERIOD', 'CURRENCY', 'ALL_DELTA', 'BASIS',
          'BASIS_ABSENT', 'BASIS_CONTRADICTS', 'DERIVED_OPERAND',
          'READER_CRASHED', 'SPEC_STATE', 'BAND_COLLAPSED',
-         'SPEC_INVALID', 'PERIOD_ABSENT')
+         'SPEC_INVALID', 'PERIOD_ABSENT', 'NO_LINE_STRUCTURE')
 
 
 def verify(text, row, spec, record, got):
@@ -114,6 +114,15 @@ def verify(text, row, spec, record, got):
         if not rf or rf == 'POINT':
             return False, ('BAND_COLLAPSED on a row whose rangeForm is %r — '
                            'there was no band to collapse' % rf)
+    if code == 'NO_LINE_STRUCTURE':
+        from . import extract as _x
+        if _x.has_line_structure(text):
+            return False, ('NO_LINE_STRUCTURE on a body with %0.0f chars per '
+                           'line, which is inside the ceiling'
+                           % _x.chars_per_line(text))
+        if 'TABLE' not in (registry.where_kind(spec) or []):
+            return False, ('NO_LINE_STRUCTURE on a row that does not declare '
+                           'TABLE -- a prose row needs no line structure')
     if code == 'PERIOD_ABSENT':
         want = (spec or {}).get('period')
         if want not in ('GUIDE_FY', 'GUIDE_NEXT_Q', 'FY_GUIDE'):

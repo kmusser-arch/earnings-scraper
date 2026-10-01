@@ -42,6 +42,15 @@ _CLOSED = {
     'exclusionClass': ('NOT_IN_PR', 'CALL_SOURCED', 'QUALITATIVE',
                        'NOT_AUTOMATABLE'),
     'rowDisposition': ('CARD_DEFECT', 'UNSPECD'),
+    # ★★★★ documentUnit HAD NO CLOSED LIST, so 'USD_B' / 'PCT' / 'USD' passed
+    # validation and then matched nothing. unit_class only recognises '%' and
+    # a leading '$'. ZERO VIOLATIONS MEANT ZERO FIELDS CHECKED, and that is
+    # what made a pre-flight report a live card clean three hours before a
+    # print on which every row refused.
+    'documentUnit': ('$', '$B', '$M', '$K', '%', 'count', 'customers',
+                     'MW / count'),
+    'storedUnit': ('$', '$B', '$M', '$K', '%', 'count', 'customers',
+                   'MW / count'),
 }
 
 #: a matcher field may never be this long -- prose, not a declaration
@@ -153,6 +162,34 @@ def shape_warnings(spec):
     """
     return [(f, str(spec.get(f))[:60]) for f in LIST_FIELDS
             if isinstance(spec.get(f), str)]
+
+
+#: matcher fields a reader ACTS on. Any without a closed list is UNVALIDATED.
+MATCHER_FIELDS = ('basis', 'period', 'currencyBasis', 'tableLayout',
+                  'rangeForm', 'specState', 'basisLocation', 'exclusionClass',
+                  'rowDisposition', 'documentUnit', 'storedUnit',
+                  'documentLabels', 'sectionAnchor', 'spanTerminator',
+                  'disqualify', 'whereKind', 'sourceRows', 'derived',
+                  'requiresRangePair', 'priority')
+
+
+def coverage(spec):
+    """(checked, declared, unvalidated) for one spec.
+
+    ★★★★ 'N VIOLATIONS' IS MEANINGLESS WITHOUT 'ACROSS M FIELDS OF K
+    DECLARED'. documentUnit had no closed list, so it contributed zero
+    violations because zero of its values were checked -- and a pre-flight
+    reported a live card clean on that basis. Same shape as basis evidence
+    reading healthy because it was not looking.
+
+    A PREFLIGHT THAT CANNOT BE TRUSTED IS WORSE THAN NONE, so any matcher
+    field without a closed list is NAMED UNVALIDATED rather than silently
+    passing.
+    """
+    declared = [f for f in MATCHER_FIELDS if (spec or {}).get(f) is not None]
+    checked = [f for f in declared if f in _CLOSED or f == 'basis']
+    unvalidated = [f for f in declared if f not in checked]
+    return checked, declared, unvalidated
 
 
 def violations(spec):
