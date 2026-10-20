@@ -321,6 +321,82 @@ def cmd_specaudit(args):
     return 1 if missing else 0
 
 
+def cmd_score8k(args):
+    """Score from the SEC 8-K EX-99.1 rather than the wire body.
+
+    ★★★ THE DOCUMENT THE SPEC DESCRIBES. NN0c requires specs be
+    authored against the exhibit; the listener reads the wire. Those
+    are different shapes -- a 49-line fence on the exhibit is 1,517
+    lines on the wire body with the same anchors and every authored
+    string present -- so a spec verified on one says nothing about the
+    other.
+    """
+    import time as _t
+    from . import parse as _parse
+    from . import score as _score
+    from . import scorecard as _sc
+    from . import gate as _gate
+    from . import sec
+    if not sec.user_agent():
+        print('SEC_CONTACT is not set. Put a real address in .env:')
+        print('    SEC_CONTACT=you@example.com')
+        return 1
+    model = Model()
+    on = args.date or _t.strftime('%Y-%m-%d')
+    wl = watchlist_mod.load() or {}
+    entries = wl.get('entries') or {}
+    names = [t.upper() for t in (args.tickers or [])]
+    if not names:
+        names = sorted(model.index_for(on).keys())
+    rc = 0
+    for ticker in names:
+        text, outcome, ms, url = sec.press_release(ticker, on)
+        if outcome != sec.OK:
+            print('%-6s %s  (%d ms)' % (ticker, outcome, ms))
+            rc = 1
+            continue
+        print('')
+        print('=' * 78)
+        print('%s  --  8-K EX-99.1, %d bytes, %.1f chars/line, %d ms'
+              % (ticker, len(text),
+                 float(len(text)) / max(1, text.count(chr(10))), ms))
+        print('   %s' % url)
+        print('=' * 78)
+        entry = entries.get(ticker)
+        if entry is None:
+            try:
+                rec = model.index_for(on)[ticker]
+                entry = model.prepare_from_record(rec)
+            except Exception as exc:                    # noqa: BLE001
+                print('   no card for %s today (%s)'
+                      % (ticker, type(exc).__name__))
+                rc = 1
+                continue
+        item = {'headline': '%s earnings release' % ticker,
+                'body': text, 'source': 'SEC'}
+        try:
+            card = _score.score_release(_parse.parse_release(item),
+                                        entry, model)
+        except Exception as exc:                        # noqa: BLE001
+            print('   scoring raised %r' % (exc,))
+            rc = 1
+            continue
+        try:
+            fw = _gate.framework_from(model) if model else None
+            print(_sc.render_card(card, entry, fw))
+        except Exception as exc:                        # noqa: BLE001
+            print('   render failed: %r' % (exc,))
+            rc = 1
+        if args.save:
+            import json as _json
+            p = ticker + '-8K-' + on + '.json'
+            io.open(p, 'w', encoding='utf-8').write(
+                _json.dumps(card, indent=1, ensure_ascii=False,
+                            default=str))
+            print('   saved %s' % p)
+    return rc
+
+
 def cmd_wirecheck(args):
     """Subscribe to every entitled source and prove frames arrive.
 
@@ -836,6 +912,14 @@ def build_parser():
     sa.add_argument('--head', type=int, default=0,
                     help='show only the first N lines of each span')
     sa.set_defaults(func=cmd_specaudit)
+
+    s8 = sub.add_parser('score8k',
+                        help='score from the SEC 8-K EX-99.1, which is the document the specs describe')
+    s8.add_argument('tickers', nargs='*',
+                    help="default: today's cards")
+    s8.add_argument('--date', default=None)
+    s8.add_argument('--save', action='store_true')
+    s8.set_defaults(func=cmd_score8k)
 
     st = sub.add_parser('selftest',
                         help='grade a synthetic release against a real card')

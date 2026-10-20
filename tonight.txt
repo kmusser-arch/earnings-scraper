@@ -1,3 +1,2 @@
-AVGO
-HPE
-SNOW
+﻿SPCX
+NFLX
