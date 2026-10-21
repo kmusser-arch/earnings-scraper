@@ -9,6 +9,7 @@ at ~140 characters, mid-sentence, before any figures appear.
 """
 
 import json
+import re
 import threading
 import os
 import time
@@ -37,6 +38,8 @@ class Listener:
         self.verbose = verbose
         self.log_hits = log_hits
         self._seen_ids = set()
+        self._dropped_watched = set()
+        self._filing_shape_shown = False
         # ★ Set on shutdown so the wire pump can tell "asked to stop" from
         # "subscription died". Without it, an ended subscription and a clean
         # Ctrl+C are indistinguishable.
@@ -110,6 +113,144 @@ class Listener:
 
     # --- the hot path ---------------------------------------------------------
 
+    def _filing_tickers(self, item):
+        """Tickers on a filing frame, tolerating an unknown field shape.
+
+        ★ detect.extract_tickers wants 'EQ:US:META' in
+        primary_instruments; a filing frame may carry 'US:META', or put it
+        in 'instrument' singular. The shape is unverified, so every
+        plausible one is tried rather than assumed.
+        """
+        found = []
+        try:
+            ticks, _how = detect.extract_tickers(item, self.entries)
+            found.extend(ticks or [])
+        except Exception:                               # noqa: BLE001
+            pass
+        raw = []
+        for key in ('primary_instruments', 'instruments', 'instrument',
+                    'symbol', 'symbols', 'ticker'):
+            v = item.get(key)
+            if isinstance(v, str):
+                raw.append(v)
+            elif isinstance(v, (list, tuple)):
+                raw.extend(str(x) for x in v)
+        for one in raw:
+            tail = str(one).split(':')[-1].strip().upper()
+            if tail and tail not in found:
+                found.append(tail)
+        head = (item.get('headline') or '').upper()
+        for t in self.entries:
+            if t in found:
+                continue
+            if re.search(r'\b%s\b' % re.escape(t), head):
+                found.append(t)
+        return [t for t in found if t in self.entries]
+
+    def _announce_drop(self, item, kind, src):
+        """One line when a DROPPED frame names a watchlist ticker."""
+        self.stats['dropped'] = self.stats.get('dropped', 0) + 1
+        try:
+            ticks, _how = detect.extract_tickers(item, self.entries)
+        except Exception:                               # noqa: BLE001
+            return
+        watched = [t for t in (ticks or []) if t in self.entries]
+        if not watched:
+            return
+        key = (src, tuple(watched))
+        if key in self._dropped_watched:
+            return
+        self._dropped_watched.add(key)
+        print('')
+        print('=' * 78)
+        print('DROPPED \u2014 %s on source %r, which is NOT SUBSCRIBED.'
+              % (chr(44).join(watched), src))
+        print('   msg_type=%r  headline: %s'
+              % (kind, (item.get('headline') or '')[:58]))
+        print('   It named a ticker you are waiting for, and was thrown away.')
+        print('   Subscribed: %s' % (chr(44).join(config.ALL_SOURCES),))
+        print('=' * 78)
+
+    def _on_filing(self, item):
+        """An SEC filing frame: fetch the exhibit and score from IT.
+
+        ★★★ THE DOCUMENT THE SPECS DESCRIBE. The wire body and the 8-K
+        EX-99.1 are different shapes -- a 49-line fence on the exhibit
+        is 1,517 lines on the wire with the same anchors and every
+        authored string present. Three prints failed on that.
+        """
+        self.stats['filings'] = self.stats.get('filings', 0) + 1
+        form = str(item.get('form_type') or item.get('form') or '')
+        watched = self._filing_tickers(item)
+        if not watched:
+            # ★★★★ NO REAL EDG FRAME HAS EVER BEEN SEEN, so its shape is a
+            # guess. An unresolved filing must NOT vanish the way last
+            # night's wire frames did -- it prints once per source so the
+            # real field names can be read off the terminal and wired.
+            if not self._filing_shape_shown:
+                self._filing_shape_shown = True
+                print('')
+                print('=' * 78)
+                print('FILING FRAME, TICKER UNRESOLVED — form=%r' % (form,))
+                print('   fields: %s'
+                      % ', '.join('%s=%r' % (k, str(v)[:28])
+                                  for k, v in sorted(item.items())
+                                  if k != 'body'))
+                print('   Nothing dropped silently: paste this and the '
+                      'resolver gets the real shape.')
+                print('=' * 78)
+            return
+        # ★ AN 8-K IS NOT NECESSARILY EARNINGS -- 62% of them are not,
+        # measured over 3,893 filings for the 57 library tickers. The
+        # exhibit fetch re-checks Item 2.02 itself, so a non-earnings
+        # filing costs one refusal and no card.
+        if form and '8-K' not in form:
+            print('   \u00b7 %s filed %s \u2014 not an 8-K, ignored'
+                  % (chr(44).join(watched), form))
+            return
+        print('')
+        print('=' * 78)
+        print('SEC FILING \u2014 %s %s. Fetching the exhibit.'
+              % (chr(44).join(watched), form or '8-K'))
+        print('=' * 78)
+        for ticker in watched:
+            self._score_from_filing(ticker, item)
+
+    def _score_from_filing(self, ticker, item):
+        """Fetch the EX-99.1 for one ticker and emit a card from it."""
+        from . import sec
+        entry, _drift = self._live_entry(ticker)
+        if not entry or entry.get('error'):
+            print('   %s: no card (%s)'
+                  % (ticker, (entry or {}).get('error')))
+            return
+        text, outcome, ms, url = sec.press_release(ticker)
+        if outcome != sec.OK:
+            print('   %s: exhibit %s (%d ms) \u2014 wire card stands'
+                  % (ticker, outcome, ms))
+            return
+        print('   %s: exhibit OK, %d bytes, %.1f chars/line, %d ms'
+              % (ticker, len(text),
+                 float(len(text)) / max(1, text.count(chr(10))), ms))
+        try:
+            card = score.score_release(
+                parse.parse_release(dict(item, body=text)),
+                entry, self.model)
+        except Exception as exc:                        # noqa: BLE001
+            print('   %s: scoring the exhibit raised %r' % (ticker, exc))
+            return
+        card['documentSource'] = 'SEC-8K'
+        card['documentUrl'] = url
+        try:
+            fw = gate.framework_from(self.model) if self.model else None
+            card['rendered'] = scorecard.render_card(card, entry, fw)
+        except Exception as exc:                        # noqa: BLE001
+            card['rendered'] = None
+            card['renderError'] = '%s: %s' % (type(exc).__name__, exc)
+        card['diagnostics'] = scorecard.diagnostics(card)
+        self.stats['cards'] += 1
+        self._emit(card, item)
+
     def _live_entry(self, ticker):
         """The card AS IT IS NOW, not as it was when the watchlist was built.
 
@@ -150,9 +291,24 @@ class Listener:
         self.stats['items'] += 1
         if self.first_frame_at is None:
             self.first_frame_at = time.time()
-        if item.get('msg_type') != 'news_item':
+        kind = item.get('msg_type')
+        src = item.get('source')
+
+        # ★★★ A FILING IS A SECOND PASS, NOT A WIRE ITEM. It carries no
+        # body worth parsing -- the exhibit is fetched by accession -- so it
+        # routes away from the wire path entirely.
+        if kind == 'edgar_item' or src in config.FILING_SOURCES:
+            self._on_filing(item)
             return
-        if item.get('source') not in config.WIRE_SOURCES:
+
+        if kind != 'news_item' or src not in config.WIRE_SOURCES:
+            # ★★★★ LAST NIGHT THIS RETURNED IN SILENCE. NFLX and SPCX both
+            # printed and neither frame was ever seen; the terminal looked
+            # exactly like a quiet wire. Not every drop is worth a line --
+            # 38 sources at full volume would bury the signal -- but a drop
+            # that NAMES A TICKER WE ARE WAITING FOR is the whole failure
+            # mode, and it gets one.
+            self._announce_drop(item, kind, src)
             return
         self.stats['wire_items'] += 1
 
@@ -450,7 +606,7 @@ def _spec_drift(frozen, fresh):
 
 
 def subscribe(client, listener, sources=None, mode=None):
-    sources = sources or config.WIRE_SOURCES
+    sources = sources or config.ALL_SOURCES
     mode = mode or config.DEFAULT_MODE
     if mode != 'full':
         raise ValueError(

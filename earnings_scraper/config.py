@@ -19,12 +19,24 @@ import os
 # mode='full' returns real article bodies we can parse numbers out of.
 WIRE_SOURCES = ['PRN', 'BUS', 'NFI', 'ASW', 'PZM']
 
+#: ★★★ SEC FILINGS, PUSHED. The gateway delivers EDGAR as frames
+#: (msg_type='edgar_item'), and an 8-K EX-99.1 is THE DOCUMENT THE
+#: EXTRACTION SPECS DESCRIBE -- the wire body is a different shape, where
+#: the same anchors fence ~30x wider. Kept SEPARATE from WIRE_SOURCES
+#: because it is a different pass with different timing: the wire lands
+#: at T+0 and the filing about 90 seconds later.
+FILING_SOURCES = ['EDG']
+
+#: every source the listener accepts a frame from
+ALL_SOURCES = WIRE_SOURCES + FILING_SOURCES
+
 WIRE_NAMES = {
     'PRN': 'PR Newswire',
     'BUS': 'BusinessWire',
     'NFI': 'Newsfile',
     'ASW': 'AccessWire',
     'PZM': 'Globe Newswire',
+    'EDG': 'SEC EDGAR',
 }
 
 # --- LIVE data: absolute path, never copied ------------------------------------

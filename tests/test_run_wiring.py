@@ -247,16 +247,28 @@ def main():
               'must be logged in' in str(exc), str(exc)[:34])
 
     print('')
-    print('=== the subscription is FULL mode on the five wires ===')
+    print('=== FULL mode on the five wires PLUS the filing feed ===')
     sub = client.subscribed or {}
     check('subscribe_news was called', bool(sub))
     check('mode is full — never headlines', sub.get('mode') == 'full',
           sub.get('mode'))
-    check('sources are exactly the five wires',
-          sorted(sub.get('sources') or []) == sorted(config.WIRE_SOURCES),
+    # ★★★★ EDG WAS ADDED DELIBERATELY, AND THIS PIN IS WHY IT IS VISIBLE.
+    # NFLX and SPCX both printed on 2026-10-20 and neither frame was ever
+    # seen: they do not publish on the five press wires, and an
+    # unsubscribed source returned in SILENCE. The gateway PUSHES SEC
+    # filings, and an 8-K EX-99.1 is the document the extraction specs
+    # describe -- the wire body is a different shape, where the same
+    # anchors fence ~30x wider.
+    check('sources are the five wires AND the filing feed',
+          sorted(sub.get('sources') or []) == sorted(config.ALL_SOURCES),
           sorted(sub.get('sources') or []))
-    check('    which is ASW, BUS, NFI, PRN, PZM',
-          sorted(config.WIRE_SOURCES) == ['ASW', 'BUS', 'NFI', 'PRN', 'PZM'])
+    check('    which is ASW, BUS, EDG, NFI, PRN, PZM',
+          sorted(config.ALL_SOURCES) == ['ASW', 'BUS', 'EDG', 'NFI', 'PRN',
+                                         'PZM'])
+    check('    and the press wires are still exactly five',
+          sorted(config.WIRE_SOURCES) == ['ASW', 'BUS', 'NFI', 'PRN', 'PZM'],
+          'EDG is a SECOND PASS with different timing (~T+90s), never a '
+          'sixth press wire')
 
     print('')
     print('=== THE PUMP MUST LOOP — one wait() is not a stream ===')
