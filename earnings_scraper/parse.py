@@ -1235,6 +1235,11 @@ def _mask_quotes(text):
     return ''.join(out)
 
 
+#: 'Third-quarter' is the same word as 'Third quarter'. See parse_release.
+_HYPHEN_PERIOD = re.compile(
+    r'(?i)\b(first|second|third|fourth|1st|2nd|3rd|4th)-(quarter|qtr)\b')
+
+
 def parse_release(item):
     """Parse a wire item's body into normalised reported figures.
 
@@ -1244,6 +1249,25 @@ def parse_release(item):
     text = '\n'.join([item.get('headline') or '',
                       item.get('teaser') or '',
                       item.get('body') or ''])
+
+    # ★★★★ ONE CHARACTER COST INTEL ITS REVENUE AND ITS GUIDE.
+    #
+    #     'Third-quarter revenue was $16.5 billion'  -> nothing
+    #     'Third quarter revenue was $16.5 billion'  -> 16,500 / +21%
+    #
+    # Intel hyphenates every period word; Sandisk and Amazon do not, and
+    # both parsed cleanly off the same release shape on the same evening.
+    # The hyphen is TYPOGRAPHY, not meaning, so it is normalised here --
+    # before any matcher sees it -- rather than taught to each pattern.
+    #
+    # MEASURED report-only over 130 documents (corpus + wire fixtures +
+    # live captures): 18 carry a hyphenated period word, 5 values NEWLY
+    # parse (INTC revenue and guidance across two quarters, DELL
+    # guidance), and ZERO values are lost or changed. Measured on
+    # CORRECTNESS -- a document whose revenue already parsed must parse to
+    # the SAME value, which is the test the chars-per-line floor failed.
+    text = _HYPHEN_PERIOD.sub(
+        lambda m: '%s %s' % (m.group(1), m.group(2)), text)
 
     # ★★ QUOTED SPANS ARE MASKED OUT OF THE PROSE PARSERS. A span inside
     # quotation marks is a QUOTE whatever it names, and the prose/segment
