@@ -253,9 +253,16 @@ def control_char_guard():
     patches asserted `chr(8) not in s` and later ones stopped; this makes the
     assertion permanent and repo-wide instead of per-patch.
     """
-    root = os.path.join(HERE, '..', 'earnings_scraper')
+    # the guard walks EVERY package, not one. scraper/ was added later and
+    # promptly collected two backspaces from a nested shell quote -- the
+    # third time this defect has landed, and the first time the guard that
+    # exists to catch it was looking somewhere else.
+    roots = [os.path.join(HERE, '..', 'earnings_scraper'),
+             os.path.join(HERE, '..', 'scraper')]
     bad = []
-    for base, _dirs, files in os.walk(root):
+    for base, _dirs, files in (
+            (b2, d2, f2) for r in roots if os.path.isdir(r)
+            for b2, d2, f2 in os.walk(r)):
         for f in files:
             if not f.endswith('.py'):
                 continue

@@ -1,0 +1,72 @@
+{
+  "_meta": {
+    "purpose": "Canonical metric -> exact document labels seen in real releases. Covers the 164 universal hero rows across all 66 tickers. Ticker-specific heroes are NOT handled here.",
+    "matching": "exact full-string, case-insensitive, whitespace-normalized, trailing footnote digit stripped",
+    "basis": "if a label begins with 'GAAP ' or 'Non-GAAP ', tag basis accordingly and strip the prefix before comparing"
+  },
+
+  "revenue": [
+    "Total net sales", "Net sales", "Total revenue", "Total revenues",
+    "Revenues", "Revenue", "Net revenue", "Net revenues",
+    "Total net revenue", "Revenue ($B)", "Total net sales and revenues"
+  ],
+
+  "grossProfit": ["Gross profit", "Gross profit (loss)", "Gross margin ($)"],
+
+  "grossMargin": [
+    "Gross margin", "Gross margin percentage", "Gross margin %",
+    "Gross margin (%)", "Gross margin -- % of revenue"
+  ],
+
+  "operatingIncome": [
+    "Operating income", "Operating income (loss)", "Income from operations",
+    "Loss from operations", "Operating profit", "Total operating income"
+  ],
+
+  "operatingMargin": [
+    "Operating margin", "Operating margin (loss)", "Operating margin %",
+    "Operating margin (%)", "Operating margin -- % of WW net sales",
+    "Operating margin -- % of revenue"
+  ],
+
+  "eps": [
+    "Diluted earnings per share", "Earnings per share - diluted",
+    "Earnings per share attributable to Intel-diluted",
+    "Earnings (loss) per share attributable to Intel-diluted",
+    "Net income per diluted share", "Diluted net income per share",
+    "Diluted EPS", "Diluted earnings (loss) per share",
+    "Net income (loss) per share - diluted"
+  ],
+
+  "netIncome": [
+    "Net income", "Net income (loss)", "Consolidated net income",
+    "Net income attributable to Intel", "Net income (loss) attributable to Intel"
+  ],
+
+  "capex": [
+    "Purchases of property and equipment",
+    "Purchases of property and equipment, net of proceeds from sales and incentives",
+    "Purchases of property and equipment, net of proceeds from sales and incentives -- TTM",
+    "Additions to property, plant, and equipment",
+    "Additions to property, plant and equipment",
+    "Capital expenditures", "Capital Expenditures",
+    "Payments for acquisition of property and equipment"
+  ],
+
+  "freeCashFlow": [
+    "Free cash flow", "Free cash flow -- TTM", "Adjusted free cash flow",
+    "Free Cash Flow", "Free cash flow (outflow)"
+  ],
+
+  "operatingCashFlow": [
+    "Net cash provided by (used in) operating activities",
+    "Net cash provided by (used for) operating activities",
+    "Net cash provided by operating activities",
+    "Cash provided by operating activities",
+    "Operating cash flow", "Operating cash flow -- trailing twelve months (TTM)"
+  ],
+
+  "costOfSales": ["Cost of sales", "Cost of revenue", "Cost of revenues", "Total cost of sales"],
+
+  "researchAndDevelopment": ["Research and development", "Research and development expenses", "R&D"]
+}

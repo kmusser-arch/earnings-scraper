@@ -53,6 +53,8 @@ def to_number(raw):
     s = _clean(raw)
     if not s:
         return None
+    if _RANGE.match(s):
+        return None            # a range has no single value; `raw` carries it
     neg = '(' in s and ')' in s
     s = re.sub(r'[^\d.\-]', '', s.replace(',', ''))
     if s in ('', '-', '.', '-.'):
@@ -64,9 +66,25 @@ def to_number(raw):
     return -v if (neg and v > 0) else v
 
 
+#: '$15.0 - $16.0', '15.0 to 16.0' -- a GUIDE RANGE in a single cell.
+#: Intel's whole Q4 revenue outlook is one of these, and dropping it loses
+#: the guide entirely. Kept with value=None and `raw` intact, per rule 6:
+#: a cell that will not reduce to ONE number is still a reported figure.
+_RANGE = re.compile(
+    r'^[\s$€£¥]*\(?-?[\d,]+(?:\.\d+)?\)?\s*%?\s*(?:-|–|—|to)\s*'
+    r'[\s$€£¥]*\(?-?[\d,]+(?:\.\d+)?\)?\s*%?[\s*†‡]*$')
+
+
+def is_range(raw):
+    s = _clean(raw)
+    return bool(s) and bool(_RANGE.match(s))
+
+
 def is_value(raw):
     s = _clean(raw)
-    return bool(s) and not _ORPHAN.match(s) and bool(_NUMERIC.match(s))
+    if not s or _ORPHAN.match(s):
+        return False
+    return bool(_NUMERIC.match(s)) or bool(_RANGE.match(s))
 
 
 class _Tables(HTMLParser):
