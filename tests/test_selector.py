@@ -302,3 +302,66 @@ def prose_channel():
 
 ranking_and_channels()
 prose_channel()
+
+
+def labels_dump():
+    r"""THE DUMP IS WHAT A HUMAN WRITES A MAP FROM.
+
+    ★★★★ A PLAUSIBLE-BUT-WRONG SAMPLE GETS A BAD MAP CONFIRMED BY EYE.
+    'Latest year wins' showed Amazon's North America net sales as 333,172
+    -- the NINE-MONTH figure -- where the quarter is 112,852. Nine months
+    is not more recent than three months, it is WIDER. That is the recency
+    failure aimed at the reader instead of the selector, and the reader
+    has no second check.
+    """
+    import importlib.util
+    here = os.path.dirname(os.path.abspath(__file__))
+    fx = os.path.join(here, '..', 'scraper', 'fixtures',
+                      'AMZN_2026Q3.html')
+    if not os.path.exists(fx):
+        print('SKIP labels dump - fixture missing')
+        return
+    spec = importlib.util.spec_from_file_location(
+        'pk', os.path.join(here, '..', 'scraper', 'parse_kpis.py'))
+    pk = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(pk)
+
+    rows = cells.from_html(io.open(fx, encoding='utf-8').read())
+    view = pk.labels_view(rows, section='Segment Information')
+    samples = {}
+    for _sec, items in view:
+        for label, _tags, sample, seg in items:
+            if label == 'Net sales':
+                samples[seg] = sample
+    print('')
+    print('=== --labels sample values ===')
+    check(samples.get('North America') == '112,852',
+          'North America Net sales samples the QUARTER 112,852, never the '
+          'nine-month 333,172 (%s)' % samples.get('North America'))
+    check(samples.get('International') == '43,108',
+          'International 43,108, not 125,094 (%s)'
+          % samples.get('International'))
+    check(samples.get('AWS') == '45,984',
+          'AWS 45,984, not 125,803 (%s)' % samples.get('AWS'))
+
+    ix = os.path.join(here, '..', 'scraper', 'fixtures', 'INTC_2026Q3.html')
+    irows = cells.from_html(io.open(ix, encoding='utf-8').read())
+    iview = pk.labels_view(irows, grep='gross margin')
+    both = [s for _sec, items in iview for _l, _t, s, _g in items
+            if 'GAAP' in s and '/' in s]
+    check(both,
+          'where one label carries two bases under one period, BOTH are '
+          'shown: %s' % (both[:1] or 'none'))
+
+    # ★ `table` must not creep back into the schema
+    profiles, _m = S.load_profiles()
+    dead = [(t, h) for t, p in profiles.items()
+            for h, e in (p.get('documentLabelMap') or {}).items()
+            if isinstance(e, dict) and 'table' in e]
+    check(not dead,
+          '`table` is gone from every map entry — it held strings the '
+          'parser never emits and nothing read it, so it read as '
+          'verification: %s' % (dead[:2] or 'clean'))
+
+
+labels_dump()

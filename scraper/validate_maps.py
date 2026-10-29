@@ -88,6 +88,20 @@ def main():
         missing = set(n['hero'] for n in (res.get('notInRelease') or []))
 
         print('%-6s %s' % (ticker, os.path.basename(path)))
+        # ★★★ `table` WAS DROPPED FROM THE SCHEMA AND MUST NOT RETURN.
+        # It carried strings the parser never emits -- the INTC map said
+        # 'Supplemental Reconciliations of GAAP Actuals to Non-GAAP
+        # Actuals' where the parser emits 'n-GAAP measures, and the reasons
+        # why management believes' -- and nothing read it, so 10/10 passed
+        # while the field was fiction. A field that disagrees with reality
+        # and is never consulted READS AS VERIFICATION, which is worse than
+        # having no field at all.
+        dead = [h for h, e in dlm.items()
+                if isinstance(e, dict) and 'table' in e]
+        if dead:
+            print('   FAIL        `table` is not in the schema: %s'
+                  % [h[:34] for h in dead])
+            nfail += len(dead)
         for hero, entry in sorted(dlm.items()):
             if not isinstance(entry, dict):
                 continue

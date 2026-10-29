@@ -49,6 +49,50 @@ def _tag(row):
     return 'Q%s' % m.group(1) if m else ''
 
 
+#: HOW WIDE a period is. The sample value must come from the NARROWEST
+#: most-recent column, not merely the most recent one.
+#:
+#: ★★★★ 9M IS NOT MORE RECENT THAN 3M, IT IS WIDER. Amazon's segment
+#: table carries both, and taking "latest year wins" showed North America
+#: net sales as 333,172 -- the nine-month figure -- where the quarter is
+#: 112,852. This dump is what a human writes a label map FROM, so a
+#: plausible-but-wrong sample gets a bad map confirmed by eye. It is the
+#: recency failure aimed at the reader instead of the selector.
+_WIDTH = {'3M': 0, 'Q1': 0, 'Q2': 0, 'Q3': 0, 'Q4': 0, 'OUTLOOK': 0,
+          '9M': 1, '6M': 2, 'TTM': 3, 'FY': 4, '': 5}
+
+
+def _width(row):
+    return _WIDTH.get(_tag(row), 5)
+
+
+def _basis(row):
+    """GAAP / nonGAAP from the label prefix OR the column header.
+
+    ★★ INTEL PUTS THE BASIS IN THE COLUMN. Its Business Outlook table
+    heads two columns 'GAAP' and 'Non-GAAP' over one 'Gross margin' row,
+    carrying 37.1 and 38.0. Keyed on the label alone the two collapse and
+    the dump shows one of them -- hiding the split that the whole map
+    exists to capture.
+    """
+    import re as _re
+    lab = (row.get('label') or '')
+    m = _re.match(r'(?i)^\s*(non-gaap|gaap)\b', lab)
+    if m:
+        return 'nonGAAP' if m.group(1).lower().startswith('non') else 'GAAP'
+    # ★★★ THE COLUMN HEADER ALONE FIRST, and only then the table. Intel's
+    # Business Outlook heading reads 'includes both GAAP and non-GAAP', so
+    # searching the table text alongside the column stamped BOTH columns
+    # nonGAAP and collapsed 37.1 and 38.0 into a single row -- hiding
+    # exactly the split this fix exists to show.
+    for hay in (row.get('period') or '', row.get('table') or ''):
+        if _re.search(r'(?i)non-gaap', hay):
+            return 'nonGAAP'
+        if _re.search(r'(?i)\bgaap\b', hay):
+            return 'GAAP'
+    return None
+
+
 def _year(row):
     import re
     ys = re.findall(r'\b(19|20)(\d{2})\b',
@@ -93,7 +137,8 @@ def labels_view(rows, section=None, grep=None, max_lines=200):
     order, groups = [], {}
     for r in rows:
         sec = _section_name(r.get('table'))
-        key = (sec, r.get('section') or '', r.get('label') or '')
+        key = (sec, r.get('section') or '', r.get('label') or '',
+               _basis(r))
         if sec not in groups:
             groups[sec] = {}
             order.append(sec)
@@ -105,8 +150,10 @@ def labels_view(rows, section=None, grep=None, max_lines=200):
         t = _tag(r)
         if t and t not in e['tags']:
             e['tags'].append(t)
-        # the most recent period supplies the sample value
-        if e['best'] is None or _year(r) >= _year(e['best']):
+        # NARROWEST first, then most recent within that width
+        if e['best'] is None or (
+                (_width(r), -_year(r)) < (_width(e['best']),
+                                          -_year(e['best']))):
             e['best'] = r
 
     out, shown = [], 0
@@ -118,12 +165,24 @@ def labels_view(rows, section=None, grep=None, max_lines=200):
             g = dict((k, v) for k, v in g.items() if v['n'] > 1)
         if section and section.lower() not in sec.lower():
             continue
-        items = []
-        for (_s, seg, label), e in g.items():
+        merged = {}
+        for (_s, seg, label, basis), e in g.items():
             if grep and grep.lower() not in label.lower():
                 continue
-            items.append((label, ','.join(e['tags']),
-                          (e['best'] or {}).get('raw') or '', seg))
+            sample = (e['best'] or {}).get('raw') or ''
+            mk = (seg, label, ','.join(e['tags']))
+            merged.setdefault(mk, []).append((basis, sample))
+        items = []
+        for (seg, label, tags), variants in merged.items():
+            if len(variants) > 1 and any(b for b, _v in variants):
+                # ★ BOTH BASES, SIDE BY SIDE. Showing one would hide the
+                # split the map exists to capture.
+                sample = ' / '.join(
+                    '%s %s' % (v, b) if b else str(v)
+                    for b, v in sorted(variants, key=lambda x: str(x[0])))
+            else:
+                sample = variants[0][1]
+            items.append((label, tags, sample, seg))
         if not items:
             continue
         if shown + len(items) + 2 > max_lines:
@@ -150,8 +209,8 @@ def render(view):
             # a cash-flow sub-heading can run 60 characters; the dump is
             # for reading, and the full string is in the parser output
             ctx = (' [%s]' % seg.rstrip(':')[:26]) if seg else ''
-            lines.append('  %-44s %-10s %12s%s'
-                         % (label[:44], tag[:14], sample[:12], ctx))
+            lines.append('  %-44s %-10s %28s%s'
+                         % (label[:44], tag[:14], sample[:28], ctx))
     return '\n'.join(lines).strip('\n')
 
 
