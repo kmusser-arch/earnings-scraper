@@ -365,3 +365,88 @@ def labels_dump():
 
 
 labels_dump()
+
+
+def period_vocabulary_and_units():
+    r"""READER DEFECTS 1 and 2 of the ADBE/ORCL pre-diagnosis.
+
+    ★★★★ A MISSING PERIOD TERM IS EXPENSIVE IN ONE DIRECTION AND POISONOUS
+    IN THE OTHER. Adobe heads its guidance table 'financial targets'; with
+    only outlook/guidance/forecast in the vocabulary that whole table read
+    as the CURRENT QUARTER, so both guidance heroes were rejected AND an
+    FY target leaked into the current-quarter row as 18.12.
+    """
+    print('')
+    print('=== forward-period vocabulary ===')
+    for word in ('outlook', 'guidance', 'forecast', 'targets', 'target'):
+        got = S.period_class('Q4 FY2026 %s table' % word, '')
+        check(got == 'nextQGuidance',
+              '%-9s heads a guidance table -> %s' % (word, got))
+    # ★ the COLUMN outranks the TABLE
+    check(S.period_class('2026 financial targets and assumptions',
+                         'Fiscal Year 2026 Low') == 'fyGuidance',
+          'a Fiscal Year COLUMN inside a targets TABLE is fyGuidance, not '
+          'nextQ — scanning both together let "targets" match first and an '
+          'FY figure validated clean as a next-quarter guide')
+    check(S.period_class('2026 financial targets and assumptions',
+                         'Q4 2026') == 'nextQGuidance',
+          'while a Q4 column in the same table is the next-quarter guide')
+    # ★★ the NARRATIVE VERBS are deliberately absent
+    for word in ('we expect', 'expects', 'anticipate'):
+        got = S.period_class('and %s margins to improve' % word, '')
+        check(got != 'nextQGuidance',
+              '%-11s does NOT reclassify a table (%s) — a heading here is '
+              'the tail of the preceding paragraph, so a narrative verb '
+              'above a current-quarter statement would turn it into '
+              'guidance. Sentences belong to the prose channel.'
+              % (word, got))
+
+    print('')
+    print('=== recency reads a date as a quarter ===')
+    cases = [('Three Months EndedSeptember 30, 2026', 3),
+             ('Three Months Ended Sep 26, 2026', 3),
+             ('Three Months Ended May 29,2026', 2),
+             ('Q3 2026', 3)]
+    for period, want in cases:
+        got = S._recency({'period': period, 'table': ''})[1]
+        check(got == want, '%-38s -> Q%s' % (period[:38], got))
+    check(S._recency({'period': 'prices may increase', 'table': ''})[1] == 0,
+          "and 'may' in prose is not a May date — anchoring on the DAY "
+          'NUMBER is what separates them')
+
+    print('')
+    print('=== unit class is a hard refusal, never a scale warning ===')
+    check(S.unit_class('$M') == 'CURRENCY'
+          and S.raw_class('150%') == 'PERCENT',
+          'a $M hero and a 150% candidate are different CLASSES')
+    rows = [{'table': 't', 'section': '', 'label': 'AI-first ARR',
+             'period': 'Q3 2026', 'value': 150.0, 'raw': '150%'}]
+    prof = {'Z': {'heroKPIs': [{'name': 'AI-first ARR', 'priority': 1,
+                                'appliesTo': 'currentQuarter',
+                                'unit': '$M'}],
+                  'documentLabelMap': {
+                      'AI-first ARR': {'documentLabels': ['AI-first ARR'],
+                                       'unit': '$M'}}}}
+    out = S.select(rows, 'Z', profiles=prof)
+    check(out['found'] == [],
+          'a $M hero REFUSES a percent candidate outright (%d found) - '
+          'Adobe discloses AI-first ARR only as a growth rate, and binding '
+          'it to a dollar hero is a 1000x disagreement that looks entirely '
+          'plausible' % len(out['found']))
+    check(len(out['notInRelease']) == 1,
+          'and the hero is reported absent rather than answered wrongly')
+
+    print('')
+    print('=== basis is a token, not a sentence ===')
+    check(S.basis_of('nonGAAP') == 'NON_GAAP'
+          and S.basis_of('NON_GAAP') == 'NON_GAAP'
+          and S.basis_of('gaap') == 'GAAP',
+          'every spelling of a basis token resolves')
+    prose = u"\u2605 GAAP row is 'Diluted net income per share' - same word"
+    check(S.basis_of(prose) is None,
+          'but PROSE in the basis field is refused (%r) — prefix-matching '
+          'it to GAAP forced Adobe EPS to 4.62 where the adjusted answer '
+          'is 6.13' % S.basis_of(prose))
+
+
+period_vocabulary_and_units()

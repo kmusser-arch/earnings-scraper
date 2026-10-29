@@ -56,12 +56,37 @@ _CANON = (
 
 #: parser period/table text -> the hero's appliesTo vocabulary
 _PERIOD = (
+    # ★★★★ TABLE-TITLE NOUNS ONLY. Adobe heads its guidance table
+    # 'financial targets and assumptions' -- the word is TARGETS, and with
+    # only outlook/guidance/forecast in the vocabulary that whole table read
+    # as the current quarter and both Adobe guidance heroes were rejected
+    # with their labels sitting right there. Guidance is 60% of the
+    # scorecard weight, so a term missing here is expensive in one
+    # direction and poisonous in the other.
+    #
+    # MEASURED over the fixture set, 2,384 rows: 'targets' moves 34 rows,
+    # ALL of them from None, and NOT ONE off currentQuarter. The dangerous
+    # direction is empty.
+    #
+    # ★★ THE NARRATIVE VERBS ARE DELIBERATELY ABSENT -- 'expects',
+    # 'we expect', 'anticipate', 'expected to be'. A table heading here is
+    # the text immediately BEFORE the table, usually the tail of a
+    # paragraph, so a sentence saying 'we expect' above a CURRENT-QUARTER
+    # statement would reclassify the whole table as guidance. Oracle does
+    # say 'Total Cloud revenue is expected to grow' -- and that is a
+    # SENTENCE, which belongs to the prose channel. Nouns title tables;
+    # verbs make sentences.
     ('outlook', 'nextQGuidance'), ('guidance', 'nextQGuidance'),
     ('forecast', 'nextQGuidance'),
+    ('targets', 'nextQGuidance'), ('target', 'nextQGuidance'),
     ('twelve months', 'TTM'), ('ttm', 'TTM'),
     ('trailing twelve', 'TTM'),
     ('three months', 'currentQuarter'), ('quarter ended', 'currentQuarter'),
     ('nine months', 'nineMonths'), ('six months', 'sixMonths'),
+    # a FULL-YEAR column is not a next-quarter guide, even inside a table
+    # headed 'targets'
+    ('fiscal year', 'fyGuidance'), ('full year', 'fyGuidance'),
+    ('full-year', 'fyGuidance'), ('year ending', 'fyGuidance'),
 )
 
 
@@ -89,12 +114,21 @@ def basis_of(word):
     rows report NOT FOUND the moment their map landed -- the map MADE them
     worse, which is the hardest kind of regression to see.
     """
-    w = re.sub(r'[^a-z]', '', str(word or '').lower())
-    if not w:
+    raw = str(word or '').strip()
+    if not raw:
         return None
-    if w.startswith('non') or w == 'adjusted':
+    # ★★★★ A BASIS IS A TOKEN, NOT A SENTENCE, AND THE FIELD IS STRUCTURAL
+    # BY ITS CONTENT. Adobe's map carries
+    #   "basis": "★ GAAP row is 'Diluted net income per share' — same word..."
+    # which prefix-matched to GAAP and forced the GAAP row: 4.62 where the
+    # hero asked for the ADJUSTED figure, 6.13. Prose in a token field must
+    # be REFUSED, never mined for the first word that looks right.
+    if len(raw) > 24:
+        return None
+    w = re.sub(r'[^a-z]', '', raw.lower())
+    if w in ('nongaap', 'nongap', 'adjusted', 'adj', 'excldeferrals'):
         return 'NON_GAAP'
-    if w.startswith('gaap') or w == 'usgaap':
+    if w in ('gaap', 'usgaap', 'reported'):
         return 'GAAP'
     return None
 
@@ -207,6 +241,24 @@ def canonical(hero_name):
 
 
 _QNUM = re.compile(r'(?i)\bq([1-4])\b')
+_MONTHS = ['january', 'february', 'march', 'april', 'may', 'june',
+           'july', 'august', 'september', 'october', 'november',
+           'december']
+#: ★ ABBREVIATIONS COUNT. Intel writes 'Sep 26, 2026'. Matching only full
+#: month names left that column with no quarter at all, so the summary
+#: table's 'GAAP Q3 2026' outranked the statement and returned 16.5 where
+#: the answer is 16,513.
+_MON3 = [m[:3] for m in _MONTHS]
+#: ★★ NO LEADING WORD BOUNDARY -- EDGAR CONCATENATES. Amazon's column reads
+#: 'Three Months EndedSeptember 30, 2026' as ONE token, so a \b before the
+#: month matched nothing: the CONSOLIDATED row scored quarter 0 while every
+#: segment row scored 3, and the company line lost to its own North America
+#: segment on a missing space.
+#:
+#: Anchored on the DAY NUMBER instead, which also stops 'prices may
+#: increase' reading as a May date -- it was scoring quarter 2.
+_MONTHRE = re.compile(
+    r'(?i)(' + '|'.join(_MON3) + r')[a-z]*\.?\s*(?=\d{1,2}\b)')
 
 
 def _recency(row):
@@ -225,8 +277,21 @@ def _recency(row):
     hay = '%s %s' % (row.get('period') or '', row.get('table') or '')
     ys = _YEARRE.findall(hay)
     year = max((int(a + b) for a, b in ys), default=0)
-    qs = _QNUM.findall(hay)
-    return (year, max((int(q) for q in qs), default=0))
+    qs = [int(q) for q in _QNUM.findall(hay)]
+    # ★★★★ A DATE IS A QUARTER TOO, AND MOST ISSUERS WRITE ONLY THE DATE.
+    # Adobe heads its columns 'Three Months Ended August 28, 2026' and
+    # 'Three Months Ended May 29, 2026' -- same year, no Q token, so both
+    # scored (2026, 0) and the PRIOR quarter won on a tiebreak. That
+    # returned 4.25 for a current-quarter hero whose answer is 6.13.
+    #
+    # Fourth appearance of this one term: Q1-of-a-six-column-trend, the
+    # prior-year column, the wider period in the --labels dump, and now
+    # the prior quarter by month. Every time the cell was internally
+    # consistent and only the SELECTION was wrong.
+    if not qs:
+        qs = [(_MON3.index(m.lower()[:3]) // 3) + 1
+              for m in _MONTHRE.findall(hay) if m.lower()[:3] in _MON3]
+    return (year, max(qs, default=0))
 
 
 def _precision(row):
@@ -265,13 +330,62 @@ def period_class(table, period, label=None):
         for needle in ('-- ttm', 'ttm', 'trailing twelve'):
             if needle in lab:
                 return 'TTM'
-    hay = norm('%s %s' % (table or '', period or ''))
-    for needle, cls in _PERIOD:
-        if needle in hay:
-            return cls
+    # ★★★★ THE COLUMN BEFORE THE TABLE. The column header describes the
+    # COLUMN; the table heading describes the table, and when they
+    # disagree the column is the narrower claim.
+    #
+    # Adobe's targets table carries 'Fiscal Year 2026 Low'. Scanning table
+    # and column together let 'targets' match first, so an FY figure --
+    # 24.45 -- resolved as a NEXT-QUARTER guide and validated clean. That
+    # is a wrong number wearing a PASS, which is worse than the FAIL it
+    # replaced.
+    for hay in (norm(period or ''), norm(table or '')):
+        for needle, cls in _PERIOD:
+            if needle in hay:
+                return cls
     # a bare 'Q3 2026' heading is the reported quarter
-    if _QTR.search(hay):
-        return 'currentQuarter'
+    # ★ CHECKED AGAINST BOTH AGAIN: the column-first loop above leaves
+    # `hay` bound to the TABLE, so testing it alone lost every period that
+    # says only 'Q3 2026' -- which is Amazon's whole supplemental table.
+    for hay2 in (norm(period or ''), norm(table or '')):
+        if _QTR.search(hay2):
+            return 'currentQuarter'
+    return None
+
+
+def unit_class(spec):
+    """CURRENCY | PERCENT | COUNT from a declared unit or a printed figure.
+
+    ★★★★ A CLASS MISMATCH IS A NON-MATCH, NEVER A SCALE WARNING. Adobe
+    discloses AI-first ARR only as a GROWTH RATE -- 'grew more than 150%
+    year over year' -- while the hero declares ($M). On bag-of-words that
+    row and 'Digital Media ARR ($B)' bound to each other across a 1000x
+    unit disagreement, and a percentage answered a dollar hero.
+    Percent and currency are not the same quantity at a different scale;
+    they are different quantities, and no amount of scaling reconciles
+    them.
+    """
+    u = str(spec or '').strip()
+    if not u:
+        return None
+    if u.endswith('%') or u == 'pct' or u == 'ppt':
+        return 'PERCENT'
+    if u[0] in '$€£¥' or u.upper() in ('USD', 'EUR', 'GBP'):
+        return 'CURRENCY'
+    if u.lower() in ('count', 'customers', 'users', 'subs', 'm', 'b', 'k'):
+        return 'COUNT'
+    return None
+
+
+def raw_class(raw):
+    """The class a PRINTED figure belongs to, from how it is written."""
+    t = str(raw or '').strip()
+    if not t:
+        return None
+    if t.endswith('%') or '%' in t:
+        return 'PERCENT'
+    if any(c in t for c in '$€£¥'):
+        return 'CURRENCY'
     return None
 
 
@@ -330,7 +444,23 @@ def _repeats(rows):
 
 def _rank_key(row, metric, aliases, period_cls, counts):
     k = (row.get('table'), row.get('period'), norm(row.get('label')))
-    return (_recency(row)[0],
+    # ★★★★ RECENCY IS THE HIGHEST-PRIORITY TERM, NOT A TIEBREAK -- YEAR AND
+    # QUARTER TOGETHER. With quarter ranked last, Adobe's May column beat
+    # its August column because 'Three Months Ended May 29,2026' is three
+    # characters SHORTER than the August header and period-length outranked
+    # it. A current-quarter hero answered with the prior quarter, on a
+    # length coincidence.
+    return (_recency(row)[0], _recency(row)[1],
+            # ★★★★ ASKED FOR THE COMPANY, NOT A UNIT. A row sitting in a
+            # segment SECTION is a business unit's figure; the
+            # consolidated line sits in none. Amazon's 'Net sales' under
+            # 'North America Segment:' beat 'Total net sales' because its
+            # period header is shorter -- 112,852 answering a request for
+            # 201,944, on a length coincidence.
+            #
+            # Neutral when the hero DECLARES a segmentContext, because the
+            # section filter has already restricted the candidates to it.
+            0 if (row.get('section') or '') else 1,
             _explicit_period(row.get('label'), period_cls),
             -counts.get(k, 1),
             _precision(row),
@@ -343,8 +473,7 @@ def _rank_key(row, metric, aliases, period_cls, counts):
             # the summary's 'Revenue ($B)' under a short 'GAAP Q3 2026'
             # header would otherwise beat the statement's 16,513.
             -len(row.get('period') or ''),
-            -alias_rank(aliases, row.get('label'), metric),
-            _recency(row)[1])
+            -alias_rank(aliases, row.get('label'), metric))
 
 
 def resolve(parser_rows, metric, period=None, basis=None, aliases=None):
@@ -515,6 +644,11 @@ def select(parser_rows, ticker, profiles=None, aliases=None,
             if want_basis and not rb and want_basis == 'NON_GAAP':
                 continue
             if seg_ctx and norm(seg_ctx) not in norm(row.get('section')):
+                continue
+            # ★★★ UNIT CLASS, BEFORE ANY SCALE REASONING. A $M hero does
+            # not bind to a % candidate at any magnitude.
+            hc, rc = unit_class(unit), raw_class(row.get('raw'))
+            if hc and rc and hc != rc:
                 continue
             found.append((i, row))
 
