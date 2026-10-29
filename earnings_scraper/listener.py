@@ -8,6 +8,7 @@ items carry no `body` at all (0 of 641 lines had one) and the `teaser` truncates
 at ~140 characters, mid-sentence, before any figures appear.
 """
 
+import io
 import json
 import re
 import threading
@@ -148,43 +149,49 @@ class Listener:
         return [t for t in found if t in self.entries]
 
     def _flash(self, ticker, item, parsed, how):
-        """★★★★★ THE NUMBERS, IMMEDIATELY. Never raises.
+        """The prose read, LOGGED not displayed. Never raises.
 
-        Printed BEFORE scoring and independently of it. The grader may
-        refuse, mis-map or crash; none of that can cost the figures any
-        more.
+        ★★★★ RETIRED FROM STDOUT 2026-10-29. Measured against the source
+        releases it was wrong on four of four rows where the selector was
+        right: Amazon's 'revenue YoY +39.3%' is the AWS SEGMENT growth
+        rate against a total of 12%; both revenue figures were prose
+        roundings of statement numbers (201,900 for 201,944; 16,500 for
+        16,513); and Intel's 43.0% gross margin printed beside a non-GAAP
+        operating margin, silently mixing bases on adjacent lines.
+
+        ★★ IT STILL RUNS. The disagreement between this channel and the
+        table channel is the only evidence that decides whether a prose
+        reader is worth re-displaying, and deleting the path would delete
+        the comparison. One line to stdout so the run is auditable; the
+        figures go to scraper/logs/.
         """
         try:
             figs = _raw_figures(parsed) or {}
         except Exception:                               # noqa: BLE001
             figs = {}
-        print('')
-        print('\u2501' * 74)
-        print('  %s   %s   %s' % (ticker, how,
-                                  time.strftime('%H:%M:%S')))
-        print('  %s' % (item.get('headline') or '')[:70])
-        print('\u2501' * 74)
-        if figs:
-            for k, v in figs.items():
-                print('   %-22s %s' % (k, v))
-        else:
-            print('   (no figures parsed \u2014 read the text below)')
-        print('')
-        print('   \u2500\u2500 RELEASE TEXT \u2500\u2500')
+        print('   . flash read %d figure(s) from %s - logged, not shown'
+              % (len(figs), how))
         try:
-            body = (parsed.get('text') or '')
-            shown = 0
-            for ln in body.split(chr(10)):
-                t = ln.strip()
-                if not t or set(t) <= set(chr(45) + chr(32)):
-                    continue
-                print('   %s' % t[:96])
-                shown += 1
-                if shown >= 22:
-                    break
+            self._log_flash(ticker, item, figs, how)
         except Exception:                               # noqa: BLE001
             pass
-        print('\u2501' * 74)
+
+    def _log_flash(self, ticker, item, figs, how):
+        """scraper/logs/flash_<TICKER>_<date>.json -- the diff corpus."""
+        import json as _json
+        root = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.abspath(__file__))), 'scraper', 'logs')
+        if not os.path.isdir(root):
+            os.makedirs(root)
+        path = os.path.join(root, 'flash_%s_%s.json'
+                            % (ticker, time.strftime('%Y-%m-%d')))
+        payload = {'ticker': ticker, 'channel': 'prose',
+                   'source': how,
+                   'headline': (item.get('headline') or '')[:200],
+                   'readAt': time.strftime('%Y-%m-%dT%H:%M:%S'),
+                   'figures': dict((k, str(v)) for k, v in figs.items())}
+        with io.open(path, 'w', encoding='utf-8') as fh:
+            fh.write(_json.dumps(payload, indent=1, ensure_ascii=False))
 
     def _announce_drop(self, item, kind, src):
         """One line when a DROPPED frame names a watchlist ticker."""

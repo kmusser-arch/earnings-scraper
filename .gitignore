@@ -37,3 +37,4 @@ earnings_scraper/state/
 
 # scratch paste for `watch -f`
 nke.txt
+scraper/logs/
