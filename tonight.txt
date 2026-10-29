@@ -1,2 +1,3 @@
-﻿SPCX
-NFLX
+﻿LRCX
+META
+TXN

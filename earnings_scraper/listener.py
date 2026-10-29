@@ -147,6 +147,45 @@ class Listener:
                 found.append(t)
         return [t for t in found if t in self.entries]
 
+    def _flash(self, ticker, item, parsed, how):
+        """★★★★★ THE NUMBERS, IMMEDIATELY. Never raises.
+
+        Printed BEFORE scoring and independently of it. The grader may
+        refuse, mis-map or crash; none of that can cost the figures any
+        more.
+        """
+        try:
+            figs = _raw_figures(parsed) or {}
+        except Exception:                               # noqa: BLE001
+            figs = {}
+        print('')
+        print('\u2501' * 74)
+        print('  %s   %s   %s' % (ticker, how,
+                                  time.strftime('%H:%M:%S')))
+        print('  %s' % (item.get('headline') or '')[:70])
+        print('\u2501' * 74)
+        if figs:
+            for k, v in figs.items():
+                print('   %-22s %s' % (k, v))
+        else:
+            print('   (no figures parsed \u2014 read the text below)')
+        print('')
+        print('   \u2500\u2500 RELEASE TEXT \u2500\u2500')
+        try:
+            body = (parsed.get('text') or '')
+            shown = 0
+            for ln in body.split(chr(10)):
+                t = ln.strip()
+                if not t or set(t) <= set(chr(45) + chr(32)):
+                    continue
+                print('   %s' % t[:96])
+                shown += 1
+                if shown >= 22:
+                    break
+        except Exception:                               # noqa: BLE001
+            pass
+        print('\u2501' * 74)
+
     def _announce_drop(self, item, kind, src):
         """One line when a DROPPED frame names a watchlist ticker."""
         self.stats['dropped'] = self.stats.get('dropped', 0) + 1
@@ -232,10 +271,11 @@ class Listener:
         print('   %s: exhibit OK, %d bytes, %.1f chars/line, %d ms'
               % (ticker, len(text),
                  float(len(text)) / max(1, text.count(chr(10))), ms))
+        parsed8k = parse.parse_release(dict(item, body=text))
+        self._flash(ticker, dict(item, headline='%s 8-K EX-99.1' % ticker),
+                    parsed8k, 'SEC 8-K')
         try:
-            card = score.score_release(
-                parse.parse_release(dict(item, body=text)),
-                entry, self.model)
+            card = score.score_release(parsed8k, entry, self.model)
         except Exception as exc:                        # noqa: BLE001
             print('   %s: scoring the exhibit raised %r' % (ticker, exc))
             return
@@ -397,6 +437,12 @@ class Listener:
         parsed = parse.parse_release(item)
 
         for ticker in matched:
+            # ★★★★★ FIGURES FIRST. Before the card, before the grade,
+            # before anything that can refuse or mis-map. The numbers are
+            # the deliverable at 4:01; the grade is commentary on them.
+            self._flash(ticker, item, parsed,
+                        config.WIRE_NAMES.get(item.get('source'),
+                                              item.get('source') or '?'))
             # ONE SOURCE, READ AT SCORING TIME.
             entry, _drift = self._live_entry(ticker)
             if _drift:
