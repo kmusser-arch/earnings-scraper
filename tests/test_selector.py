@@ -450,3 +450,72 @@ def period_vocabulary_and_units():
 
 
 period_vocabulary_and_units()
+
+
+def sectioning():
+    r"""HERO ROWS GROUPED BY appliesTo. Organisation only, no semantics."""
+    print('')
+    print('=== sections ===')
+    prof = {'Z': {'heroKPIs': [
+        {'name': 'CQ one', 'priority': 1, 'appliesTo': 'currentQuarter',
+         'unit': '$M'},
+        {'name': 'NQ one', 'priority': 1, 'appliesTo': 'nextQGuidance',
+         'unit': '$M'},
+        {'name': 'FY one', 'priority': 1, 'appliesTo': 'fyGuidance',
+         'unit': '$M'},
+        {'name': 'Odd one', 'priority': 2, 'appliesTo': 'someFutureThing',
+         'unit': '$M'}]}}
+    out = S.select([], 'Z', profiles=prof)
+    txt = S.report(out, 'Z', 'Q3')
+    for want in ('CURRENT QUARTER', 'NEXT-Q GUIDANCE', 'FY GUIDANCE'):
+        check(want in txt, '%s prints even with nothing resolved — an empty '
+              'FY block is a signal, a missing one is silence' % want)
+    check('UNCLASSIFIED' in txt and 'someFutureThing' in txt,
+          'an unrecognised appliesTo is NAMED, never defaulted to '
+          'currentQuarter and never dropped')
+    ok, n = S.coverage_ok(out)
+    check(ok and n == 4,
+          'and every hero is still accounted for across the sections '
+          '(%d of %d)' % (n, out.get('heroCount')))
+
+    # ★ a section with NO heroes is omitted entirely
+    prof2 = {'Z': {'heroKPIs': [{'name': 'only CQ', 'priority': 1,
+                                 'appliesTo': 'currentQuarter'}]}}
+    txt2 = S.report(S.select([], 'Z', profiles=prof2), 'Z', 'Q3')
+    check('CURRENT QUARTER' in txt2 and 'FY GUIDANCE' not in txt2,
+          'while a section the ticker has NO heroes for is omitted')
+
+    # ── the real fixtures ────────────────────────────────────────────────
+    here = os.path.dirname(os.path.abspath(__file__))
+    fx = os.path.join(here, '..', 'scraper', 'fixtures', 'INTC_2026Q3.html')
+    if not os.path.exists(fx):
+        return
+    from scraper import prose_guidance as _PG
+    from earnings_scraper import sec as _sec
+    html = io.open(fx, encoding='utf-8').read()
+    res = S.select(cells.from_html(html), 'INTC',
+                   prose_rows=_PG.from_text(_sec.to_text(html)))
+    txt = S.report(res, 'INTC', 'Q3 2026')
+    cq = txt.index('CURRENT QUARTER')
+    nq = txt.index('NEXT-Q GUIDANCE')
+    fy = txt.index('FY GUIDANCE')
+    check(cq < nq < fy,
+          'the locked scorecard order holds: currentQuarter, nextQ, FY')
+    tail = txt[fy:]
+    check('not in release' in tail,
+          "INTC's unresolved FY capex sits INSIDE the FY section, not "
+          'trailing the whole block')
+    check('44.1' in txt[cq:nq] and '38.0' in txt[nq:fy],
+          'the two IDENTICAL gross-margin labels land in different '
+          'sections — 44.1 current, 38.0 next-Q. Period is the only thing '
+          'telling them apart, and the sections make that visible')
+
+    # ★ the display normalisation, scoped to months
+    check(S._despace('Three Months EndedSeptember 30, 2026')
+          == 'Three Months Ended September 30, 2026',
+          'the missing space in the SOURCE token is repaired for display')
+    check(S._despace('nonGAAP results') == 'nonGAAP results',
+          'but a deliberate intercap is left alone — scoped to month names')
+
+
+sectioning()

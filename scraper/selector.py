@@ -568,9 +568,15 @@ def select(parser_rows, ticker, profiles=None, aliases=None,
     out['heroCount'] = len(heroes)
     claimed = set()
 
-    for hero in heroes:
+    for _hero_i, hero in enumerate(heroes):
         name, prio, applies, unit, _inv = _hero_fields(hero)
-        base = {'hero': name, 'priority': prio}
+        # ★ appliesTo AND PROFILE ORDER TRAVEL WITH EVERY HERO,
+        # including the ones that do not resolve. A hero that is not
+        # in the release still belongs to a section, and an FY block
+        # that is empty BECAUSE nothing resolved is a real signal --
+        # which it cannot be if the row has nowhere to appear.
+        base = {'hero': name, 'priority': prio,
+                'appliesTo': applies or '', 'order': _hero_i}
         labels, seg_ctx, channel, unverified = [], None, None, False
         want_basis = None
         entry = dlm.get(name)
@@ -670,7 +676,10 @@ def select(parser_rows, ticker, profiles=None, aliases=None,
         out['found'].append(rec)
         claimed.update(i for i, _r in found)
 
-    out['found'].sort(key=lambda h: (h.get('priority') or 9))
+    out['found'].sort(key=lambda h: (h.get('priority') or 9,
+                                     h.get('order') or 0))
+    out['notInRelease'].sort(key=lambda h: (h.get('priority') or 9,
+                                            h.get('order') or 0))
     for i, row in enumerate(parser_rows):
         if i not in claimed and metrics_for(aliases, row.get('label')):
             out['overflow'].append(row)
@@ -683,41 +692,105 @@ def coverage_ok(result):
     return n == (result.get('heroCount') or 0), n
 
 
+#: the locked scorecard order. A hero's appliesTo places it; nothing here
+#: knows what any of these sections MEAN.
+SECTIONS = (('currentQuarter', 'CURRENT QUARTER'),
+            ('nextQGuidance', 'NEXT-Q GUIDANCE'),
+            ('fyGuidance', 'FY GUIDANCE'))
+
+
+def _despace(text):
+    """'Three Months EndedSeptember 30' -> '... Ended September 30'.
+
+    ★ THE MISSING SPACE IS IN THE SOURCE TOKEN, not the truncation. EDGAR
+    emits it concatenated, and ranking was already taught to see the month
+    anyway; this is the DISPLAY catching up. Scoped to month names so a
+    deliberate intercap like 'nonGAAP' is left alone.
+    """
+    import re as _re
+    return _re.sub(r'(?<=[a-z])(?=(?:%s)[a-z]*\s*\d)'
+                   % '|'.join(m.capitalize() for m in _MON3),
+                   ' ', text or '')
+
+
+def _row_line(h):
+    if h.get('low') is not None and h.get('high') is not None:
+        shown = '%s-%s' % (_fmt(h['low']), _fmt(h['high']))
+    elif h.get('channel') == 'prose':
+        shown = _fmt(h.get('value'))
+    else:
+        shown = h.get('raw') or _fmt(h.get('value'))
+    tags = []
+    seg = str(h.get('segment') or '')
+    if 'segment' in seg.lower():
+        tags.append('[%s]' % seg.rstrip(':'))
+    if h.get('channel') == 'prose':
+        tags.append('[prose]')
+    if h.get('needsVerification'):
+        tags.append('[UNVERIFIED]')
+    return ('  %-38s %14s   %-10s %s'
+            % (str(h.get('label'))[:38], shown[:14],
+               _short(h.get('period')), ' '.join(tags))).rstrip()
+
+
 def report(result, ticker, heading='', show_overflow=0):
-    """Found rows, then a plain list of what was not in the release."""
+    """Hero rows grouped by what the HERO asked for.
+
+    ★★ THE SECTION AND THE PERIOD COLUMN ARE DIFFERENT CLAIMS and both
+    stay. The header is what the hero asked for; the column is what the
+    DOCUMENT gave. A row under FY GUIDANCE returning `nextQ` is a
+    mismatch, and collapsing the two would hide exactly that.
+
+    ★ A SECTION WITH HEROES BUT NO RESOLUTIONS STILL PRINTS, carrying its
+    `not in release` rows. An empty FY block is a signal; a missing one is
+    silence.
+    """
+    found = result.get('found') or []
+    missing = result.get('notInRelease') or []
     lines = ['%s  %s' % (ticker, heading)]
-    for h in result.get('found') or []:
-        if h.get('low') is not None and h.get('high') is not None:
-            shown = '%s-%s' % (_fmt(h['low']), _fmt(h['high']))
-        elif h.get('channel') == 'prose':
-            # the prose `raw` is the matched clause, not the figure
-            shown = _fmt(h.get('value'))
-        else:
-            shown = h.get('raw') or _fmt(h.get('value'))
-        tags = []
-        seg = str(h.get('segment') or '')
-        if 'segment' in seg.lower():
-            tags.append('[%s]' % seg.rstrip(':'))
-        if h.get('channel') == 'prose':
-            tags.append('[prose]')
-        if h.get('needsVerification'):
-            tags.append('[UNVERIFIED]')
-        lines.append('  %-40s %14s   %-14s %s'
-                     % (str(h.get('label'))[:40], shown[:14],
-                        _short(h.get('period')), ' '.join(tags)))
-    for n in result.get('notInRelease') or []:
-        lines.append('  not in release - %s' % n['hero'][:58])
+
+    placed = set()
+    for key, title in SECTIONS:
+        fs = [h for h in found if h.get('appliesTo') == key]
+        ms = [h for h in missing if h.get('appliesTo') == key]
+        if not fs and not ms:
+            continue
+        placed.add(key)
+        lines.append('')
+        lines.append(title)
+        for h in fs:
+            lines.append(_row_line(h))
+        for n in ms:
+            lines.append('  not in release - %s' % n['hero'][:58])
+
+    # ★★★ AN UNRECOGNISED appliesTo IS NAMED, NEVER DEFAULTED. Dropping it
+    # loses a hero from the count; filing it under currentQuarter invents
+    # a claim the profile never made.
+    rest_f = [h for h in found if h.get('appliesTo') not in placed]
+    rest_m = [h for h in missing if h.get('appliesTo') not in placed]
+    if rest_f or rest_m:
+        lines.append('')
+        lines.append('UNCLASSIFIED')
+        for h in rest_f:
+            lines.append('%s   (appliesTo=%r)'
+                         % (_row_line(h), h.get('appliesTo')))
+        for n in rest_m:
+            lines.append('  not in release - %s   (appliesTo=%r)'
+                         % (n['hero'][:46], n.get('appliesTo')))
+
     ok, n = coverage_ok(result)
-    lines.append('  %s  heroes in profile %d - found %d - not in release %d'
+    lines.append('')
+    lines.append('heroes in profile %d - found %d - not in release %d'
                  '  = %d  %s'
-                 % (ticker, result.get('heroCount') or 0,
-                    len(result.get('found') or []),
-                    len(result.get('notInRelease') or []), n,
-                    'OK' if ok else 'MISMATCH'))
+                 % (result.get('heroCount') or 0, len(found), len(missing),
+                    n, 'OK' if ok else 'MISMATCH'))
     if show_overflow:
+        lines.append('')
+        lines.append('OVERFLOW')
         for r in (result.get('overflow') or [])[:show_overflow]:
-            lines.append('     overflow  %-36s %12s  %s'
-                         % (r['label'][:36], r['raw'][:12], r['period'][:20]))
+            lines.append('  %-38s %12s  %s'
+                         % (r['label'][:38], r['raw'][:12],
+                            _despace(r['period'])[:34]))
     return '\n'.join(lines)
 
 
