@@ -84,6 +84,25 @@ def norm(s):
     return t.lower().strip()
 
 
+def basis_of(word):
+    """Any spelling of a basis -> GAAP | NON_GAAP | None.
+
+    ★★★ THE CONFIG AND THE CODE SPELL IT DIFFERENTLY. The label maps
+    are hand-written and say "nonGAAP"; the parser derives "NON_GAAP" from
+    the document. Comparing them raw made two priority-1 Intel gross-margin
+    rows report NOT FOUND the moment their map landed -- the map MADE them
+    worse, which is the hardest kind of regression to see.
+    """
+    w = re.sub(r'[^a-z]', '', str(word or '').lower())
+    if not w:
+        return None
+    if w.startswith('non') or w == 'adjusted':
+        return 'NON_GAAP'
+    if w.startswith('gaap') or w == 'usgaap':
+        return 'GAAP'
+    return None
+
+
 def split_basis(label):
     """('GAAP'|'NON_GAAP'|None, label without the prefix)."""
     t = _WS.sub(' ', (label or '')).strip()
@@ -418,13 +437,40 @@ def select(parser_rows, ticker, profiles=None, aliases=None):
 
         # ── resolution order: explicit map, segments, canonical ─────────
         labels, why_remap, source = [], None, None
+        seg_ctx, channel, unverified = None, None, False
         entry = dlm.get(name)
         if isinstance(entry, dict):
             source = 'documentLabelMap'
             if entry.get('needsRemap'):
                 why_remap = entry.get('why') or 'needsRemap'
             labels = [str(x) for x in (entry.get('documentLabels') or [])]
-            want_basis = want_basis or entry.get('basis')
+            want_basis = want_basis or basis_of(entry.get('basis'))
+            seg_ctx = entry.get('segmentContext')
+            channel = entry.get('channel')
+            unverified = bool(entry.get('needsVerification'))
+            if entry.get('period'):
+                applies = entry['period']
+            # ★★ THE MAP'S UNIT IS THE DOCUMENT'S, THE HERO'S IS THE CARD'S.
+            # Kyle stores North America revenue as $B; Amazon prints it in
+            # $M. Checking 112,852 for plausibility against $B flagged a
+            # correct read as a scale problem -- a warning on the one row
+            # that was right.
+            if entry.get('unit'):
+                unit = entry['unit']
+            # ★★★ A STRUCTURAL ABSENCE IS NOT A FAILED MATCH. channel
+            # 'call' means the figure is NEVER in the release -- Intel has
+            # published no 2027 capex at all. Reporting NOT FOUND there
+            # trains you to ignore NOT FOUND everywhere.
+            if channel == 'call':
+                out['notFound'].append(dict(base, callOnly=True,
+                                            channel='call',
+                                            why=(entry.get('where') or '')[:160]))
+                continue
+            if channel == 'prose':
+                out['notFound'].append(dict(base, proseChannel=True,
+                                            channel='prose',
+                                            why=(entry.get('where') or '')[:160]))
+                continue
         if not labels:
             for short, sentry in segs.items():
                 if short and norm(short) in low:
@@ -446,7 +492,16 @@ def select(parser_rows, ticker, profiles=None, aliases=None):
             out['notFound'].append(dict(base, reason='no label mapping'))
             continue
 
-        wanted = set(norm(x) for x in labels)
+        # ★★★ STRIP THE BASIS FROM THE CONFIGURED LABEL TOO, and keep it.
+        # The map writes "Non-GAAP gross margin percentage"; rows are keyed
+        # on the basis-stripped core. Comparing the two raw meant the
+        # label never matched, and the map SILENTLY MADE TWO PRIORITY-1
+        # ROWS WORSE than having no map at all.
+        wanted = set()
+        for x in labels:
+            xb, xcore = split_basis(x)
+            wanted.add(norm(xcore))
+            want_basis = want_basis or xb
         found = []
         for i, row in enumerate(parser_rows):
             rb, rcore = split_basis(row.get('label') or '')
@@ -468,6 +523,12 @@ def select(parser_rows, ticker, profiles=None, aliases=None):
                 continue
             if want_basis and not rb and want_basis == 'NON_GAAP':
                 continue
+            # ★★★★ SEGMENT CONTEXT. 'Net sales' repeats under North
+            # America, International AND AWS with the same period and the
+            # same label. Without the section it is a one-in-three guess
+            # that looks like a read.
+            if seg_ctx and norm(seg_ctx) not in norm(row.get('section')):
+                continue
             found.append((i, row))
 
         if not found:
@@ -486,6 +547,10 @@ def select(parser_rows, ticker, profiles=None, aliases=None):
                              'table': v['table']} for v in vals[:4]])
         if bad and len(set(v.get('value') for v in vals)) > 1:
             rec['scaleWarning'] = True      # RULE 4 -- show both, pick none
+        if unverified:
+            rec['needsVerification'] = True
+        if channel:
+            rec['channel'] = channel
         out['heroes'].append(rec)
         claimed.update(i for i, _r in found)
 
@@ -520,7 +585,10 @@ def report(result, ticker, heading=''):
             lines.append('      SCALE WARNING - candidates differ by '
                          'magnitude, none chosen')
     for n in result.get('notFound') or []:
-        tag = 'NOT GRADEABLE' if n.get('notGradeable') else 'NOT FOUND'
+        tag = ('CALL-ONLY - not in release' if n.get('callOnly')
+               else 'PROSE CHANNEL' if n.get('proseChannel')
+               else 'NOT GRADEABLE' if n.get('notGradeable')
+               else 'NOT FOUND')
         lines.append('  %s - p%s %s%s'
                      % (tag, n.get('priority'), n['hero'][:46],
                         (' - ' + n['why'][:60]) if n.get('why') else ''))

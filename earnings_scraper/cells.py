@@ -170,6 +170,25 @@ class _Tables(HTMLParser):
 _YEAR = re.compile(r'^\s*(19|20)\d{2}\s*$')
 
 
+def _is_section_row(row):
+    """A label-only row that heads a GROUP OF ROWS, not a set of columns.
+
+    ★★★★ AMAZON'S SEGMENT TABLE IS BUILT THIS WAY. 'North America
+    Segment:' sits alone on a row, then 'Net sales', 'Operating income' and
+    the rest belong to it; then 'International Segment:' and the SAME
+    labels repeat. Read as a column header it carried rightward across
+    every column, so all three segments' net sales came back claiming North
+    America -- 112,852 and 43,108 and 45,984, indistinguishable.
+
+    One non-empty cell, in the first column, carrying no value.
+    """
+    filled = [(j, _clean(c)) for j, c in enumerate(row) if _clean(c)]
+    if len(filled) != 1:
+        return False
+    j, text = filled[0]
+    return j == 0 and not is_value(text) and not _ORPHAN.match(text)
+
+
 def _is_header_row(row):
     """A row that labels columns rather than reporting them.
 
@@ -202,7 +221,7 @@ def _headers(rows):
     cols = [[] for _ in range(width)]
     first_data = 0
     for i, row in enumerate(rows):
-        if not _is_header_row(row):
+        if _is_section_row(row) or not _is_header_row(row):
             first_data = i
             break
         carry = ''
@@ -232,7 +251,11 @@ def from_html(html_text, max_tables=60):
         if len(rows) < 2:
             continue
         cols, start = _headers(rows)
+        section = ''
         for row in rows[start:]:
+            if _is_section_row(row):
+                section = _clean([c for c in row if _clean(c)][0])
+                continue
             # the label is the first cell that is not a value and not an
             # orphan punctuation cell
             label, label_at = '', -1
@@ -249,6 +272,6 @@ def from_html(html_text, max_tables=60):
                     continue
                 period = cols[j] if j < len(cols) else ''
                 out.append({'table': heading, 'label': label,
-                            'period': period,
+                            'section': section, 'period': period,
                             'value': to_number(raw), 'raw': raw})
     return out

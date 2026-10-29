@@ -167,3 +167,131 @@ def main():
 
 
 main()
+
+
+def ranking_and_channels():
+    r"""THE FIVE RANKING FIXTURES, PINNED. Each came from a wrong answer.
+
+    ★ These are the sharpest failure class in this repo: every cell
+    internally consistent, only the SELECTION wrong, and nothing
+    downstream able to catch it.
+    """
+    paths = dict((t, os.path.join(SCRATCH, '%s.html' % t))
+                 for t in ('AMZN', 'INTC'))
+    if not all(os.path.exists(p) for p in paths.values()):
+        print('SKIP ranking fixtures — exhibit fixtures not cached')
+        return
+    rows = dict((t, cells.from_html(io.open(p, encoding='utf-8').read()))
+                for t, p in paths.items())
+
+    print('')
+    print('=== the five ranking terms ===')
+    h = S.resolve(rows['AMZN'], 'operatingMargin', 'currentQuarter')
+    check(h and h[0]['value'] == 13.9,
+          '1 RECENCY (year AND quarter): 13.9 from Q3 2026, never 13.1 '
+          '(Q1) or 13.7 (Q2) — "Three Months Ended" is true of all three')
+    h = S.resolve(rows['AMZN'], 'capex', 'TTM')
+    check(h and h[0]['value'] == 210657.0,
+          '2 EXPLICIT PERIOD IN THE LABEL: 210,657 from the "-- TTM" row, '
+          'not the unsuffixed cash-flow line')
+    na = [r for r in rows['AMZN']
+          if r['label'] == 'Net sales' and r['value'] == 112852.0]
+    check(na and 'North America' in (na[0].get('section') or ''),
+          '3 SEGMENT REPEATS: 112,852 carries section=%r, so North America '
+          'is separable from International (43,108) and AWS (45,984)'
+          % (na[0].get('section') if na else None))
+    h = S.resolve(rows['INTC'], 'revenue', 'currentQuarter')
+    check(h and h[0]['value'] == 16513.0,
+          '4 PRECISION: 16,513 from the statements, not 16.5 from the '
+          'summary')
+    check(h and 'Intel Products' not in (h[0].get('period') or ''),
+          '5 PERIOD QUALIFICATION: the plain header is the company, not a '
+          'business unit (%r)' % (h[0]['period'][:34] if h else None))
+
+    # ── B3: a percentage hero must never take a dollar total ─────────────
+    check(S.canonical('AWS revenue growth y/y (%)') is None,
+          'B3 canonical(): a segment growth RATE does not resolve to '
+          '`revenue` — answering it with 201,944 is always wrong')
+
+    print('')
+    print('=== channels ===')
+    out = S.select(rows['INTC'], 'INTC')
+    call = [n for n in out['notFound'] if n.get('callOnly')]
+    check(call,
+          'CALL-ONLY is distinct from NOT FOUND: %s — a structural absence '
+          'must not look like a failed match'
+          % [c['hero'][:30] for c in call])
+    out2 = S.select(rows['AMZN'], 'AMZN')
+    prose = [n for n in out2['notFound'] if n.get('proseChannel')]
+    check(prose, 'PROSE CHANNEL is flagged for rows the table cannot hold')
+    na_hero = [h for h in out2['heroes']
+               if h['hero'].startswith('North America revenue')]
+    check(na_hero and na_hero[0]['matches'][0]['value'] == 112852.0,
+          'segmentContext resolves North America to 112,852, not '
+          "International's 43,108 or AWS's 45,984 (%s)"
+          % (na_hero[0]['matches'][0]['value'] if na_hero else None))
+    # ★ SECTION NARROWS, RECENCY CHOOSES. The filter removes the other
+    # two segments; what remains is North America across several period
+    # columns, and the Q3 2026 one wins on recency. Asserting a single
+    # survivor would be asserting something that is not true -- the two
+    # terms do different jobs and both are needed.
+    others = [m for m in (na_hero[0]['matches'] if na_hero else [])
+              if m['value'] in (43108.0, 45984.0)]
+    check(not others,
+          'and NO International (43,108) or AWS (45,984) row survives the '
+          'section filter: %s' % ([m['value'] for m in others] or 'none'))
+    check(not any(h.get('scaleWarning') for h in out2['heroes']),
+          'and with the map declaring the DOCUMENT unit, no false scale '
+          'warning fires on a correct read')
+
+
+def prose_channel():
+    r"""PART A — prose guidance, and the two negative controls.
+
+    ★★ ZERO ROWS ON INTEL IS THE RESULT, not a gap. Intel's guidance is a
+    table; returning anything here would double-report what the table
+    parser already holds, at lower precision.
+    """
+    from earnings_scraper import sec
+    from scraper import prose_guidance as PG
+    paths = dict((t, os.path.join(SCRATCH, '%s.html' % t))
+                 for t in ('AMZN', 'INTC'))
+    if not all(os.path.exists(p) for p in paths.values()):
+        print('SKIP prose — exhibit fixtures not cached')
+        return
+    txt = dict((t, sec.to_text(io.open(p, encoding='utf-8').read()))
+               for t, p in paths.items())
+
+    print('')
+    print('=== prose guidance ===')
+    got = PG.from_text(txt['AMZN'])
+    by = dict(((g['metric'], g['period']), g) for g in got)
+    rev = by.get(('revenue', 'nextQGuidance'))
+    check(rev and rev['low'] == 240000.0 and rev['high'] == 247000.0,
+          'AMZN revenue nextQ 240,000-247,000 from prose')
+    oi = by.get(('operatingIncome', 'nextQGuidance'))
+    check(oi and oi['low'] == 28500.0 and oi['high'] == 33500.0,
+          'AMZN operatingIncome nextQ 28,500-33,500 from prose')
+    cx = by.get(('capex', 'FY2026'))
+    check(cx and cx['value'] == 220000.0,
+          'AMZN capex FY2026 220,000 — a FULL-YEAR figure inside a block '
+          'headed "Fourth Quarter 2026 Guidance", so the heading period '
+          'must not be taken blindly')
+    check(all(g['confidence'] == 'prose' and g.get('sourceSentence')
+              for g in got),
+          'every prose row carries confidence="prose" and the verbatim '
+          'sentence — the channel has to be visible at a glance')
+
+    check(PG.from_text(txt['INTC']) == [],
+          'NEGATIVE CONTROL 1 — Intel returns ZERO rows; its guidance is a '
+          'table and double-reporting it would lower the precision')
+    blind = txt['AMZN'].replace('Fourth Quarter 2026 Guidance', 'XXXX') \
+                       .replace('Financial Guidance', 'YYYY')
+    check(PG.from_text(blind) == [],
+          'NEGATIVE CONTROL 2 — with the headings gone it returns ZERO, '
+          'and never falls back to scanning the body. That fallback is how '
+          '201,944 would become 201,900')
+
+
+ranking_and_channels()
+prose_channel()
