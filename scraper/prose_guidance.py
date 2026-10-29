@@ -96,6 +96,15 @@ def _period_of(sentence, default):
     if m and not _QWORD.search(sentence):
         return 'FY%s' % m.group(1)
     return default
+#: a clean name for the card. The SENTENCE is kept in sourceSentence;
+#: putting it in `label` made the row unreadable next to table rows.
+_DISPLAY = {'revenue': 'Revenue', 'operatingIncome': 'Operating income',
+            'operatingMargin': 'Operating margin',
+            'grossMargin': 'Gross margin',
+            'capex': 'Capital expenditures',
+            'freeCashFlow': 'Free cash flow', 'eps': 'EPS',
+            'adjustedEbitda': 'Adjusted EBITDA'}
+
 _WS = re.compile(r'\s+')
 
 
@@ -182,7 +191,8 @@ def from_text(text, heading_period='nextQGuidance'):
             if row is None:
                 continue
             row.update({'metric': metric, 'period': period,
-                        'table': heading, 'label': sentence[:70],
+                        'table': heading,
+                        'label': _DISPLAY.get(metric, metric),
                         'confidence': 'prose',
                         'sourceSentence': sentence})
             out.append(row)

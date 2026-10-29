@@ -100,8 +100,8 @@ def main():
     empty = {'EMPTYCO': {'heroKPIs': []}}
     res = S.select([{'table': 't', 'label': 'Net sales', 'period': 'Q3 2026',
                      'value': 5.0, 'raw': '5.0'}], 'EMPTYCO', profiles=empty)
-    check(res['heroes'] == [] and res['notFound'] == [],
-          'an empty heroKPIs list yields zero heroes and zero misses, '
+    check(res['found'] == [] and res['notInRelease'] == [],
+          'an empty heroKPIs list yields zero found and zero missing, '
           'not a crash')
     check(len(res['overflow']) == 1,
           'and the alias hit still appears as overflow, so the print is '
@@ -150,14 +150,15 @@ def main():
           'and a range carries value=None with raw intact — inventing a '
           'midpoint here would be the parser interpreting')
 
-    # ── RULE 3: qualitative heroes are skipped, not reported missing ─────
+    # ★ the qualitative taxonomy was REMOVED. A hero is found in the
+    # release or it is not; there is no third category and no opinion
+    # about why. What remains must add up.
     out = S.select(rows['INTC'], 'INTC')
-    check(out['qualitative'],
-          'qualitative heroes are listed separately (%d), never as NOT '
-          'FOUND — a warning that fires every quarter trains you to ignore '
-          'it' % len(out['qualitative']))
-    check(all('NOT FOUND' not in str(q) for q in out['qualitative']),
-          'and they carry no miss marker')
+    ok, n = S.coverage_ok(out)
+    check(ok, 'found + notInRelease == heroCount (%d of %d) — completeness, '
+          'not grading' % (n, out.get('heroCount')))
+    check('qualitative' not in out and 'notFound' not in out,
+          'and the old grading buckets are gone from the result shape')
 
     t0 = time.time()
     S.select(rows['AMZN'], 'AMZN')
@@ -215,34 +216,40 @@ def ranking_and_channels():
 
     print('')
     print('=== channels ===')
-    out = S.select(rows['INTC'], 'INTC')
-    call = [n for n in out['notFound'] if n.get('callOnly')]
-    check(call,
-          'CALL-ONLY is distinct from NOT FOUND: %s — a structural absence '
-          'must not look like a failed match'
-          % [c['hero'][:30] for c in call])
-    out2 = S.select(rows['AMZN'], 'AMZN')
-    prose = [n for n in out2['notFound'] if n.get('proseChannel')]
-    check(prose, 'PROSE CHANNEL is flagged for rows the table cannot hold')
-    na_hero = [h for h in out2['heroes']
+    from scraper import prose_guidance as _PG
+    from earnings_scraper import sec as _sec
+    _p = dict((t, _PG.from_text(_sec.to_text(
+        io.open(paths[t], encoding='utf-8').read()))) for t in paths)
+    out = S.select(rows['INTC'], 'INTC', prose_rows=_p['INTC'])
+    check([n['hero'] for n in out['notInRelease']],
+          'a hero absent from the release is listed plainly, with no '
+          'explanation attached: %s'
+          % [n['hero'][:28] for n in out['notInRelease']])
+    out2 = S.select(rows['AMZN'], 'AMZN', prose_rows=_p['AMZN'])
+    prose = [f for f in out2['found'] if f.get('channel') == 'prose']
+    check(len(prose) == 2,
+          'prose guidance RESOLVES rather than being reported missing '
+          '(%d rows), and carries channel=prose so it can never be '
+          'mistaken for a statement figure' % len(prose))
+    na_hero = [h for h in out2['found']
                if h['hero'].startswith('North America revenue')]
-    check(na_hero and na_hero[0]['matches'][0]['value'] == 112852.0,
+    check(na_hero and na_hero[0]['value'] == 112852.0,
           'segmentContext resolves North America to 112,852, not '
           "International's 43,108 or AWS's 45,984 (%s)"
-          % (na_hero[0]['matches'][0]['value'] if na_hero else None))
+          % (na_hero[0]['value'] if na_hero else None))
     # ★ SECTION NARROWS, RECENCY CHOOSES. The filter removes the other
     # two segments; what remains is North America across several period
     # columns, and the Q3 2026 one wins on recency. Asserting a single
     # survivor would be asserting something that is not true -- the two
     # terms do different jobs and both are needed.
-    others = [m for m in (na_hero[0]['matches'] if na_hero else [])
-              if m['value'] in (43108.0, 45984.0)]
-    check(not others,
-          'and NO International (43,108) or AWS (45,984) row survives the '
-          'section filter: %s' % ([m['value'] for m in others] or 'none'))
-    check(not any(h.get('scaleWarning') for h in out2['heroes']),
-          'and with the map declaring the DOCUMENT unit, no false scale '
-          'warning fires on a correct read')
+    check(na_hero and na_hero[0].get('segment')
+          and 'North America' in na_hero[0]['segment'],
+          'and the row carries its segment, so the choice is inspectable '
+          'rather than implicit: %r'
+          % (na_hero[0].get('segment') if na_hero else None))
+    check(all(f.get('value') is not None or f.get('low') is not None
+              for f in out2['found']),
+          'every found row carries a number or a range')
 
 
 def prose_channel():
