@@ -240,7 +240,14 @@ def main():
     v1 = _tally_at(0.50, -0.50)
     check('v1 history: DECISIVE_BULLISH n=29', v1['DECISIVE_BULLISH']['n'] == 29,
           v1['DECISIVE_BULLISH']['n'])
-    check('v1 history: DECISIVE_BEARISH n=1', v1['DECISIVE_BEARISH']['n'] == 1,
+    # ★★★ RE-PINNED 2026-10-29, 1 -> 2. NKE-2027Q1 entered the band
+    # when it was scored; TSLA-2026Q2 was the original. NO EXISTING SCORE
+    # MOVED -- the POPULATION grew by one record that landed bearish, which
+    # is the re-pin policy's allowed case. These are EXACT population pins
+    # and they will move again every time a decisive record is added; that
+    # is deliberate, so a count changing for any OTHER reason is visible.
+    check('v1 history: DECISIVE_BEARISH n=2 (TSLA-2026Q2, NKE-2027Q1)',
+          v1['DECISIVE_BEARISH']['n'] == 2,
           v1['DECISIVE_BEARISH']['n'])
     check('v1 history: STAY_FOR_CALL is the bulk of the library', v1['STAY_FOR_CALL']['n'] >= 27,
           v1['STAY_FOR_CALL']['n'])

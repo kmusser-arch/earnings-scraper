@@ -163,9 +163,31 @@ def _sector_stable(rec, all_records=()):
     return []
 
 
+#: record kinds that legitimately carry no preEarnings block. An investor
+#: day has no quarter to grade against and never did.
+_NOT_AN_EARNINGS_RECORD = ('INVESTOR-DAY', 'INVESTOR DAY', 'ANALYST-DAY')
+
+
+def _is_non_earnings(rec):
+    """Does the record DECLARE that it is not an earnings print?
+
+    ★★★ A DECLARED ABSENCE IS LEGITIMATE; AN UNDECLARED ONE IS A
+    DEFECT. MRVL-ID-2026-10-06 carries kind='INVESTOR-DAY' and status to
+    match, so having no preEarnings block is the shape of the thing, not
+    corruption -- and raising HARD on it turned the whole suite red and
+    kept it red, which is how a gate stops being read.
+    """
+    for key in ('kind', 'status', 'recordType'):
+        v = str(rec.get(key) or '').strip().upper()
+        if v in _NOT_AN_EARNINGS_RECORD:
+            return True
+    return False
+
+
 def _structure(rec):
     out = []
-    if 'preEarnings' not in rec and not is_declared_exclusion(rec):
+    if ('preEarnings' not in rec and not is_declared_exclusion(rec)
+            and not _is_non_earnings(rec)):
         out.append(Finding('record-structure', 'HARD',
                            'no preEarnings key -- nothing to grade against'))
     pct = (rec.get('stockReaction') or {}).get('pctChangeNextDay',
