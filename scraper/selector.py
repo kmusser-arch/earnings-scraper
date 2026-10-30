@@ -766,7 +766,46 @@ def _row_line(h):
                _short(h.get('period')), ' '.join(tags))).rstrip()
 
 
-def report(result, ticker, heading='', show_overflow=0):
+def current_quarter_rows(parser_rows, exclude_labels=()):
+    """Every row the document printed for the REPORTED QUARTER. No map.
+
+    ★★★★ THE PERIOD FILTER IS UNIVERSAL AND ALWAYS WAS -- period_class
+    takes (table, period, label) and knows nothing about a ticker, a
+    profile or a hero. It was only ever REACHED through a hero lookup, so
+    60 tickers with no documentLabelMap rendered a blank screen while the
+    thing that beat the nine-month and prior-year columns on Apple sat
+    right there, unused.
+
+    ★★ DOCUMENT ORDER, VERBATIM LABELS, SECTION HEADINGS INTACT. No
+    importance ranking, no headline grouping, no folding cost-of-sales or
+    balance-sheet rows together. The moment this decides what matters it
+    has left scope.
+
+    One row per (section, label); where a label carries several columns in
+    the quarter -- current and prior-year -- the most recent wins, by the
+    same recency term the hero path uses.
+    """
+    skip = set(norm(x) for x in (exclude_labels or ()))
+    seen, out = {}, []
+    for r in parser_rows or []:
+        if period_class(r.get('table'), r.get('period'),
+                        r.get('label')) != 'currentQuarter':
+            continue
+        if norm(r.get('label')) in skip:
+            continue
+        key = (r.get('section') or '', r.get('label') or '')
+        if key not in seen:
+            seen[key] = len(out)
+            out.append(r)
+        else:
+            cur = out[seen[key]]
+            if (_recency(r), _precision(r)) > (_recency(cur),
+                                               _precision(cur)):
+                out[seen[key]] = r
+    return out
+
+
+def report(result, ticker, heading='', show_overflow=0, parser_rows=None):
     """Hero rows grouped by what the HERO asked for.
 
     ★★ THE SECTION AND THE PERIOD COLUMN ARE DIFFERENT CLAIMS and both
@@ -781,6 +820,8 @@ def report(result, ticker, heading='', show_overflow=0):
     found = result.get('found') or []
     missing = result.get('notInRelease') or []
     lines = ['%s  %s' % (ticker, heading)]
+    if found:
+        pass
 
     placed = set()
     for key, title in SECTIONS:
@@ -813,6 +854,25 @@ def report(result, ticker, heading='', show_overflow=0):
         for n in rest_m:
             lines.append('  not in release - %s   (appliesTo=%r)'
                          % (n['hero'][:46], n.get('appliesTo')))
+
+    # ★ EVERYTHING ELSE THE DOCUMENT PRINTED FOR THE QUARTER, after the
+    # mapped rows and clearly separated from them. For an unmapped ticker
+    # this is the whole card; for a mapped one it is the context the hero
+    # rows were chosen out of.
+    if parser_rows is not None:
+        claimed = set(str(h.get('label')) for h in found)
+        rest = current_quarter_rows(parser_rows, exclude_labels=claimed)
+        if rest:
+            lines.append('')
+            lines.append('CURRENT QUARTER - everything else printed (%d)'
+                         % len(rest))
+            sec = None
+            for r in rest:
+                if (r.get('section') or '') != sec:
+                    sec = r.get('section') or ''
+                    lines.append('  -- %s' % (sec or '(no section)'))
+                lines.append('     %-40s %14s'
+                             % (str(r['label'])[:40], str(r['raw'])[:14]))
 
     ok, n = coverage_ok(result)
     lines.append('')
