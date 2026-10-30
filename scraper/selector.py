@@ -389,6 +389,14 @@ def raw_class(raw):
     return None
 
 
+def _pct_context(row):
+    """Does anything around this cell say the column is a percentage?"""
+    hay = norm('%s %s %s' % (row.get('label') or '', row.get('period') or '',
+                             row.get('section') or ''))
+    return ('%' in hay or 'percent' in hay or 'margin %' in hay
+            or 'rate' in hay or ' ppt' in hay or 'basis points' in hay)
+
+
 def _plausible(value, unit):
     """RULE 4 -- is this magnitude believable for the hero's unit?"""
     if value is None or not unit:
@@ -608,6 +616,16 @@ def select(parser_rows, ticker, profiles=None, aliases=None,
         if channel == 'prose' or not labels:
             pm = _prose_metric(name, prose_rows)
             hit = next((p for p in prose_rows if p.get('metric') == pm), None)
+            # ★★★★ A DECLARED CHANNEL IS A DECLARATION, NOT A
+            # PREFERENCE. channel:'prose' on Apple's Gross Margin (%) says
+            # the percent exists ONLY in a sentence -- the table label
+            # 'Gross margin' is a DOLLAR line, 54,770. Falling through to
+            # the table when the prose lookup found nothing returned
+            # 54,770 as a gross MARGIN: a 54,770% margin, resolved,
+            # displayed, and counted as found.
+            if hit is None and channel == 'prose':
+                out['notInRelease'].append(dict(base, channel='prose'))
+                continue
             if hit is not None:
                 out['found'].append(dict(
                     base, label=hit.get('label') or pm, value=hit.get('value'),
@@ -616,8 +634,15 @@ def select(parser_rows, ticker, profiles=None, aliases=None,
                     basis=None, segment=None, channel='prose',
                     sourceSentence=hit.get('sourceSentence')))
                 continue
-        if channel == 'call':
-            out['notInRelease'].append(base)
+        # ★★★ WHY A ROW IS BLANK IS NOT ALL ONE THING. 'call' means ask the
+        # transcript. 'derived' means the INPUTS are printed but the figure
+        # is not -- Apple prints Services at 30,739 and 27,423 and never
+        # the +12.1%. Collapsing them loses the difference between a number
+        # that exists nowhere and one that is two columns and a division
+        # away. Neither is computed here; the parser reports what was
+        # printed, and the display says which kind of absence this is.
+        if channel in ('call', 'derived'):
+            out['notInRelease'].append(dict(base, channel=channel))
             continue
 
         wanted = set()
@@ -655,6 +680,14 @@ def select(parser_rows, ticker, profiles=None, aliases=None,
             # not bind to a % candidate at any magnitude.
             hc, rc = unit_class(unit), raw_class(row.get('raw'))
             if hc and rc and hc != rc:
+                continue
+            # ★★★ AND AN UNMARKED CELL IS NOT A PERCENT. The guard above
+            # only fires when BOTH sides declare a class, and Apple prints
+            # bare numbers inside a $M table -- no '$' in the cell and no
+            # '%' either -- so raw_class returned None and 54,770 sailed
+            # through to a % hero. A percentage is PRINTED as one: with a
+            # % sign, or in a column that says so.
+            if hc == 'PERCENT' and rc is None and not _pct_context(row):
                 continue
             found.append((i, row))
 
@@ -761,7 +794,10 @@ def report(result, ticker, heading='', show_overflow=0):
         for h in fs:
             lines.append(_row_line(h))
         for n in ms:
-            lines.append('  not in release - %s' % n['hero'][:58])
+            lines.append(('  not in release - %-44s %s'
+                          % (n['hero'][:44],
+                             ('[%s]' % n['channel']) if n.get('channel')
+                             else '')).rstrip())
 
     # ★★★ AN UNRECOGNISED appliesTo IS NAMED, NEVER DEFAULTED. Dropping it
     # loses a hero from the count; filing it under currentQuarter invents

@@ -519,3 +519,88 @@ def sectioning():
 
 
 sectioning()
+
+
+def declared_channel_and_percent_guard():
+    r"""★★★★ A 54,770% GROSS MARGIN RESOLVED, DISPLAYED AND COUNTED AS FOUND.
+
+    Apple's table label 'Gross margin' is a DOLLAR line -- 54,770 $M. The
+    percent exists only in a sentence, which is why the map declares
+    channel:'prose'. Two defects let the dollar figure through:
+
+      1. a declared channel was treated as a PREFERENCE. When the prose
+         lookup found nothing the row fell through to the table path.
+      2. the unit-class guard only fired when BOTH sides declared a class,
+         and Apple prints bare numbers inside a $M table -- no '$' in the
+         cell and no '%' either -- so raw_class returned None.
+
+    Asked whether the guard refused it, the honest answer was no, and only
+    running it said so.
+    """
+    print('')
+    print('=== declared channel, and the percent guard ===')
+    rows = [{'table': 'CONDENSED STATEMENTS OF OPERATIONS',
+             'section': '', 'label': 'Gross margin',
+             'period': 'Three Months Ended June 27, 2026',
+             'value': 54770.0, 'raw': '54,770'}]
+    prof = {'Z': {'heroKPIs': [{'name': 'Gross Margin (%)', 'priority': 2,
+                                'appliesTo': 'currentQuarter', 'unit': '%'}],
+                  'documentLabelMap': {
+                      'Gross Margin (%)': {'documentLabels': [],
+                                           'channel': 'prose',
+                                           'period': 'currentQuarter',
+                                           'unit': '%'}}}}
+    out = S.select(rows, 'Z', profiles=prof, prose_rows=[])
+    check(out['found'] == [],
+          'a channel:prose hero with NO prose match does not fall through '
+          'to the table (%d found) - the declaration is not a preference'
+          % len(out['found']))
+    check(len(out['notInRelease']) == 1
+          and out['notInRelease'][0].get('channel') == 'prose',
+          'it reports absent, and names WHICH channel was declared')
+
+    # ── the guard itself, with the channel removed ───────────────────────
+    prof2 = {'Z': {'heroKPIs': [{'name': 'Gross Margin (%)', 'priority': 2,
+                                 'appliesTo': 'currentQuarter', 'unit': '%'}],
+                   'documentLabelMap': {
+                       'Gross Margin (%)': {
+                           'documentLabels': ['Gross margin'],
+                           'period': 'currentQuarter', 'unit': '%'}}}}
+    out2 = S.select(rows, 'Z', profiles=prof2)
+    check(out2['found'] == [],
+          'and even mapped STRAIGHT at the dollar label, a percent hero '
+          'refuses an unmarked cell (%s) - a percentage is PRINTED as one'
+          % [f.get('value') for f in out2['found']])
+
+    # ★ ANTI-VACUOUS: a genuine percent cell must still bind
+    pct = [dict(rows[0], label='Gross margin percentage', value=44.1,
+                raw='44.1%')]
+    prof3 = {'Z': {'heroKPIs': [{'name': 'Gross Margin (%)', 'priority': 2,
+                                 'appliesTo': 'currentQuarter', 'unit': '%'}],
+                   'documentLabelMap': {
+                       'Gross Margin (%)': {
+                           'documentLabels': ['Gross margin percentage'],
+                           'period': 'currentQuarter', 'unit': '%'}}}}
+    out3 = S.select(pct, 'Z', profiles=prof3)
+    check(out3['found'] and out3['found'][0]['value'] == 44.1,
+          'while a real percent cell still binds (%s) - otherwise the '
+          'refusal above means only that nothing can match'
+          % (out3['found'][0]['value'] if out3['found'] else None))
+
+    # ── 'derived' is its own kind of absence ─────────────────────────────
+    prof4 = {'Z': {'heroKPIs': [{'name': 'Services Growth YoY (%)',
+                                 'priority': 1,
+                                 'appliesTo': 'currentQuarter', 'unit': '%'}],
+                   'documentLabelMap': {
+                       'Services Growth YoY (%)': {'documentLabels': [],
+                                                   'channel': 'derived',
+                                                   'unit': '%'}}}}
+    out4 = S.select([], 'Z', profiles=prof4)
+    check(out4['notInRelease']
+          and out4['notInRelease'][0].get('channel') == 'derived',
+          "channel 'derived' survives to the display - the inputs are "
+          'printed and the figure is not, which is a different absence '
+          'from "ask the transcript"')
+
+
+declared_channel_and_percent_guard()
