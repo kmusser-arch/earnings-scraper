@@ -50,6 +50,43 @@ def fixture_for(ticker):
     return os.path.join(FIXTURES, hits[-1]) if hits else None
 
 
+def check_value(entry, f):
+    """(state, detail) for one RESOLVED hero. Five states, never four.
+
+    THE WHOLE POINT OF `expect`. Before this, PASS meant "resolved to
+    something" -- the hero key was present in `found` and the value was
+    PRINTED, never compared. Candidate B changed five figures in this very
+    file, among them ADBE adjusted EPS from 6.13 to 5.96, and the summary
+    line came back byte-identical: PASS 22 FAIL 9 UNVERIFIED 2. A harness
+    that cannot report a wrong value is not a harness, and this one had
+    been clearing every selector change for a session.
+
+    UNPINNED IS ITS OWN STATE AND MUST STAY ITS OWN STATE. Folding a
+    resolved-but-unpinned entry into PASS is the identical defect at
+    smaller scale -- it would report 17 unchecked entries as verified.
+    """
+    exp = entry.get('expect')
+    if entry.get('expectUnverified'):
+        return 'UNVERIFIED', 'expect not sourced to a document'
+    if exp is None:
+        return 'UNPINNED', 'resolved, no expect to check against'
+    got = f.get('value')
+    if got is None:
+        return 'WRONG-VALUE', ('expected %s, no numeric value (raw %r)'
+                               % (exp, str(f.get('raw'))[:24]))
+    try:
+        got = float(got)
+        exp = float(exp)
+    except (TypeError, ValueError):
+        return 'WRONG-VALUE', 'expect %r is not numeric' % (exp,)
+    # tight enough that 5.96 never passes for 6.13, loose enough that a
+    # float repr never fails for itself
+    if abs(got - exp) <= max(0.005, abs(exp) * 1e-9):
+        return 'PASS', ''
+    return 'WRONG-VALUE', 'expected %s, got %s' % (
+        entry.get('expect'), f.get('raw') or got)
+
+
 def main():
     profiles, mtime = S.load_profiles()
     if not profiles:
@@ -65,7 +102,7 @@ def main():
                             if os.path.isdir(FIXTURES) else 'NONE'))
     print('')
 
-    npass = nfail = nunver = nofix = 0
+    npass = nfail = nunver = nofix = nwrong = nunpin = 0
     for ticker, prof in mapped:
         dlm = prof.get('documentLabelMap') or {}
         path = fixture_for(ticker)
@@ -118,9 +155,20 @@ def main():
             if hero in got:
                 f = got[hero]
                 shown = (f.get('raw') or f.get('value'))
-                print('   PASS        %-46s %s  %s'
-                      % (hero[:46], str(shown)[:14], f.get('period') or ''))
-                npass += 1
+                state, why = check_value(entry, f)
+                print('   %-11s %-46s %s  %s'
+                      % (state, hero[:46], str(shown)[:14],
+                         f.get('period') or ''))
+                if why:
+                    print('               -> %s' % why)
+                if state == 'PASS':
+                    npass += 1
+                elif state == 'WRONG-VALUE':
+                    nwrong += 1
+                elif state == 'UNPINNED':
+                    nunpin += 1
+                else:
+                    nunver += 1
             elif hero in missing and declared_absent:
                 print('   PASS        %-46s (declared not in release)'
                       % hero[:46])
@@ -131,9 +179,14 @@ def main():
         print('')
 
     print('=' * 70)
-    print('PASS %d   FAIL %d   UNVERIFIED %d   NO FIXTURE %d'
-          % (npass, nfail, nunver, nofix))
-    return 1 if nfail else 0
+    print('PASS %d   WRONG-VALUE %d   FAIL %d   UNPINNED %d'
+          '   UNVERIFIED %d   NO FIXTURE %d'
+          % (npass, nwrong, nfail, nunpin, nunver, nofix))
+    if nunpin:
+        print('%d resolved entr%s carr%s no `expect` -- PRINTED, NOT CHECKED.'
+              % (nunpin, 'y' if nunpin == 1 else 'ies',
+                 'ies' if nunpin == 1 else 'y'))
+    return 1 if (nfail or nwrong) else 0
 
 
 if __name__ == '__main__':
