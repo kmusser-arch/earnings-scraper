@@ -305,7 +305,30 @@ def _recency(row):
     quarters stale, in the right units, with the right label, on the right
     row. Nothing downstream could catch that.
     """
-    hay = '%s %s' % (row.get('period') or '', row.get('table') or '')
+    # THE COLUMN ONLY. The `table` field is NOT a caption -- EDGAR hands
+    # back the text immediately before the <table>, which is routinely the
+    # tail of the preceding paragraph. Dell's reads 'r over year, and
+    # non-GAAP diluted EPS to be $17.90 at the midp...', the tail of a
+    # FORWARD GUIDANCE sentence carrying fiscal 2027. Pooling it with the
+    # column gave every silent column a year the document never granted
+    # it, and Dell's unheaded "Change" column -- (0,0) on its own -- took
+    # (2027,0) from that prose and beat the dollar column's explicit
+    # (2026,2). Net revenue came back as 88%.
+    #
+    # Alphabet is the same defect in the other direction: its caption says
+    # 'for the quarters ended September 30, 2025 AND 2026', so the 2025
+    # column inherited 2026, tied with the real one, and document order
+    # handed back prior-year revenue, operating income and EPS.
+    #
+    # A column that names no period scores (0, 0) and loses to any column
+    # that names itself. Where NO column names a period they all tie and
+    # document order decides, exactly as before.
+    #
+    # MEASURED over 111 corpus documents + 6 wire fixtures: 57 selected
+    # answers change, 0.85%, 9 documents, every one read by hand and every
+    # one a correction off a stale column -- prior-year, prior-quarter, or
+    # a percent-of-revenue column standing in for dollars.
+    hay = row.get('period') or ''
     ys = _YEARRE.findall(hay)
     year = max((int(a + b) for a, b in ys), default=0)
     qs = [int(q) for q in _QNUM.findall(hay)]
