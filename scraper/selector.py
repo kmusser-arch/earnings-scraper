@@ -958,13 +958,32 @@ def report(result, ticker, heading='', show_overflow=0, parser_rows=None):
             lines.append('')
             lines.append('CURRENT QUARTER - everything else printed (%d)'
                          % len(rest))
+            # ★ WHERE ONE LABEL CARRIES TWO PERIODS, MARK THE OLDER. Apple's
+            # year-end release repeats the income statement inside a
+            # PRIOR-YEAR non-GAAP reconciliation whose columns are all the
+            # September BEFORE the one being reported, under section ''.
+            # Those rows have no current-year sibling to lose the dedupe
+            # to, so the card showed Net income 14,736 -- FQ4'24 GAAP --
+            # beside the correct 27,466, with nothing to tell them apart.
+            #
+            # MARKED, NOT DROPPED AND NOT REORDERED. A filter can delete a
+            # good row and a reorder hides the document's own sequence;
+            # neither is needed when the reader can simply SEE the period.
+            newest = {}
+            for r in rest:
+                lab = str(r.get('label') or '')
+                newest[lab] = max(newest.get(lab, (0, 0)), _recency(r))
             sec = None
             for r in rest:
                 if (r.get('section') or '') != sec:
                     sec = r.get('section') or ''
                     lines.append('  -- %s' % (sec or '(no section)'))
-                lines.append('     %-40s %14s'
-                             % (str(r['label'])[:40], str(r['raw'])[:14]))
+                rec = _recency(r)
+                stale = (rec[0] and rec < newest[str(r.get('label') or '')])
+                lines.append('     %-38s %13s  %-14s %s'
+                             % (str(r['label'])[:38], str(r['raw'])[:13],
+                                period_tag(r.get('period')),
+                                'STALE' if stale else ''))
 
     ok, n = coverage_ok(result)
     lines.append('')
@@ -985,6 +1004,36 @@ def report(result, ticker, heading='', show_overflow=0, parser_rows=None):
 def _short(period):
     return {'currentQuarter': 'currentQ', 'nextQGuidance': 'nextQ',
             'TTM': 'TTM'}.get(period, period or '')
+
+
+#: the day-anchored month, plus the year that follows it. Reuses the same
+#: anchor _MONTHRE uses, so the tag and the RANKING always read the same
+#: date out of a column -- a display that parsed dates its own way could
+#: print 'Sep 27, 2025' beside a row ranked on 2024.
+_DATERE = re.compile(r'(?i)(' + '|'.join(_MON3)
+                     + r')[a-z]*\.?\s*(\d{1,2})\b[,\s]*((?:19|20)\d{2})?')
+
+
+def period_tag(period):
+    """'Three Months Ended September 28, 2024 As Reported' -> 'Sep 28, 2024'.
+
+    THE PARSER ALREADY KNOWS THIS AND THE DISPLAY WAS THROWING IT AWAY.
+    Every row carries the column header that decided its class; printing
+    only the figure asks the reader to assume which period it came from,
+    and at fiscal year end that assumption is wrong five times on one
+    Apple card.
+
+    Falls back to the squeezed period rather than to nothing: an
+    unparseable header is still evidence, and a blank tag would read as
+    "no period given" when the truth is "a period I could not shorten".
+    """
+    m = _DATERE.search(period or '')
+    if m:
+        return ('%s %s, %s' % (m.group(1).capitalize(), m.group(2),
+                               m.group(3)) if m.group(3)
+                else '%s %s' % (m.group(1).capitalize(), m.group(2)))
+    t = ' '.join((period or '').split())
+    return t[:22]
 
 
 def _fmt(v):
