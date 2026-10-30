@@ -55,7 +55,19 @@ def to_number(raw):
         return None
     if _RANGE.match(s):
         return None            # a range has no single value; `raw` carries it
-    neg = '(' in s and ')' in s
+    # THE OPENING PAREN IS THE SIGNAL; THE CLOSING ONE IS OFTEN A CELL OF
+    # ITS OWN. EDGAR emits Oracle's reconciliation as five cells --
+    # '$' '12,617' '$' '(1,423' ')' -- so requiring BOTH parens in one
+    # string dropped the sign on 660 rows across 15 documents, among them
+    # interest expense, every non-GAAP adjustment column, and a free cash
+    # flow of -5,396 that read as +5,396 while the same release's prose
+    # said "negative $5 billion".
+    #
+    # NOT a new rule: parse.py:621 already took the leading paren alone as
+    # the signal. This is that rule, ported, with the matched pair kept so
+    # a single intact cell still works.
+    head = s.lstrip('$ ')
+    neg = head.startswith('(') or ('(' in s and ')' in s)
     s = re.sub(r'[^\d.\-]', '', s.replace(',', ''))
     if s in ('', '-', '.', '-.'):
         return None
