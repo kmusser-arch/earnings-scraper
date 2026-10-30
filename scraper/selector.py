@@ -55,6 +55,32 @@ _CANON = (
 )
 
 #: parser period/table text -> the hero's appliesTo vocabulary
+#: ENDING vs ENDED IS THE WHOLE SIGNAL, and the vocabulary below could not
+#: see it: the needle is 'three months', which matches 'Three Months Ended'
+#: and 'Three Months Ending' alike. 74 rows across 8 documents -- KLAC,
+#: AKAM, NOW, DELL -- offered a GUIDANCE column to fill a reported-quarter
+#: hero, which is non-negotiable 2 running backwards. ('quarter ended' does
+#: carry the tense, which is why 'Quarter Ending December 31, 2026' was
+#: already correct while 'Three Months Ending July 31, 2026' was not.)
+#:
+#: ENUMERATED, NOT PATCHED. Every <word>+END* pair in the corpus's 1,023
+#: distinct period strings was listed before this was written, because
+#: adding only the spelling that bit us is how this family produces five
+#: appearances instead of one. The forward forms are 'months ending',
+#: 'year ending' and the CONCATENATED 'endingjune' / 'endingseptember' --
+#: EDGAR drops the space, the same defect _despace exists for -- so the
+#: pattern deliberately carries no trailing word boundary.
+#:
+#: 'low end' and 'high end' are Akamai's guide-range columns. They are the
+#: word END, not ENDING, and \bending cannot reach them.
+_FORWARD = re.compile(r'(?i)\bending')
+
+#: WHICH forward period. 'Twelve Months Ending December 31, 2026' is
+#: ServiceNow's FULL YEAR and it never says the word "year"; read as a
+#: next-quarter guide it files an annual number under Q+1.
+_FWD_YEAR = re.compile(r'(?i)\b(fiscal\s*)?years?\b|\bfull\s*year\b'
+                       r'|\btwelve\s*months\b')
+
 _PERIOD = (
     # ★★★★ TABLE-TITLE NOUNS ONLY. Adobe heads its guidance table
     # 'financial targets and assumptions' -- the word is TARGETS, and with
@@ -339,6 +365,15 @@ def period_class(table, period, label=None):
     # 24.45 -- resolved as a NEXT-QUARTER guide and validated clean. That
     # is a wrong number wearing a PASS, which is worse than the FAIL it
     # replaced.
+    # A FORWARD PERIOD IS NOT A NARROWER READING OF A REPORTED ONE, so this
+    # runs BEFORE the vocabulary rather than inside it -- 'three months'
+    # would otherwise match first and claim the column for the quarter.
+    # Column before table here too: a guidance column inside a results
+    # table is guidance, and a results column is not reclassified by the
+    # guidance table it happens to sit in.
+    for hay in (norm(period or ''), norm(table or '')):
+        if _FORWARD.search(hay):
+            return 'fyGuidance' if _FWD_YEAR.search(hay) else 'nextQGuidance'
     for hay in (norm(period or ''), norm(table or '')):
         for needle, cls in _PERIOD:
             if needle in hay:
