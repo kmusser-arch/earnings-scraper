@@ -24,7 +24,12 @@ import io
 import json
 import os
 import re
+import sys
 import time
+
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+from earnings_scraper import cells                          # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -318,6 +323,25 @@ def _recency(row):
         qs = [(_MON3.index(m.lower()[:3]) // 3) + 1
               for m in _MONTHRE.findall(hay) if m.lower()[:3] in _MON3]
     return (year, max(qs, default=0))
+
+
+def range_ends(raw):
+    """(low, high) for a printed range cell, else (None, None).
+
+    EXTRACTION, NOT DERIVATION. The two numbers are both on the page; the
+    midpoint is on neither. cells.is_range already decides what counts as
+    a range -- this reuses that judgement rather than writing a second,
+    quietly different one.
+    """
+    if not cells.is_range(raw):
+        return None, None
+    nums = re.findall(r'-?[\d,]+(?:\.\d+)?', str(raw))
+    if len(nums) != 2:
+        return None, None
+    try:
+        return float(nums[0].replace(',', '')), float(nums[1].replace(',', ''))
+    except ValueError:
+        return None, None
 
 
 def _precision(row):
@@ -739,6 +763,16 @@ def select(parser_rows, ticker, profiles=None, aliases=None,
                        best.get('label')),
                    basis=split_basis(best['label'])[0],
                    segment=best.get('section') or None, channel='table')
+        # BOTH ENDS, NEVER A MIDPOINT. Intel's whole Q4 revenue outlook is
+        # one cell, '$15.0 - $16.0', so value is None and the guide would
+        # otherwise arrive as an unparsed string. A midpoint is CHAT's
+        # arithmetic, not the document's -- the same line drawn on Services
+        # YoY -- and the RANGE WIDTH is tradeable: this guide is 9.0% below
+        # street and the worst-scoring row on the print. Splitting the
+        # printed cell reports what Intel printed; averaging it does not.
+        lo, hi = range_ends(rec.get('raw'))
+        if lo is not None:
+            rec['low'], rec['high'] = lo, hi
         if unverified:
             rec['needsVerification'] = True
         out['found'].append(rec)

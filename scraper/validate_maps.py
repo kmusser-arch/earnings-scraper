@@ -68,6 +68,26 @@ def check_value(entry, f):
     exp = entry.get('expect')
     if entry.get('expectUnverified'):
         return 'UNVERIFIED', 'expect not sourced to a document'
+    # A GUIDE RANGE IS TWO NUMBERS AND IS PINNED AS TWO NUMBERS. Intel's
+    # Q4 outlook is '$15.0 - $16.0' in ONE cell; the library stores 15.5,
+    # but that midpoint is chat's arithmetic and appears nowhere in the
+    # release. Pinning the midpoint here would make the parser's job to
+    # derive it, and the WIDTH is the tradeable part -- this guide is 9.0%
+    # below street and the worst-scoring row on the print.
+    rng = entry.get('expectRange')
+    if rng is not None:
+        if not (isinstance(rng, (list, tuple)) and len(rng) == 2):
+            return 'WRONG-VALUE', 'expectRange %r is not [low, high]' % (rng,)
+        lo, hi = f.get('low'), f.get('high')
+        if lo is None or hi is None:
+            return 'WRONG-VALUE', ('expected %s - %s, got no range (raw %r)'
+                                   % (rng[0], rng[1], str(f.get('raw'))[:24]))
+        if (abs(lo - float(rng[0])) <= max(0.005, abs(float(rng[0])) * 1e-9)
+                and abs(hi - float(rng[1])) <= max(0.005,
+                                                   abs(float(rng[1])) * 1e-9)):
+            return 'PASS', ''
+        return 'WRONG-VALUE', ('expected %s - %s, got %s - %s'
+                               % (rng[0], rng[1], lo, hi))
     if exp is None:
         return 'UNPINNED', 'resolved, no expect to check against'
     got = f.get('value')
