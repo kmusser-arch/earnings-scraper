@@ -30,6 +30,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from earnings_scraper import cells                          # noqa: E402
+from scraper import passthrough                             # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -774,7 +775,30 @@ def select(parser_rows, ticker, profiles=None, aliases=None,
             found.append((i, row))
 
         if not found:
-            out['notInRelease'].append(base)
+            # ★ A DECLARED CHANNEL THAT MATCHED NOTHING IS A FAILURE, AND
+            # IT PRINTED MUTE. Every declared absence carries [prose] /
+            # [call] / [derived]; a table hero whose rows were all refused
+            # carried nothing at all, so the one row we CANNOT explain
+            # looked exactly like the seven we can. Named, not relabelled
+            # -- calling it a declared absence would be adjusting the
+            # output to look right.
+            #
+            # The live case is a bare integer with its % in the COLUMN
+            # header: Palantir prints 'Adjusted operating margin' as 62,
+            # the percent guard refuses an unmarked cell for a percent
+            # hero, and that guard is what keeps Apple's 54,770 dollar
+            # line out of a gross-margin slot.
+            why = 'declared %s, no row matched' % (channel or 'table')
+            if unit_class(unit) == 'PERCENT':
+                refused = [r for i, r in enumerate(parser_rows or [])
+                           if raw_class(r.get('raw')) is None
+                           and not _pct_context(r)
+                           and norm(r.get('label')) in
+                           set(norm(x) for x in (labels or []))]
+                if refused:
+                    why = ('percent guard: %s unmarked, %% is in the column '
+                           'header' % str(refused[0].get('raw'))[:12])
+            out['notInRelease'].append(dict(base, reason=why))
             continue
         _c = _repeats(parser_rows)
         found.sort(key=lambda ir: _rank_key(
@@ -897,7 +921,8 @@ def current_quarter_rows(parser_rows, exclude_labels=()):
     return out
 
 
-def report(result, ticker, heading='', show_overflow=0, parser_rows=None):
+def report(result, ticker, heading='', show_overflow=0, parser_rows=None,
+           source_text=None):
     """Hero rows grouped by what the HERO asked for.
 
     ★★ THE SECTION AND THE PERIOD COLUMN ARE DIFFERENT CLAIMS and both
@@ -930,7 +955,8 @@ def report(result, ticker, heading='', show_overflow=0, parser_rows=None):
             lines.append(('  not in release - %-44s %s'
                           % (n['hero'][:44],
                              ('[%s]' % n['channel']) if n.get('channel')
-                             else '')).rstrip())
+                             else ('[UNRESOLVED: %s]' % n['reason'])
+                             if n.get('reason') else '')).rstrip())
 
     # ★★★ AN UNRECOGNISED appliesTo IS NAMED, NEVER DEFAULTED. Dropping it
     # loses a hero from the count; filing it under currentQuarter invents
@@ -951,6 +977,23 @@ def report(result, ticker, heading='', show_overflow=0, parser_rows=None):
     # mapped rows and clearly separated from them. For an unmapped ticker
     # this is the whole card; for a mapped one it is the context the hero
     # rows were chosen out of.
+    # ★★★★ SOURCE TEXT, QUOTED, NEVER PARSED. Sits between the heroes and
+    # the dump and is fenced in >> marks so no one can mistake a quotation
+    # for a verified value. An uninterpreted string cannot be a wrong
+    # number -- which is the only reason this is safe to add hours before
+    # a print, when parsing the same sentences is not.
+    if source_text:
+        try:
+            blocks = passthrough.blocks(source_text)
+        except Exception:                                   # noqa: BLE001
+            blocks = []
+        for title, body in blocks:
+            lines.append('')
+            lines.append('>> %s - VERBATIM FROM THE RELEASE, NOT PARSED'
+                         % title)
+            for ln in body:
+                lines.append('>> %s' % ln)
+
     if parser_rows is not None:
         claimed = set(str(h.get('label')) for h in found)
         rest = current_quarter_rows(parser_rows, exclude_labels=claimed)
