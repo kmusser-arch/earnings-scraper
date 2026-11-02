@@ -148,16 +148,45 @@ def main():
         # The render is ~90 ms, so parsing is not the bottleneck and a tight
         # bound here only buys a flaky test.
         check('hot path under 25 ms', elapsed < 25.0, '%.2f ms' % elapsed)
-        check('currentQuarter graded +1.0',
-              card['scores']['currentQuarter'] == 1.0,
-              card['scores']['currentQuarter'])
-        check('narrative is None', card['scores']['narrative'] is None)
-        check('overall is None', card['overall'] is None)
-        check('status SCORED-PR-ONLY', card['status'] == 'SCORED-PR-ONLY',
-              card['status'])
-        check('keyKPIs aligned 1:1', len(card['keyKPIs']) == 5,
-              len(card['keyKPIs']))
+        # ★★★★★ THE WIRE CARD NO LONGER GRADES, AND THAT IS THE POINT.
+        # This block used to assert currentQuarter == +1.0, status
+        # SCORED-PR-ONLY, and a 5-slot keyKPIs grid -- the old contract,
+        # in which the listener scored a wire body against the library's
+        # bogeys.
+        #
+        # On 2026-11-02, live, that contract produced the worst defect the
+        # project has had. The 8-K path fed STRIPPED TEXT to parse ->
+        # score -> scorecard; the table scan came back empty; the prose
+        # matcher took Palantir's U.S. REVENUE bullet, 1937.0, paired it
+        # with a growth rate from a DIFFERENT bullet, named it 3Q Revenue,
+        # compared it to a bogey of 2320 and printed "missed bogey". Total
+        # revenue was 2,313,411 and it CLEARED.
+        #
+        # The scraper pulls numbers. It does not decide anything about
+        # them. So the assertions invert: no scores, no grade, and the
+        # card is the release's own words.
+        check('wire card carries NO scores', 'scores' not in card,
+              sorted(card)[:6])
+        check('wire card carries NO overall grade', card.get('overall') is None)
+        check('wire card carries no scorecard diagnostics',
+              not card.get('diagnostics'))
+        rendered = card.get('rendered') or ''
+        check('wire card is VERBATIM source text',
+              'NOT PARSED' in rendered, rendered[:60])
+        check('and states that no hero row is graded from a wire body',
+              'no hero row' in rendered.lower())
 
+        # ★ THE FORWARD-SLOT CHECKS BELOW ARE SCORECARD ASSERTIONS.
+        # `forward` is written onto keyKPIs by score_release, which no
+        # longer runs on this path -- the raw watchlist entry still
+        # carries keyKPIs, so testing for the LIST was not enough.
+        # Gate on the grading itself, which is the thing that was
+        # removed.
+        if 'scores' not in card:
+            check('no graded keyKPIs grid on an ungraded card', True,
+                  '%d raw KPI names carried through' %
+                  len(card.get('keyKPIs') or []))
+            return 1 if failures else 0
         fwd = [k for k in card['keyKPIs'] if k['forward']]
         check('forward slots detected', len(fwd) == 2,
               [k['name'][:28] for k in fwd])

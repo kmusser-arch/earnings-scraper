@@ -329,40 +329,90 @@ class Listener:
             self._score_from_filing(ticker, item)
 
     def _score_from_filing(self, ticker, item):
-        """Fetch the EX-99.1 for one ticker and emit a card from it."""
+        """Render the EX-99.1 through the SELECTOR. No grading, ever.
+
+        ★★★★★ NO CELLS -> NO ROWS. NEVER FALL BACK TO PROSE.
+
+        This path used to run parse -> score -> scorecard on the exhibit's
+        STRIPPED TEXT. sec.press_release returns text, so cells.from_html
+        could never run, the table scan came back empty, and an empty scan
+        was treated as "try something else" instead of "there is nothing
+        here". The prose matcher then took the first "revenue ... $X
+        billion" phrase in the document -- Palantir's U.S. REVENUE bullet,
+        1937.0 -- paired it with a growth rate lifted from a DIFFERENT
+        bullet (148%, U.S. commercial), named it 3Q Revenue, compared it
+        to a bogey of 2320 and printed "missed bogey". Total revenue was
+        2,313,411 and it CLEARED. The most important row of the night,
+        graded backwards, live.
+
+        The prose matcher was not the bug. The FALLBACK was. A blank row
+        is honest; a prose-derived row wearing a hero's name is not.
+
+        ★★★ AND THE SCRAPER DOES NOT GRADE. No bogey, no street, no
+        beat/miss, no branch, no score. Those are judgments and they
+        happen in chat. The bogey comparison that produced 1937.0 was only
+        possible because a bogey was in scope at all.
+        """
         from . import sec
-        entry, _drift = self._live_entry(ticker)
-        if not entry or entry.get('error'):
-            print('   %s: no card (%s)'
-                  % (ticker, (entry or {}).get('error')))
+        from earnings_scraper import cells
+        from scraper import prose_guidance as PG
+        from scraper import selector as S
+
+        t0 = time.perf_counter()
+        html, url, outcome = self._exhibit_html(ticker)
+        if not html:
+            print('   %s: exhibit %s - wire card stands' % (ticker, outcome))
             return
-        text, outcome, ms, url = sec.press_release(ticker)
-        if outcome != sec.OK:
-            print('   %s: exhibit %s (%d ms) \u2014 wire card stands'
-                  % (ticker, outcome, ms))
-            return
-        print('   %s: exhibit OK, %d bytes, %.1f chars/line, %d ms'
-              % (ticker, len(text),
-                 float(len(text)) / max(1, text.count(chr(10))), ms))
-        parsed8k = parse.parse_release(dict(item, body=text))
-        self._flash(ticker, dict(item, headline='%s 8-K EX-99.1' % ticker),
-                    parsed8k, 'SEC 8-K')
+        rows = cells.from_html(html)
+        text = sec.to_text(html)
+        if not rows:
+            # ★ THE INVARIANT, STATED ON THE CARD. Zero rows is the answer,
+            # not a reason to go looking somewhere softer.
+            print('')
+            print('=' * 78)
+            print('%s  NO TABLE CELLS IN THE EXHIBIT - ZERO HERO ROWS BY '
+                  'DESIGN.' % ticker)
+            print('   The source blocks below are verbatim. Nothing was '
+                  'parsed out of prose.')
+            print('=' * 78)
         try:
-            card = score.score_release(parsed8k, entry, self.model)
+            res = S.select(rows, ticker, prose_rows=PG.from_text(text))
+            rendered = S.report(res, ticker, str(item.get('reportDate') or ''),
+                                source_text=text)
         except Exception as exc:                        # noqa: BLE001
-            print('   %s: scoring the exhibit raised %r' % (ticker, exc))
+            print('   %s: rendering the exhibit raised %r' % (ticker, exc))
             return
-        card['documentSource'] = 'SEC-8K'
-        card['documentUrl'] = url
-        try:
-            fw = gate.framework_from(self.model) if self.model else None
-            card['rendered'] = scorecard.render_card(card, entry, fw)
-        except Exception as exc:                        # noqa: BLE001
-            card['rendered'] = None
-            card['renderError'] = '%s: %s' % (type(exc).__name__, exc)
-        card['diagnostics'] = scorecard.diagnostics(card)
+        ms = round((time.perf_counter() - t0) * 1000, 2)
+        card = {'ticker': ticker, 'quarter': str(item.get('reportDate') or ''),
+                'rendered': rendered, 'documentSource': 'SEC-8K',
+                'documentUrl': url, 'latencyMs': ms,
+                'wire': 'SEC 8-K EX-99.1'}
+        print('   %s: exhibit OK, %d cells, %.0f ms' % (ticker, len(rows), ms))
         self.stats['cards'] += 1
         self._emit(card, item)
+
+    def _exhibit_html(self, ticker):
+        """(html, url, outcome) -- the RAW HTML, because tables are the point.
+
+        sec.press_release returns stripped TEXT and that is what starved
+        the old path into prose. Same transport, same Item 2.02 filter,
+        HTML kept.
+        """
+        from . import sec
+        try:
+            cik = sec.cik_for(ticker)
+            if not cik:
+                return None, None, sec.NO_CIK
+            accession, _accepted = sec.filing_on(cik)
+            if not accession:
+                return None, None, sec.NO_FILING
+            for url in sec.exhibit_candidates(cik, accession)[:6]:
+                html, _st = sec._get(url, sec.DEFAULT_TIMEOUT)
+                if html and html.lower().count('<td') > 20:
+                    return html, url, sec.OK
+            return None, None, sec.NO_EXHIBIT
+        except Exception as exc:                        # noqa: BLE001
+            return None, None, '%s: %s' % (type(exc).__name__, exc)
 
     def _live_entry(self, ticker):
         """The card AS IT IS NOW, not as it was when the watchlist was built.
@@ -540,31 +590,22 @@ class Listener:
                 self._emit(card, item)
                 continue
 
-            try:
-                card = score.score_release(parsed, entry, self.model)
-            except score.AlignmentError as exc:
-                # Fail loudly. Never write or display a misaligned grid.
-                self.stats['errors'] += 1
-                print('')
-                print('!!! ALIGNMENT FAILURE on %s: %s' % (ticker, exc))
-                print('!!! No card emitted. This is the silent failure mode '
-                      'that broke 12 records -- fix the KPI list, do not '
-                      'bypass the assertion.')
-                continue
-            except Exception as exc:
-                self.stats['errors'] += 1
-                print('[listener] scoring %s raised %r' % (ticker, exc))
-                continue
-
+            # ★★★★★ THE WIRE CARD IS VERBATIM SOURCE TEXT AND NOTHING
+            # ELSE, AND NOTHING HERE GRADES. A wire body is PROSE --
+            # cells.py is <td>-anchored, so there are no tables in it and
+            # no hero row can be resolved from it. What CAN be shown
+            # instantly is the release's own words, and an uninterpreted
+            # string cannot be a wrong value.
+            #
+            # score_release and scorecard.diagnostics used to run here.
+            # They no longer do. The scraper pulls numbers; it does not
+            # decide anything about them. Scoring that merely runs is not
+            # harmless -- on 2026-11-02 a bogey comparison reached the
+            # card and graded Palantir's revenue BACKWARDS, and it could
+            # only do that because a bogey was in scope at all.
+            card = dict(entry)
             card.update(meta)
-            # ★★★★ THE WIRE CARD IS VERBATIM SOURCE TEXT AND NOTHING ELSE.
-            # A wire body is PROSE -- cells.py is <td>-anchored, so there
-            # are no tables in it and no hero row can be resolved from it.
-            # What CAN be shown instantly is the release's own words, and
-            # an uninterpreted string cannot be a wrong value. The 8-K
-            # path fills in the graded hero rows when EDGAR posts.
             card['rendered'] = _wire_card(ticker, item)
-            card['diagnostics'] = scorecard.diagnostics(card)
             card['latencyMs'] = round((time.perf_counter() - t0) * 1000, 2)
             self.stats['cards'] += 1
             self._emit(card, item)
