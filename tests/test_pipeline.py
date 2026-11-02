@@ -165,6 +165,26 @@ def main():
         # The scraper pulls numbers. It does not decide anything about
         # them. So the assertions invert: no scores, no grade, and the
         # card is the release's own words.
+        # ★★★★★ WHITELIST, NOT BLACKLIST. The failure mode is a NEW
+        # library field arriving, and "assert bogeyMethod absent" passes
+        # the moment someone adds `bogey`. `card = dict(entry)` used to
+        # spread FORTY-EIGHT keys here -- revBogey, epsBogey,
+        # revConsensus, bogeyMethod, impliedMove, scenarioLadder, band,
+        # score10, signModifier -- none rendered, all in scope. On
+        # 2026-11-02 a bogey that was merely in scope graded Palantir's
+        # revenue backwards. The listener may now hold THREE library
+        # fields and this asserts the whole set, not a sample of it.
+        from earnings_scraper.listener import Listener as _L
+        ALLOWED = set(_L.CARD_FIELDS) | {
+            'wire', 'wireCode', 'headline', 'itemId', 'tickerSource',
+            'detectConfidence', 'parsedFields', 'receivedAt', 'rendered',
+            'rawFigures', 'latencyMs', 'documentSource', 'documentUrl',
+            'renderError', 'diagnostics'}
+        extra = sorted(set(card) - ALLOWED)
+        check('card keys are EXACTLY the allowed set', not extra,
+              'UNEXPECTED: %s' % extra if extra else '%d keys' % len(card))
+        check('and only 3 of them come from the library',
+              len(_L.CARD_FIELDS) == 3, _L.CARD_FIELDS)
         check('wire card carries NO scores', 'scores' not in card,
               sorted(card)[:6])
         check('wire card carries NO overall grade', card.get('overall') is None)

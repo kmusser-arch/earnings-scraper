@@ -92,6 +92,18 @@ def main():
         check(all('1937' not in v.replace(',', '') for v in vals),
               'nothing anywhere in the result equals 1937')
 
+        # ★ AND THE ZERO-CELL CARD IS STILL USEFUL. Refusing to invent a
+        # row must not mean refusing to show the release. The source
+        # blocks are verbatim and need no tables at all.
+        card = S.report(res, 'PLTR', '', source_text=stripped)
+        check('>> HEADLINE' in card and 'NOT PARSED' in card,
+              'a ZERO-CELL card still carries the verbatim source blocks')
+        check('2.649' in card or 'Outlook' in card,
+              "including the Outlook guidance, which never needed a table")
+        check(not [ln for ln in card.splitlines()
+                   if ln.startswith('ok ') or ln.startswith(' ~ ')],
+              'and still shows NO hero rows')
+
     # ── (b) no grading vocabulary on any card ───────────────────────────
     dirty = []
     for fn in fixtures:

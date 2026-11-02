@@ -358,6 +358,7 @@ class Listener:
         from scraper import prose_guidance as PG
         from scraper import selector as S
 
+        labels, _drift = self._card_labels(ticker)
         t0 = time.perf_counter()
         html, url, outcome = self._exhibit_html(ticker)
         if not html:
@@ -377,13 +378,13 @@ class Listener:
             print('=' * 78)
         try:
             res = S.select(rows, ticker, prose_rows=PG.from_text(text))
-            rendered = S.report(res, ticker, str(item.get('reportDate') or ''),
+            rendered = S.report(res, ticker, labels.get('quarter') or '',
                                 source_text=text)
         except Exception as exc:                        # noqa: BLE001
             print('   %s: rendering the exhibit raised %r' % (ticker, exc))
             return
         ms = round((time.perf_counter() - t0) * 1000, 2)
-        card = {'ticker': ticker, 'quarter': str(item.get('reportDate') or ''),
+        card = {'ticker': ticker, 'quarter': labels.get('quarter') or '',
                 'rendered': rendered, 'documentSource': 'SEC-8K',
                 'documentUrl': url, 'latencyMs': ms,
                 'wire': 'SEC 8-K EX-99.1'}
@@ -413,6 +414,24 @@ class Listener:
             return None, None, sec.NO_EXHIBIT
         except Exception as exc:                        # noqa: BLE001
             return None, None, '%s: %s' % (type(exc).__name__, exc)
+
+    #: ★★★★★ EVERY FIELD THE LISTENER MAY HOLD FROM THE LIBRARY. Three.
+    #: `card = dict(entry)` spread FORTY-EIGHT keys onto a live card --
+    #: revBogey, epsBogey, revConsensus, epsConsensus, bogeyMethod,
+    #: impliedMove, scenarioLadder, band, score10, signModifier. Nothing
+    #: rendered them, and that is exactly the state scoring was in before
+    #: 2026-11-02, when a bogey that was merely IN SCOPE reached the card
+    #: and graded Palantir's revenue backwards.
+    #:
+    #: "Present but unused" is not a stable condition. The scraper pulls
+    #: numbers; consensus and bogeys belong to the scorecard, in chat.
+    #: To add a field here, name it -- never widen this back to a spread.
+    CARD_FIELDS = ('ticker', 'quarter', 'error')
+
+    def _card_labels(self, ticker):
+        """(labels, drift) -- ONLY what the card header needs."""
+        entry, drift = self._live_entry(ticker)
+        return dict((k, entry.get(k)) for k in self.CARD_FIELDS), drift
 
     def _live_entry(self, ticker):
         """The card AS IT IS NOW, not as it was when the watchlist was built.
@@ -567,7 +586,7 @@ class Listener:
                         config.WIRE_NAMES.get(item.get('source'),
                                               item.get('source') or '?'))
             # ONE SOURCE, READ AT SCORING TIME.
-            entry, _drift = self._live_entry(ticker)
+            entry, _drift = self._card_labels(ticker)
             if _drift:
                 print('   * %s: %s' % (ticker, _drift))
             meta = dict(
