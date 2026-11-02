@@ -161,6 +161,27 @@ def prose_figures(text, limit=3):
     return out
 
 
+#: the CEO/CFO paragraph. On a release that publishes NO guidance table
+#: and no highlights list -- Apple's -- this is where the company's own
+#: numbers are narrated: "a September quarter revenue record of $102.5
+#: billion, including a September quarter record for iPhone".
+_SAID = re.compile(r'(?u)[“"][^”"]{40,900}[”"],?\s*said\s+'
+                   r'[A-Z][^.]{2,80}')
+
+
+def quotes(text, limit=2):
+    """Leadership quotes, verbatim. Never parsed."""
+    flat = re.sub(r'\s+', ' ', text or '')
+    out = []
+    for m in _SAID.finditer(flat):
+        s = m.group(0).strip()
+        if s not in out:
+            out.append(s)
+        if len(out) >= limit:
+            break
+    return out
+
+
 def blocks(text):
     """[(title, [lines])] -- every passthrough block this document offers.
 
@@ -171,7 +192,8 @@ def blocks(text):
     for title, got in (('HEADLINE', headline(text)),
                        ('HIGHLIGHTS', highlights(text)),
                        ('OUTLOOK', outlook(text)),
-                       ('PROSE-ONLY FIGURES', prose_figures(text))):
+                       ('PROSE-ONLY FIGURES', prose_figures(text)),
+                       ('WHAT THEY SAID', quotes(text))):
         if got:
             out.append((title, got))
     return out

@@ -52,15 +52,25 @@ def _wire_card(ticker, item):
            '',
            'SOURCE TEXT ONLY - the wire carries no tables, so no hero row',
            'is graded here. The 8-K card follows with the numbers.']
-    if head:
-        out += ['', '>> HEADLINE - VERBATIM FROM THE WIRE, NOT PARSED',
-                '>> %s' % head]
     try:
         blocks = passthrough.blocks(body)
     except Exception:                                       # noqa: BLE001
         blocks = []
+    # ★ ONE HEADLINE BLOCK, MERGED. Apple's headline is THREE lines -- the
+    # title plus two subheads naming which records were set -- and the
+    # wire's `headline` field carries only the first. Skipping the parsed
+    # block to avoid repeating line 1 threw the subheads away; emitting
+    # both printed the same header twice.
+    hl = [head] if head else []
     for title, lines in blocks:
-        if title == 'HEADLINE' and head:
+        if title == 'HEADLINE':
+            hl += [ln for ln in lines
+                   if ln.strip() and ln.strip() != head.strip()]
+    if hl:
+        out += ['', '>> HEADLINE - VERBATIM FROM THE WIRE, NOT PARSED']
+        out += ['>> %s' % ln for ln in hl]
+    for title, lines in blocks:
+        if title == 'HEADLINE':
             continue
         out.append('')
         out.append('>> %s - VERBATIM FROM THE WIRE, NOT PARSED' % title)
