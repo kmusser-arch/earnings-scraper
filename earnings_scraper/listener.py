@@ -16,7 +16,63 @@ import os
 import time
 
 from . import backfill
+import sys as _sys
+_sys.path.insert(0, os.path.dirname(os.path.dirname(
+    os.path.abspath(__file__))))
+
 from . import config, detect, gate, parse, revisions, score, scorecard
+from scraper import passthrough
+
+
+
+def _wire_card(ticker, item):
+    """The INSTANT card: the release's own words, quoted, nothing parsed.
+
+    ★★★ NO HERO ROWS ARE POSSIBLE HERE AND THAT IS NOT A BUG. The wire
+    delivers PROSE; cells.py anchors on <td>; a body with no tables yields
+    no cells and therefore no graded row. Parsing numbers out of wire
+    prose is exactly what the retired flash channel did, and measured
+    against the source releases it was WRONG ON FOUR OF FOUR -- Amazon's
+    "+39.3%" was the AWS segment rate against a total of 12%, Intel's
+    43.0% was GAAP printed beside a non-GAAP margin.
+
+    ★★ SO THIS QUOTES INSTEAD. Headline, highlights and outlook come
+    straight out of the body; on a release like Palantir's the headline
+    alone carries both growth rates and both raised guides. The graded
+    rows arrive on the 8-K path a minute or two later.
+
+    ★ IF THE FENCES FIND NOTHING, SHOW THE TOP OF THE BODY RAW rather
+    than an empty window. The wire body's shape has never been captured
+    in full mode, so a fence that misses is the expected failure, and
+    raw text is still the information.
+    """
+    body = (item.get('body') or '').strip()
+    head = (item.get('headline') or '').strip()
+    out = ['%s  WIRE  %s' % (ticker, time.strftime('%H:%M:%S')),
+           '',
+           'SOURCE TEXT ONLY - the wire carries no tables, so no hero row',
+           'is graded here. The 8-K card follows with the numbers.']
+    if head:
+        out += ['', '>> HEADLINE - VERBATIM FROM THE WIRE, NOT PARSED',
+                '>> %s' % head]
+    try:
+        blocks = passthrough.blocks(body)
+    except Exception:                                       # noqa: BLE001
+        blocks = []
+    for title, lines in blocks:
+        if title == 'HEADLINE' and head:
+            continue
+        out.append('')
+        out.append('>> %s - VERBATIM FROM THE WIRE, NOT PARSED' % title)
+        out.extend('>> %s' % ln for ln in lines)
+    if not blocks and body:
+        out += ['', '>> BODY (no section fence matched) - VERBATIM, FIRST 40 LINES']
+        out.extend('>> %s' % ln.strip()
+                   for ln in body.splitlines()[:40] if ln.strip())
+    if not body:
+        out += ['', 'NO BODY ON THIS FRAME - headlines mode, or the source '
+                'strips it. Re-run with --mode full.']
+    return chr(10).join(out)
 
 
 class Listener:
@@ -491,14 +547,13 @@ class Listener:
                 continue
 
             card.update(meta)
-            # ★ The card's text comes from the ONE renderer. No local
-            # formatting -- a second formatter drifts from the chat path.
-            try:
-                fw = gate.framework_from(self.model) if self.model else None
-                card['rendered'] = scorecard.render_card(card, entry, fw)
-            except Exception as exc:
-                card['rendered'] = None
-                card['renderError'] = '%s: %s' % (type(exc).__name__, exc)
+            # ★★★★ THE WIRE CARD IS VERBATIM SOURCE TEXT AND NOTHING ELSE.
+            # A wire body is PROSE -- cells.py is <td>-anchored, so there
+            # are no tables in it and no hero row can be resolved from it.
+            # What CAN be shown instantly is the release's own words, and
+            # an uninterpreted string cannot be a wrong value. The 8-K
+            # path fills in the graded hero rows when EDGAR posts.
+            card['rendered'] = _wire_card(ticker, item)
             card['diagnostics'] = scorecard.diagnostics(card)
             card['latencyMs'] = round((time.perf_counter() - t0) * 1000, 2)
             self.stats['cards'] += 1
