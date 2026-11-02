@@ -40,8 +40,17 @@ FIXTURE = os.path.join(os.path.dirname(os.path.dirname(
 PRIOR = {'Income before provision for income tax': '29,610',
          'Provision for income taxes': '14,874',
          'Net income': '14,736'}
-CURRENT = {'Net income': '27,466', 'Provision for income taxes': '5,338',
-           'Total net sales': '102,466'}
+#: ★ CONTROLS MUST BE ROWS THE PROFILE CANNOT PROMOTE. 'Total net sales'
+#: was one of these until the FQ4 pre-earnings build mapped it as a hero,
+#: at which point it left the dump body entirely and the assertion
+#: "is not marked" searched an empty list and failed. The profile is LIVE
+#: CONFIG and may map any label on any day; a display test that depends on
+#: which rows happen to be heroes is testing the profile, not the display.
+#: These two are income-statement lines no AAPL hero claims.
+CURRENT = {'Net income': '27,466', 'Provision for income taxes': '5,338'}
+
+#: and the promotion itself is now asserted, rather than assumed away
+PROMOTED = ('F4Q Revenue ($B)', '102,466')
 
 
 def check(ok, msg):
@@ -90,6 +99,18 @@ def main():
         check(cur and all('STALE' not in ln for ln in cur),
               '%r (%s) is NOT marked - a marker that fires on the '
               'reported quarter is noise' % (lab[:30], raw))
+
+    # ── a PROMOTED hero leaves the dump body, and that is correct ────────
+    hero, raw = PROMOTED
+    f = dict((h['hero'], h) for h in (res.get('found') or [])).get(hero)
+    check(f is not None and f.get('raw') == raw,
+          '%r is promoted to the hero block carrying %s%s'
+          % (hero, raw,
+             '' if f is not None and f.get('raw') == raw
+             else ' -- GOT %r' % (f.get('raw') if f else None)))
+    check(all(raw not in ln for ln in body),
+          'and it does NOT also appear in the dump body - a row printed in '
+          'both places would be counted twice by a reader')
 
     # ── ANTI-VACUOUS: the mark is rare, not universal ────────────────────
     n = sum(1 for ln in body if 'STALE' in ln)
