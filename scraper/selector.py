@@ -653,6 +653,7 @@ def select(parser_rows, ticker, profiles=None, aliases=None,
         out['heroCount'] = 0
         return out
 
+    out['sourceTextFirst'] = bool(prof.get('sourceTextFirst'))
     dlm = prof.get('documentLabelMap') or {}
     segs = ((prof.get('documentLabelMapSegments') or {}).get('labels')) or {}
     heroes = prof.get('heroKPIs') or []
@@ -707,7 +708,9 @@ def select(parser_rows, ticker, profiles=None, aliases=None,
             # 54,770 as a gross MARGIN: a 54,770% margin, resolved,
             # displayed, and counted as found.
             if hit is None and channel == 'prose':
-                out['notInRelease'].append(dict(base, channel='prose'))
+                out['notInRelease'].append(dict(
+                    base, channel='prose',
+                    reason=entry.get('absenceReason')))
                 continue
             if hit is not None:
                 out['found'].append(dict(
@@ -715,6 +718,7 @@ def select(parser_rows, ticker, profiles=None, aliases=None,
                     low=hit.get('low'), high=hit.get('high'),
                     raw=hit.get('raw'), period=hit.get('period'),
                     basis=None, segment=None, channel='prose',
+                    pinned=('expect' in entry or 'expectRange' in entry),
                     sourceSentence=hit.get('sourceSentence')))
                 continue
         # ★★★ WHY A ROW IS BLANK IS NOT ALL ONE THING. 'call' means ask the
@@ -724,8 +728,13 @@ def select(parser_rows, ticker, profiles=None, aliases=None,
         # that exists nowhere and one that is two columns and a division
         # away. Neither is computed here; the parser reports what was
         # printed, and the display says which kind of absence this is.
-        if channel in ('call', 'derived'):
-            out['notInRelease'].append(dict(base, channel=channel))
+        if channel in ('call', 'derived', 'unmapped'):
+            # a hero may say WHY in its own words; 'derived' on a row
+            # the document actually prints is a wrong reason, and a
+            # wrong reason is believed exactly like a wrong number.
+            out['notInRelease'].append(dict(
+                base, channel=channel,
+                reason=entry.get('absenceReason')))
             continue
 
         wanted = set()
@@ -817,6 +826,12 @@ def select(parser_rows, ticker, profiles=None, aliases=None,
         # YoY -- and the RANGE WIDTH is tradeable: this guide is 9.0% below
         # street and the worst-scoring row on the print. Splitting the
         # printed cell reports what Intel printed; averaging it does not.
+        # ★★ A CHECKED VALUE AND AN UNCHECKED ONE MUST NOT LOOK ALIKE.
+        # Three AAPL heroes resolve; two are pinned to a hand-read
+        # figure and two have never been value-checked, and on the
+        # card they rendered identically. Under time pressure that
+        # reads as four verified numbers.
+        rec['pinned'] = ('expect' in entry or 'expectRange' in entry)
         lo, hi = range_ends(rec.get('raw'))
         if lo is not None:
             rec['low'], rec['high'] = lo, hi
@@ -877,8 +892,12 @@ def _row_line(h):
         tags.append('[prose]')
     if h.get('needsVerification'):
         tags.append('[UNVERIFIED]')
-    return ('  %-38s %14s   %-10s %s'
-            % (str(h.get('label'))[:38], shown[:14],
+    # a CHECKED value and an UNCHECKED one must be distinguishable at a
+    # glance: ok = pinned to a hand-read figure validate_maps compares
+    # on every run, ~ = resolved but never value-checked.
+    mark = 'ok' if h.get('pinned') else ' ~'
+    return ('%s %-38s %14s   %-10s %s'
+            % (mark, str(h.get('label'))[:38], shown[:14],
                _short(h.get('period')), ' '.join(tags))).rstrip()
 
 
@@ -921,6 +940,46 @@ def current_quarter_rows(parser_rows, exclude_labels=()):
     return out
 
 
+def _source_lines(source_text):
+    """The >> blocks. SOURCE TEXT, QUOTED, NEVER PARSED.
+
+    An uninterpreted string cannot be a wrong value, which is why these
+    can carry guidance that the parser is not allowed to touch.
+    """
+    try:
+        blocks = passthrough.blocks(source_text)
+    except Exception:                                       # noqa: BLE001
+        return []
+    out = []
+    for title, body in blocks:
+        out.append('')
+        out.append('>> %s - VERBATIM FROM THE RELEASE, NOT PARSED' % title)
+        for ln in body:
+            out.append('>> %s' % ln)
+    return out
+
+
+def _why(n):
+    """How this hero came to be blank, in the strongest terms available.
+
+    AN ABSENCE IS A DECISION; AN UNRESOLVED IS A DEFECT. A declared
+    channel says the figure is not in the release and names where it does
+    live. An UNRESOLVED says the figure IS in the release and we failed to
+    reach it. They must not read alike, and the footer must not let the
+    second pass as the first.
+    """
+    if n.get('channel'):
+        return ('[%s: %s]' % (n['channel'], n['reason'])
+                if n.get('reason') else '[%s]' % n['channel'])
+    if n.get('reason'):
+        return '[UNRESOLVED: %s]' % n['reason']
+    return ''
+
+
+def _is_unresolved(n):
+    return not n.get('channel') and bool(n.get('reason'))
+
+
 def report(result, ticker, heading='', show_overflow=0, parser_rows=None,
            source_text=None):
     """Hero rows grouped by what the HERO asked for.
@@ -937,6 +996,14 @@ def report(result, ticker, heading='', show_overflow=0, parser_rows=None,
     found = result.get('found') or []
     missing = result.get('notInRelease') or []
     lines = ['%s  %s' % (ticker, heading)]
+    # ★ WHERE THE SOURCE TEXT GOES IS A PER-TICKER FACT, AND IT LIVES
+    # IN THE PROFILE, NOT HERE. On a ticker whose hero block is one
+    # row and whose HEADLINE carries four of the five decisive
+    # numbers, nine lines of mostly-absences should not come first.
+    # On one whose heroes are the useful part, they should. Reading
+    # it from sourceTextFirst keeps the ticker out of this module.
+    if source_text and result.get('sourceTextFirst'):
+        lines.extend(_source_lines(source_text))
     if found:
         pass
 
@@ -953,10 +1020,7 @@ def report(result, ticker, heading='', show_overflow=0, parser_rows=None,
             lines.append(_row_line(h))
         for n in ms:
             lines.append(('  not in release - %-44s %s'
-                          % (n['hero'][:44],
-                             ('[%s]' % n['channel']) if n.get('channel')
-                             else ('[UNRESOLVED: %s]' % n['reason'])
-                             if n.get('reason') else '')).rstrip())
+                          % (n['hero'][:44], _why(n))).rstrip())
 
     # ★★★ AN UNRECOGNISED appliesTo IS NAMED, NEVER DEFAULTED. Dropping it
     # loses a hero from the count; filing it under currentQuarter invents
@@ -982,17 +1046,8 @@ def report(result, ticker, heading='', show_overflow=0, parser_rows=None,
     # for a verified value. An uninterpreted string cannot be a wrong
     # number -- which is the only reason this is safe to add hours before
     # a print, when parsing the same sentences is not.
-    if source_text:
-        try:
-            blocks = passthrough.blocks(source_text)
-        except Exception:                                   # noqa: BLE001
-            blocks = []
-        for title, body in blocks:
-            lines.append('')
-            lines.append('>> %s - VERBATIM FROM THE RELEASE, NOT PARSED'
-                         % title)
-            for ln in body:
-                lines.append('>> %s' % ln)
+    if source_text and not result.get('sourceTextFirst'):
+        lines.extend(_source_lines(source_text))
 
     if parser_rows is not None:
         claimed = set(str(h.get('label')) for h in found)
@@ -1029,11 +1084,22 @@ def report(result, ticker, heading='', show_overflow=0, parser_rows=None,
                                 'STALE' if stale else ''))
 
     ok, n = coverage_ok(result)
+    unres = [m for m in missing if _is_unresolved(m)]
     lines.append('')
-    lines.append('heroes in profile %d - found %d - not in release %d'
-                 '  = %d  %s'
-                 % (result.get('heroCount') or 0, len(found), len(missing),
-                    n, 'OK' if ok else 'MISMATCH'))
+    if unres:
+        lines.append('heroes in profile %d - found %d - declared absent '
+                     '%d - UNRESOLVED %d  = %d  %s'
+                     % (result.get('heroCount') or 0, len(found),
+                        len(missing) - len(unres), len(unres), n,
+                        'OK' if ok else 'MISMATCH'))
+        for m in unres:
+            lines.append('   an UNRESOLVED is a DEFECT, not a decision:'
+                         ' %s' % m['hero'][:56])
+    else:
+        lines.append('heroes in profile %d - found %d - not in release '
+                     '%d  = %d  %s'
+                     % (result.get('heroCount') or 0, len(found),
+                        len(missing), n, 'OK' if ok else 'MISMATCH'))
     if show_overflow:
         lines.append('')
         lines.append('OVERFLOW')
