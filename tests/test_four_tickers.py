@@ -209,11 +209,12 @@ def scales():
     widens the bound a thousandfold and it reports clean forever after.
     Not a wrong-number risk -- a DEAD-GUARD risk, which compounds.
 
-    ★★ IT WARNS RATHER THAN REFUSING, AND THAT WAS MEASURED. Refusing
-    would have blanked SIX of PLTR's eleven resolved rows over a profile
-    bookkeeping error: a card going empty is a regression the trader
-    sees, while the mismatch itself is invisible to him. Warn, clear the
-    list, then refuse.
+    ★★ IT SHIPPED AS A WARNING AND IS NOW A DEFECT, IN THAT ORDER AND
+    FOR A MEASURED REASON. Refusing on day one would have blanked SIX of
+    PLTR's eleven resolved rows over a profile bookkeeping error: a card
+    going empty is a regression the trader sees, while the mismatch
+    itself is invisible to him. The list is clear library-wide, so the
+    next one is a NEW mistake rather than a backlog entry.
 
     ★ AND '$' IS NOT A SCALE. Three heroes name ($M) and declare '$',
     which says less rather than something different. The specified one
@@ -222,8 +223,8 @@ def scales():
     print('')
     print('== unit SCALE')
     for field, named, want, sev in (
-            ('$B', '$M', '$B', 'warn'),
-            ('$M', '$B', '$M', 'warn'),
+            ('$B', '$M', '$M', 'defect'),
+            ('$M', '$B', '$B', 'defect'),
             ('$', '$M', '$M', None),     # no scale stated -> take the one that is
             ('$M', '$', '$M', None),
             ('$M', '$M', '$M', None),
@@ -270,7 +271,7 @@ def scales():
             if not fn.endswith('.html'):
                 continue
             tic = fn.split('_')[0].upper()
-            if tic not in watch:
+            if tic not in profiles:
                 continue
             html = io.open(os.path.join(d, fn), encoding='utf-8',
                            errors='replace').read()
@@ -278,17 +279,87 @@ def scales():
             res = S.select(cells.from_html(html), tic,
                            prose_rows=PG.from_text(text), source_text=text)
             built += 1
-            if 'UNIT SCALE' in S.card(res, tic, '', source_text=text):
+            if 'unit scale:' in S.card(res, tic, '', source_text=text):
                 flagged.append(fn)
-    check(built >= 8,
-          '  anti-vacuous: %d watchlist documents went through' % built)
+    # ★★★ THE FLOOR WALKS EVERY PROFILED DOCUMENT, NOT THE FOUR. A gate
+    # that walked the 7 mapped tickers is what let select() crash on 24
+    # others for a week, and a scale contradiction is exactly the kind
+    # of thing that lands on a ticker nobody is looking at.
+    check(built >= 100,
+          '  anti-vacuous: %d profiled documents went through' % built)
     check(not flagged,
-          '  and not one renders a UNIT SCALE warning%s'
+          '  and not one card carries a unit defect%s'
           % ('' if not flagged else ' -- %s' % flagged))
+
+
+def sign():
+    """★★★★ AN UNCLOSED PAREN IS A NEGATIVE WITH ITS OTHER HALF CUT OFF.
+
+    Oracle's free cash flow cell arrives as '(5,396'. cells.py has read
+    that as -5396.0 all along -- the VALUE was never wrong -- and only
+    the rendering was truncated, so the card showed '(5,396' and the
+    sign was there to be missed.
+
+    ON FREE CASH FLOW THE SIGN IS THE ENTIRE SIGNAL: -$5.4B against
+    +$5.4B is a $10.8B swing, and the difference between a company
+    burning cash and generating it. Same family as the 660-row parser
+    sign defect, reaching the display by another route.
+    """
+    print('')
+    print('== the sign')
+    for raw, want in (('(5,396', '(5,396)'),      # the live case
+                      ('(23,686', '(23,686)'),
+                      ('(5,396)', '(5,396)'),     # already closed, untouched
+                      ('5,396', '5,396'),         # positive, untouched
+                      ('(6%)', '(6%)'),
+                      ('>$3.559 billion', '>$3.559 billion')):
+        got = S._close_paren(raw)
+        check(got == want,
+              '  %-18r -> %-12r %s' % (raw, got, '' if got == want
+                                       else 'WANT %r' % want))
+
+    # ★ AND THE INVERSE, WHICH IS THE ONE THAT MATTERS: no row may carry
+    # a negative value while showing no sign at all.
+    profiles, _mt = S.load_profiles()
+    unsigned, closed, built = [], 0, 0
+    for d in (FIX, os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            'earnings_scraper', 'state', 'html')):
+        if not os.path.isdir(d):
+            continue
+        for fn in sorted(os.listdir(d)):
+            if not fn.endswith('.html'):
+                continue
+            tic = fn.split('_')[0].upper()
+            if tic not in profiles:
+                continue
+            html = io.open(os.path.join(d, fn), encoding='utf-8',
+                           errors='replace').read()
+            text = sec.to_text(html)
+            res = S.select(cells.from_html(html), tic,
+                           prose_rows=PG.from_text(text), source_text=text)
+            built += 1
+            for f in res.get('found') or []:
+                shown = S._printed(f)
+                v = f.get('value')
+                if str(f.get('raw') or '').startswith('(') and shown.endswith(')'):
+                    closed += 1
+                if (v is not None and v < 0 and '(' not in shown
+                        and '-' not in shown and not shown.startswith('>')):
+                    unsigned.append((fn[:28], f['hero'][:26], shown, v))
+    check(built >= 100,
+          '  anti-vacuous: %d profiled documents went through' % built)
+    check(closed > 0,
+          '  anti-vacuous: %d rows actually had a paren closed, so the '
+          'check below is not passing on an empty set' % closed)
+    check(not unsigned,
+          '  NO row shows a negative value without a sign%s'
+          % ('' if not unsigned else ' -- %s' % unsigned[:4]))
 
 
 main()
 units()
 scales()
+sign()
 if FAILED:
     sys.exit(1)

@@ -619,7 +619,14 @@ def declared_unit(field, named):
         rf, rn = _scale_rank(f), _scale_rank(n)
         if rf != rn:
             return (f if rf > rn else n), None
-        return f, ('warn',
+        # ★ FLIPPED TO DEFECT 2026-11-03, once the count reached zero.
+        # It shipped as a warning because refusing then would have
+        # blanked six of one watchlist ticker's eleven resolved rows over
+        # a profile bookkeeping error. The list is clear library-wide, so
+        # the next one to appear is a NEW mistake rather than a backlog
+        # entry -- and a refusal that costs nothing today is the cheapest
+        # it will ever be.
+        return n, ('defect',
                    'unit scale: the name says %r and the profile declares '
                    '%r -- a 1000x gap, and _plausible is bounded by the '
                    'declared one' % (n, f))
@@ -1253,6 +1260,31 @@ CARD_SECTIONS = (('currentQuarter', 'CURRENT QUARTER'),
                  ('fyGuidance', 'FULL YEAR'))
 
 
+#: ★★★★ AN UNCLOSED PAREN IS A NEGATIVE WITH ITS OTHER HALF ON THE NEXT
+#: LINE. Oracle's free cash flow cell arrives as '(5,396' -- cells.py
+#: already reads it as -5396.0, so the VALUE has been right all along and
+#: only the rendering was truncated. On free cash flow the sign is the
+#: entire signal: -$5.4B against +$5.4B is a $10.8B swing and the
+#: difference between a company burning cash and generating it.
+#:
+#: ★★★ THE PAREN IS CLOSED, NOT TRANSLATED. The document printed
+#: '(5,396)' across two cells; restoring the half that was cut off is
+#: repair, while rewriting it as '-5,396' would be the card inventing a
+#: notation the issuer did not use. Nothing is computed and nothing is
+#: dropped -- the release said negative, so the card says negative.
+#:
+#: Same family as the 660-row sign defect in the parser, reaching the
+#: display by a different route.
+_OPEN_PAREN = re.compile(r'^\(\s*[\d$]')
+
+
+def _close_paren(text):
+    t = str(text or '')
+    if _OPEN_PAREN.match(t) and ')' not in t:
+        return t + ')'
+    return t
+
+
 def _printed(h):
     """The figure AS THE DOCUMENT PRINTED IT, scale word and all.
 
@@ -1273,7 +1305,7 @@ def _printed(h):
     for key in ('printed', 'raw'):
         v = h.get(key)
         if v not in (None, ''):
-            return str(v)
+            return _close_paren(v)
     if h.get('low') is not None and h.get('high') is not None:
         return '%s-%s' % (_fmt(h['low']), _fmt(h['high']))
     return _fmt(h.get('value'))
