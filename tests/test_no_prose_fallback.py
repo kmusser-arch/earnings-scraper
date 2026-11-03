@@ -85,10 +85,43 @@ def main():
         res = S.select(rows, 'PLTR', prose_rows=PG.from_text(stripped))
         found = res.get('found') or []
         vals = [str(f.get('raw')) for f in found]
-        check(not found,
-              'and ZERO hero rows resolve from it - not a wrong row, not '
-              'a guessed row, ZERO%s'
-              % ('' if not found else ' -- GOT %s' % vals))
+
+        # ★★★★ LOOSENED 2026-11-03, DELIBERATELY, AND NARROWER THAN IT
+        # READS. This asserted ZERO found rows. When it was written that
+        # was the same assertion as the one below, because PLTR's prose
+        # reader returned nothing at all -- the dash range form was
+        # unreadable -- so 'zero rows' was carrying the guidance channel
+        # for free. Now the Outlook block parses, and the honest version
+        # of the invariant has to name what it forbids.
+        #
+        # What the 1937.0 defect was: a STATEMENT row -- 3Q Revenue, a
+        # line that belongs in a table -- invented out of a highlights
+        # bullet when the table scan came back empty. What it was NOT: a
+        # guidance figure the issuer published only as a sentence, inside
+        # a fenced Outlook section, labelled [prose] on the card.
+        #
+        # So the rule is no longer 'no rows'. It is: NO ROW MAY RESOLVE
+        # THROUGH ANY ROUTE BUT THE DECLARED PROSE CHANNEL, and the bait
+        # check below is what actually holds the line.
+        invented = [f for f in found if f.get('channel') != 'prose']
+        check(not invented,
+              'from ZERO cells, ZERO rows resolve by any route except the '
+              'declared prose channel - not a wrong row, not a guessed '
+              'row%s'
+              % ('' if not invented
+                 else ' -- GOT %s' % [(f.get('hero'), f.get('raw'))
+                                      for f in invented]))
+        # and every survivor must be able to show the sentence it read,
+        # from a guidance period. A body-prose row can do neither.
+        strays = [f for f in found
+                  if not f.get('sourceSentence')
+                  or f.get('period') in (None, '', 'currentQuarter')]
+        check(not strays,
+              'and every surviving row quotes the sentence it came from, '
+              'for a GUIDANCE period - a highlights bullet qualifies as '
+              'neither%s'
+              % ('' if not strays else ' -- GOT %s'
+                 % [(f.get('hero'), f.get('period')) for f in strays]))
         check(all('1937' not in v.replace(',', '') for v in vals),
               'nothing anywhere in the result equals 1937')
 
@@ -101,8 +134,11 @@ def main():
         check('2.649' in card or 'Outlook' in card,
               "including the Outlook guidance, which never needed a table")
         check(not [ln for ln in card.splitlines()
-                   if ln.startswith('ok ') or ln.startswith(' ~ ')],
-              'and still shows NO hero rows')
+                   if (ln.startswith('ok ') or ln.startswith(' ~ '))
+                   and '[prose]' not in ln],
+              'and still shows NO hero row that is not marked [prose] - '
+              'a statement figure cannot appear on a card built from a '
+              'document with no statements in it')
 
     # ── (b) no grading vocabulary on any card ───────────────────────────
     dirty = []

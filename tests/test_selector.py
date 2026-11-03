@@ -227,10 +227,24 @@ def ranking_and_channels():
           % [n['hero'][:28] for n in out['notInRelease']])
     out2 = S.select(rows['AMZN'], 'AMZN', prose_rows=_p['AMZN'])
     prose = [f for f in out2['found'] if f.get('channel') == 'prose']
-    check(len(prose) == 2,
+    check(len(prose) == 1,
           'prose guidance RESOLVES rather than being reported missing '
           '(%d rows), and carries channel=prose so it can never be '
           'mistaken for a statement figure' % len(prose))
+    # ★★★★ RE-PINNED 2026-11-03, 2 -> 1, AND THE ROW THAT LEFT WAS WRONG.
+    # 'FY+1 capex framing ($B)' was resolving to Capital expenditures
+    # 220,000 FY2026 -- Amazon's CURRENT year, answering a hero that asks
+    # about the year AFTER. The period stamp could not catch it because
+    # FY2026 and the hero's fyGuidance normalise to the same class; what
+    # catches it is that 'framing' survives _bare as content, so the
+    # metric word is not the whole name. INVERTED so the wrong-year row
+    # cannot come back as a silent pass.
+    capex = [f for f in out2['found']
+             if 'capex' in (f.get('hero') or '').lower()]
+    check(not capex,
+          'and an FY+1 hero takes NOTHING from a sentence about FY: the '
+          'capex row is a declared absence, not 220,000 (%s)'
+          % [(c.get('value'), c.get('period')) for c in capex])
     na_hero = [h for h in out2['found']
                if h['hero'].startswith('North America revenue')]
     check(na_hero and na_hero[0]['value'] == 112852.0,

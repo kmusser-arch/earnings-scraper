@@ -49,6 +49,15 @@ _RANGE_PATS = (
                + r'\s+(?:to|and)\s+' + _NUM),
     re.compile(r'(?i)\bof\s+' + _NUM + r'\s+to\s+' + _NUM),
     re.compile(r'(?i)\bbetween\s+' + _NUM + r'\s+and\s+' + _NUM),
+    # ★★ THE DASH RANGE, ANCHORED ON THE WORD 'between'. Palantir writes
+    # 'Revenue of between $2.649 - $2.653 billion' -- a range whose two
+    # ends are joined by a dash, not by 'and', which is why every guide
+    # on that ticker read as zero rows. A BARE 'NUM - NUM' would also
+    # match, and must not: CrowdStrike's guidance table flattens to
+    # 'Total revenue  $1,436.0 - $1,442.0 million  $5,914.7 - $5,958.7
+    # million', the quarter range and the full-year range on one line,
+    # and first-match-wins would file one under the other's period.
+    re.compile(r'(?i)\bbetween\s+' + _NUM + r'\s*[-–—]\s*' + _NUM),
 )
 _POINT_PATS = (
     re.compile(r'(?i)expected to be approximately\s+' + _NUM),
@@ -67,6 +76,11 @@ _GROWTH_PATS = (
 _SUBJECT = (
     ('net sales', 'revenue'), ('revenue', 'revenue'),
     ('operating income', 'operatingIncome'),
+    # the same line under the name half the market uses for it. Palantir
+    # and CrowdStrike both say 'income from operations'; neither ever
+    # says 'operating income', so the highest-weighted guidance row on
+    # those tickers had no subject to bind to.
+    ('income from operations', 'operatingIncome'),
     ('operating margin', 'operatingMargin'),
     ('gross margin', 'grossMargin'),
     ('capital expenditure', 'capex'), ('capex', 'capex'),
@@ -78,6 +92,14 @@ _SUBJECT = (
 _FY = re.compile(r'(?i)\b(full[\s-]year|fiscal\s+year)\b')
 _BARE_YEAR = re.compile(r'\b(20\d\d)\b')
 _QWORD = re.compile(r'(?i)\b(quarter|q[1-4])\b')
+
+#: a lead-in that RE-PERIODS the bullets beneath it. Anchored on a line
+#: that BEGINS with 'For' and ENDS with a colon -- heading-like, not a
+#: sentence. NVIDIA's 'For the full year fiscal 2027, NVIDIA expects GAAP
+#: and non-GAAP tax rates to be ...' is a SENTENCE, already periodised one
+#: sentence at a time, and must not be mistaken for a lead-in and re-stamp
+#: every bullet that follows it.
+_LEADIN = re.compile(r'(?i)^\s*[•▪*>-]*\s*for\b[^.;]{0,70}:\s*$')
 
 
 def _period_of(sentence, default):
@@ -141,6 +163,31 @@ def _subject(sentence):
     return best
 
 
+def subblocks(body, default):
+    """[(period, text)] -- the section split at each 'For <period>:' lead-in.
+
+    ★★★★ ONE HEADING, TWO PERIODS. Palantir files the quarter guide and
+    the full-year guide under a single 'Outlook', separated only by the
+    lines 'For Q4 2026, we expect:' and 'For full year 2026:'. Stamping
+    the whole section with the heading's period puts ~$8.5B -- the ANNUAL
+    revenue guide -- into a Q4 slot whose bogey is $2.65B. Nothing about
+    that row looks wrong: the number is real, the metric is right, the
+    label is right. Only the period is wrong, and a wrong number in the
+    NEXT QUARTER section is worse than an empty one.
+    """
+    out, cur, buf = [], default, []
+    for ln in body.splitlines():
+        if _LEADIN.match(ln):
+            if buf:
+                out.append((cur, '\n'.join(buf)))
+            cur, buf = _period_of(_WS.sub(' ', ln).strip(), default), []
+            continue
+        buf.append(ln)
+    if buf:
+        out.append((cur, '\n'.join(buf)))
+    return out or [(default, body)]
+
+
 def from_text(text, heading_period='nextQGuidance'):
     """[{metric, period, value, low, high, raw, confidence, ...}].
 
@@ -150,52 +197,55 @@ def from_text(text, heading_period='nextQGuidance'):
     """
     out = []
     for heading, body in sections(text):
-        for raw_sentence in re.split(r'(?<=[.;])\s+|\n', body):
-            sentence = _WS.sub(' ', raw_sentence).strip(' •▪*-')
-            if len(sentence) < 20:
-                continue
-            metric = _subject(sentence)
-            if not metric:
-                continue
-            period = _period_of(sentence, heading_period)
-            row = None
-            for pat in _RANGE_PATS:
-                m = pat.search(sentence)
-                if m:
-                    lo = _scale(m.group(1), m.group(2) or m.group(4))
-                    hi = _scale(m.group(3), m.group(4) or m.group(2))
-                    if lo is not None and hi is not None:
-                        row = {'value': None, 'low': lo, 'high': hi,
-                               'raw': _WS.sub(' ', m.group(0)).strip()}
-                    break
-            if row is None:
-                for pat in _GROWTH_PATS:
+        for block_period, block in subblocks(body, heading_period):
+            for raw_sentence in re.split(r'(?<=[.;])\s+|\n', block):
+                sentence = _WS.sub(' ', raw_sentence).strip(' •▪*-')
+                if len(sentence) < 20:
+                    continue
+                metric = _subject(sentence)
+                if not metric:
+                    continue
+                # the SENTENCE still wins over its block: Amazon's capex
+                # bullet names its own full year inside a quarter block.
+                period = _period_of(sentence, block_period)
+                row = None
+                for pat in _RANGE_PATS:
                     m = pat.search(sentence)
                     if m:
-                        g = m.groups()
-                        row = ({'value': float(g[0]), 'low': None,
-                                'high': None, 'raw': m.group(0)}
-                               if len(g) == 1 else
-                               {'value': None, 'low': float(g[0]),
-                                'high': float(g[1]), 'raw': m.group(0)})
-                        break
-            if row is None:
-                for pat in _POINT_PATS:
-                    m = pat.search(sentence)
-                    if m:
-                        v = _scale(m.group(1), m.group(2))
-                        if v is not None:
-                            row = {'value': v, 'low': None, 'high': None,
+                        lo = _scale(m.group(1), m.group(2) or m.group(4))
+                        hi = _scale(m.group(3), m.group(4) or m.group(2))
+                        if lo is not None and hi is not None:
+                            row = {'value': None, 'low': lo, 'high': hi,
                                    'raw': _WS.sub(' ', m.group(0)).strip()}
                         break
-            if row is None:
-                continue
-            row.update({'metric': metric, 'period': period,
-                        'table': heading,
-                        'label': _DISPLAY.get(metric, metric),
-                        'confidence': 'prose',
-                        'sourceSentence': sentence})
-            out.append(row)
+                if row is None:
+                    for pat in _GROWTH_PATS:
+                        m = pat.search(sentence)
+                        if m:
+                            g = m.groups()
+                            row = ({'value': float(g[0]), 'low': None,
+                                    'high': None, 'raw': m.group(0)}
+                                   if len(g) == 1 else
+                                   {'value': None, 'low': float(g[0]),
+                                    'high': float(g[1]), 'raw': m.group(0)})
+                            break
+                if row is None:
+                    for pat in _POINT_PATS:
+                        m = pat.search(sentence)
+                        if m:
+                            v = _scale(m.group(1), m.group(2))
+                            if v is not None:
+                                row = {'value': v, 'low': None, 'high': None,
+                                       'raw': _WS.sub(' ', m.group(0)).strip()}
+                            break
+                if row is None:
+                    continue
+                row.update({'metric': metric, 'period': period,
+                            'table': heading,
+                            'label': _DISPLAY.get(metric, metric),
+                            'confidence': 'prose',
+                            'sourceSentence': sentence})
+                out.append(row)
     return out
 
 

@@ -601,15 +601,43 @@ def resolve(parser_rows, metric, period=None, basis=None, aliases=None):
     return out
 
 
+#: words that survive _bare but still say nothing about WHAT is measured.
+#: Deliberately short: every addition here widens the loose prose match,
+#: and the loose match is the one that cannot see a segment.
+_PROSE_RESIDUE_OK = frozenset(
+    'total company consolidated growth bps pct b m k bn mm'.split())
+_PROSE_WORD = re.compile(r'[a-z0-9]+')
+
+#: ★ A PERIOD TOKEN IS NOT CONTENT. _bare strips a lone 'q' and a lone
+#: 'fy' but leaves 'q2', 'f4q' and 'fy2027' standing, and counting those
+#: as residue refused 13 matches that were right -- 'Q2 Revenue Guide
+#: ($M)' reduced to 'q2 revenue' and then refused itself over the 'q2'.
+#: Which period a row belongs to is settled by _prose_hit, not here.
+_PERIODISH = re.compile(r'^(f?\d?q\d?|fy\d*|cy\d*|h\d|\d+)$')
+
+
+def _residue(bare, needle):
+    """Content words left in a hero name once the metric word is removed."""
+    return [w for w in _PROSE_WORD.findall(bare.replace(needle, ' '))
+            if w not in _PROSE_RESIDUE_OK and not _PERIODISH.match(w)]
+
+
 def _prose_metric(hero_name, prose_rows):
     """The prose metric this hero names, or None.
 
     ★ LOOSER THAN canonical() ON PURPOSE, AND ONLY HERE. The prose channel
     is already fenced to a guidance SECTION, so the candidate set is a
-    handful of sentences rather than a thousand table cells. 'FY+1 capex
-    framing ($B)' reduces to 'capex framing', which canonical() correctly
-    refuses -- but among three guidance bullets, matching the metric word
-    is safe where it would not be against the whole document.
+    handful of sentences rather than a thousand table cells. Matching the
+    metric word among three guidance bullets is safe where it would not
+    be against the whole document.
+
+    ★★ BUT ONLY WHEN THE METRIC WORD IS THE WHOLE NAME. An earlier
+    revision cited 'FY+1 capex framing ($B)' as a name this should catch.
+    It no longer does, and that is the fix, not a loss: the only capex
+    sentence Amazon prints is its CURRENT year's, so the match would have
+    answered an FY+1 hero with an FY figure -- a period error that
+    _prose_hit cannot see, because both sides normalise to fyGuidance.
+    See _residue.
     """
     bare = _bare(hero_name)
     if not bare:
@@ -621,8 +649,54 @@ def _prose_metric(hero_name, prose_rows):
     for needle, metric in _CANON:
         n = needle.strip()
         if metric in seen and n in bare:
+            # ★★★★ WHAT IS LEFT OF THE NAME IS THE PART THE PROSE CHANNEL
+            # CANNOT REPRESENT. _bare has already removed the period, the
+            # basis and the word 'guide'; anything still standing after
+            # the metric word is taken out is a SEGMENT or a TRANSFORM --
+            # 'us commercial', 'aws', 'north america', 'raise', 'cc
+            # action' -- and prose_guidance has no vocabulary for any of
+            # them. It would hand back the CONSOLIDATED line every time.
+            # Measured over the corpus: 21 loose matches carried a
+            # residue and all 21 were wrong; 13 carried none and all 13
+            # were right.
+            if _residue(bare, n):
+                continue
             return metric
     return None
+
+
+#: prose periods -> the hero `appliesTo` vocabulary. prose_guidance stamps
+#: a full-year row 'FY2026' or bare 'FY'; the profiles call that slot
+#: 'fyGuidance'. Two names for one period is how they failed to meet.
+def _prose_period_class(period):
+    return ('fyGuidance' if str(period or '').startswith('FY')
+            else str(period or ''))
+
+
+def _prose_hit(prose_rows, metric, applies):
+    """The guidance row for THIS hero's period, or None.
+
+    ★★★★ MATCHING ON THE METRIC ALONE PUTS THE QUARTER GUIDE IN THE
+    FULL-YEAR ROW. `next(p for p in prose_rows if p['metric'] == pm)`
+    takes the first row that names the metric, and on any issuer who
+    guides both periods in one section the first one is the QUARTER.
+    Salesforce's FY revenue hero was reading $11.27-11.35B -- the quarter
+    -- when the full-year guide on the same page said $45.9-46.2B. Four
+    times the number, in the corpus, today, with nothing on the card to
+    show for it.
+
+    ★★ AND A GUIDANCE SECTION CANNOT REPORT THE QUARTER THAT JUST CLOSED.
+    Rocket Lab's reported-quarter hero was being filled from 'between
+    $225 million and $240 million' -- the guide for the quarter AHEAD --
+    which is non-negotiable 2 running backwards. A currentQuarter or
+    narrative hero gets nothing from this channel and falls through to
+    the table, where a reported number actually lives.
+    """
+    if not metric or applies not in ('nextQGuidance', 'fyGuidance'):
+        return None
+    return next((p for p in (prose_rows or [])
+                 if p.get('metric') == metric
+                 and _prose_period_class(p.get('period')) == applies), None)
 
 
 def select(parser_rows, ticker, profiles=None, aliases=None,
@@ -699,7 +773,7 @@ def select(parser_rows, ticker, profiles=None, aliases=None,
         # ── the PROSE channel, where the issuer states it in a sentence ──
         if channel == 'prose' or not labels:
             pm = _prose_metric(name, prose_rows)
-            hit = next((p for p in prose_rows if p.get('metric') == pm), None)
+            hit = _prose_hit(prose_rows, pm, applies)
             # ★★★★ A DECLARED CHANNEL IS A DECLARATION, NOT A
             # PREFERENCE. channel:'prose' on Apple's Gross Margin (%) says
             # the percent exists ONLY in a sentence -- the table label
