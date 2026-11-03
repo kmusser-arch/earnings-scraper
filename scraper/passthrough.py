@@ -41,8 +41,8 @@ _DATELINE = re.compile(
 _BULLET = re.compile(r'^\s*[•◦▪·*\-–—]\s*')
 
 #: headings that open a block we quote whole
-_OUTLOOK = re.compile(r'(?i)^\s*(outlook|business outlook|financial '
-                      r'guidance|guidance)\s*:?\s*$')
+_OUTLOOK = re.compile(r'(?i)^\s*((?:current\s+)?outlook|business outlook'
+                      r'|financial guidance|guidance)\s*:?\s*$')
 _HIGHLIGHTS = re.compile(r'(?i)^\s*(.{0,30}?highlights)\s*:?\s*$')
 
 
@@ -111,6 +111,48 @@ def _block(text, pattern, limit=40):
                 out.append(s)
                 continue
             break
+        return out if len(out) > 1 else []
+    return []
+
+
+#: how many lines a RAW TAIL may quote. A cap, not a fence: over-running
+#: into whatever follows is acceptable noise, unbounded output is not.
+_RAW_TAIL = 8
+
+
+def raw_tail(text, pattern, limit=_RAW_TAIL):
+    """The next lines after a matched heading, quoted, claiming NOTHING.
+
+    ★★★★ THE FENCES MISS ON PROSE AND THE RELEASE STILL SAID IT. _block
+    continues through bullets, 'For <period>' lead-ins and colon lines,
+    which is every issuer that writes its outlook as a list -- and not
+    the ones who write paragraphs. AMD's outlook is two sentences of
+    prose, so the block broke at the first line and the guide, '$13
+    billion, plus or minus $300 million', appeared nowhere on the card.
+
+    ★★★ THIS ASSERTS NOTHING, WHICH IS THE WHOLE DIFFERENCE. The
+    truncation marker made a CLAIM -- 'this body is partial' -- and it
+    was wrong 14 times out of 14. A raw tail says only: here are the
+    next N lines, unparsed. The worst case is irrelevant text on screen,
+    not a false statement about the document.
+
+    ★★ AND IT RUNS ONLY WHERE A HEADING WAS FOUND AND THE BLOCK CAME
+    BACK EMPTY. Never a general scan. No number is read out of it and no
+    hero row can resolve from it -- this is display, and prose_guidance
+    never sees it.
+    """
+    ls = _lines(text)
+    for i, ln in enumerate(ls):
+        if not pattern.match(ln.strip()):
+            continue
+        out = [ln.strip()]
+        for nxt in ls[i + 1:]:
+            s = nxt.strip()
+            if not s:
+                continue
+            out.append(s)
+            if len(out) > limit:
+                break
         return out if len(out) > 1 else []
     return []
 
@@ -189,9 +231,16 @@ def blocks(text):
     claim the release had a heading it does not have.
     """
     out = []
+    # ★ the raw tail is a LAST resort for one block, and it is labelled
+    # as raw so nobody mistakes a quotation for a parse.
+    ol, ol_title = outlook(text), 'OUTLOOK'
+    if not ol:
+        ol = raw_tail(text, _OUTLOOK)
+        if ol:
+            ol_title = 'OUTLOOK - RAW, FENCES DID NOT MATCH'
     for title, got in (('HEADLINE', headline(text)),
                        ('HIGHLIGHTS', highlights(text)),
-                       ('OUTLOOK', outlook(text)),
+                       (ol_title, ol),
                        ('PROSE-ONLY FIGURES', prose_figures(text)),
                        ('WHAT THEY SAID', quotes(text))):
         if got:
