@@ -378,8 +378,14 @@ class Listener:
             print('=' * 78)
         try:
             res = S.select(rows, ticker, prose_rows=PG.from_text(text))
-            rendered = S.report(res, ticker, labels.get('quarter') or '',
-                                source_text=text)
+            # ★★ THE THREE-SECTION CARD IS WHAT POPS. CURRENT QUARTER /
+            # NEXT QUARTER / FULL YEAR, the profile's preset KPIs under
+            # each, nothing else. The diagnostics, the universal dump and
+            # the reconciliation footer are in S.report and reachable by
+            # `scrape_print.py --full`; at 16:05 they are lines between
+            # the reader and the numbers.
+            rendered = S.card(res, ticker, labels.get('quarter') or '',
+                              source_text=text)
         except Exception as exc:                        # noqa: BLE001
             print('   %s: rendering the exhibit raised %r' % (ticker, exc))
             return

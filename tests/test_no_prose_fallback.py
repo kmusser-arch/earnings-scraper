@@ -146,7 +146,12 @@ def main():
         html = io.open(os.path.join(FIX, fn), encoding='utf-8',
                        errors='replace').read()
         _rows, card = card_for(fn, html)
-        low = card.lower()
+        # ★ THE SCRAPER'S WORDS, NOT THE COMPANY'S. The >> blocks are the
+        # issuer's own prose under a banner reading NOT PARSED, and some
+        # issuers put 'beats guidance' in their headline. Scanning those
+        # asserts something about press releases, not about this code.
+        low = '\n'.join(ln for ln in card.splitlines()
+                        if not ln.lstrip().startswith('>>')).lower()
         for word in GRADING:
             if re.search(r'\b%s\b' % re.escape(word), low):
                 dirty.append((fn, word))

@@ -812,6 +812,7 @@ def select(parser_rows, ticker, profiles=None, aliases=None,
                     base, label=hit.get('label') or pm, value=hit.get('value'),
                     low=hit.get('low'), high=hit.get('high'),
                     raw=hit.get('raw'), period=hit.get('period'),
+                    printed=hit.get('printed'),
                     basis=None, segment=None, channel='prose',
                     pinned=('expect' in entry or 'expectRange' in entry),
                     sourceSentence=hit.get('sourceSentence')))
@@ -956,6 +957,138 @@ def coverage_ok(result):
 SECTIONS = (('currentQuarter', 'CURRENT QUARTER'),
             ('nextQGuidance', 'NEXT-Q GUIDANCE'),
             ('fyGuidance', 'FY GUIDANCE'))
+
+
+#: THE CARD. Fixed order, the three periods a print actually has.
+CARD_SECTIONS = (('currentQuarter', 'CURRENT QUARTER'),
+                 ('nextQGuidance', 'NEXT QUARTER'),
+                 ('fyGuidance', 'FULL YEAR'))
+
+
+def _printed(h):
+    """The figure AS THE DOCUMENT PRINTED IT, scale word and all.
+
+    ★★★★ NEVER THE NORMALISED NUMBER. _scale multiplies a 'billion' by
+    1000 so the channels can be compared in one unit, which is right for
+    the pipeline and catastrophic on the card: the next-quarter guide
+    would render as `Revenue Guide ($B)  2,649-2,653`, and 2,649 billion
+    is the same figure out by a factor of a thousand. The raw string the
+    reader kept says '$2.649 - $2.653 billion' and cannot be read wrong.
+
+    ★★ IT ALSO MAKES A UNIT DISAGREEMENT VISIBLE INSTEAD OF SILENT. When
+    the hero name claims ($B) and the document prints thousands, the two
+    sit side by side on one line and a human sees it. Converting to the
+    hero's declared unit would have hidden exactly that -- and which unit
+    a number is in has already been wrong on this ticker three ways at
+    once.
+    """
+    for key in ('printed', 'raw'):
+        v = h.get(key)
+        if v not in (None, ''):
+            return str(v)
+    if h.get('low') is not None and h.get('high') is not None:
+        return '%s-%s' % (_fmt(h['low']), _fmt(h['high']))
+    return _fmt(h.get('value'))
+
+
+def _card_label(name):
+    """The hero's NAME, without the trading note bolted onto it.
+
+    ★ Profiles carry the why on the same string -- 'North America revenue
+    ($B) — ⚠ the bogey sits above street' -- which is the right place for
+    it and the wrong thing to truncate a card column with. _bare already
+    cuts at the em-dash for matching; the display cuts at the same point
+    so the two never disagree about which part is the name.
+    """
+    s = str(name or '')
+    for sep in (u' — ', u' - ', u'—'):
+        if sep in s:
+            s = s.split(sep)[0]
+            break
+    return s.strip()
+
+
+def _card_period(h):
+    """What the DOCUMENT said this row's period was, as a section key."""
+    if h.get('channel') == 'prose':
+        return _prose_period_class(h.get('period'))
+    return period_class(h.get('table'), h.get('period'), h.get('label'))
+
+
+def card(result, ticker, heading='', source_text=None, clock=''):
+    """THE CARD. Three periods, the profile's preset KPIs under each.
+
+    ★★★★ IT PULLS NUMBERS AND SHOWS THEM. No street, no bogey, no
+    clears/misses, no branch, no base rate, no direction, no magnitude.
+    Every one of those is a judgment and judgment does not happen here.
+
+    ★★★ THE PRESET SET IS THE PRESET SET. A KPI that did not resolve is
+    still listed, with a blank value and a short reason -- because the
+    hero that is missing from a print is itself the read, and a card that
+    quietly drops it looks like a clean sheet.
+    """
+    found = result.get('found') or []
+    missing = result.get('notInRelease') or []
+    head = '%s  %s' % (ticker, heading or '')
+    if clock:
+        head = '%-52s %s' % (head.rstrip(), clock)
+    lines = [head.rstrip()]
+
+    shown = 0
+    for key, title in CARD_SECTIONS:
+        fs = [h for h in found if h.get('appliesTo') == key]
+        ms = [n for n in missing if n.get('appliesTo') == key]
+        if not fs and not ms:
+            continue
+        lines.append('')
+        lines.append(title)
+        for h in sorted(fs, key=lambda r: r.get('order', 0)):
+            shown += 1
+            # ★ THE SECTION IS A CLAIM AND THE DOCUMENT IS ANOTHER. They
+            # agree silently; when they do not, say so on the row. This
+            # is the only thing on the card that is not a plain reading,
+            # and it exists because the one defect no gate could catch
+            # was a row whose value was real and whose PERIOD was not.
+            got = _card_period(h)
+            flag = '' if got in (key, '', None) else '  <- document says %s' \
+                % _short(h.get('period'))[:22]
+            lines.append('  %-42s %26s%s'
+                         % (_card_label(h.get('hero'))[:42],
+                            _printed(h)[:26], flag))
+        for n in ms:
+            shown += 1
+            # ★ SHORT. The full absenceReason is a paragraph and belongs
+            # in --full; on the card it only has to say which KIND of
+            # absence this is, so a blank row is never mistaken for a
+            # number the scraper failed to find.
+            why = _why(n)
+            if len(why) > 62:
+                why = why[:59].rstrip(' .,;') + '...]'
+            lines.append(('  %-42s %26s  %s'
+                          % (_card_label(n.get('hero'))[:42], '',
+                             why)).rstrip())
+
+    if source_text:
+        lines.extend(_source_lines(source_text))
+
+    # ── one status line. Everything else belongs in --full or a log ──
+    total = result.get('heroCount') or 0
+    unres = [m for m in missing if _is_unresolved(m)]
+    offcard = total - shown
+    tail = ('%d of %d KPIs resolved - %d absent - %d UNRESOLVED'
+            % (len(found), total, len(missing) - len(unres), len(unres)))
+    # ★★ A HERO THAT IS ON NO PERIOD IS OFF THE CARD, NOT DROPPED. The
+    # UNCLASSIFIED bucket is gone, but a narrative hero still counts
+    # against the profile and the arithmetic has to close, or the card
+    # is quietly showing fewer KPIs than the ticker was built with.
+    if offcard:
+        tail += ' - %d off-card (no period)' % offcard
+    lines.append('')
+    lines.append(tail)
+    for m in unres:
+        lines.append('   UNRESOLVED is a DEFECT, not a decision: %s'
+                     % m['hero'][:50])
+    return '\n'.join(lines)
 
 
 def _despace(text):

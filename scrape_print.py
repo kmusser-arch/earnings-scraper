@@ -46,13 +46,26 @@ def exhibit(cik, accession):
 
 
 def render(ticker, html, quarter, full=False):
+    """(card, ms, cells). DEFAULT IS THE THREE-SECTION CARD.
+
+    ★★★ --full IS THE OLD CARD, UNCHANGED. The diagnostics, the universal
+    dump, the period column and the reconciliation footer are all still
+    one flag away; what they are not is the first thing on the screen at
+    16:05. The default answers one question -- what did they print --
+    and everything that answers a different question moved behind the
+    flag.
+    """
     t0 = time.time()
     text = sec.to_text(html)
     rows = cells.from_html(html)
     res = S.select(rows, ticker, prose_rows=PG.from_text(text))
-    card = S.report(res, ticker, quarter,
-                    parser_rows=rows if full else None, source_text=text)
-    return card, (time.time() - t0) * 1000, len(rows)
+    if full:
+        out = S.report(res, ticker, quarter, parser_rows=rows,
+                       source_text=text)
+    else:
+        out = S.card(res, ticker, quarter, source_text=text)
+    ms = (time.time() - t0) * 1000
+    return out, ms, len(rows)
 
 
 def today_filing(ticker, on):

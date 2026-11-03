@@ -130,6 +130,28 @@ _DISPLAY = {'revenue': 'Revenue', 'operatingIncome': 'Operating income',
 _WS = re.compile(r'\s+')
 
 
+def _printed(match, parts, unit, pct=False):
+    """The figure AS PRINTED, compactly: '$2.649 - $2.653 billion'.
+
+    ★★★★ THE CARD MUST NOT SHOW THE NORMALISED NUMBER. _scale turns a
+    'billion' into 1000s of millions so the channels share one unit --
+    right for the pipeline, a thousand-fold error on a card whose label
+    says ($B). And it must not show `raw` either: that is a whole clause
+    ('expected to be between $240.0 billion and $247.0 billion'), which
+    truncates mid-word at any sane column width, and a range whose unit
+    word has been cut off is the same error wearing a different hat.
+
+    ★★ SO THE DIGITS AND THE SCALE WORD ARE KEPT AS THE DOCUMENT WROTE
+    THEM, reordered and nothing else. No arithmetic happens here, which
+    is why it cannot be wrong about a magnitude.
+    """
+    dollar = '$' if '$' in match.group(0) else ''
+    tail = (' %s' % unit) if unit else ''
+    body = ' - '.join('%s%s%s' % (dollar, p, '%' if pct else '')
+                      for p in parts if p is not None)
+    return (body + ('' if pct else tail)).strip()
+
+
 def _scale(num, word):
     try:
         v = float(str(num).replace(',', ''))
@@ -216,7 +238,10 @@ def from_text(text, heading_period='nextQGuidance'):
                         hi = _scale(m.group(3), m.group(4) or m.group(2))
                         if lo is not None and hi is not None:
                             row = {'value': None, 'low': lo, 'high': hi,
-                                   'raw': _WS.sub(' ', m.group(0)).strip()}
+                                   'raw': _WS.sub(' ', m.group(0)).strip(),
+                                   'printed': _printed(
+                                       m, (m.group(1), m.group(3)),
+                                       m.group(4) or m.group(2))}
                         break
                 if row is None:
                     for pat in _GROWTH_PATS:
@@ -224,10 +249,14 @@ def from_text(text, heading_period='nextQGuidance'):
                         if m:
                             g = m.groups()
                             row = ({'value': float(g[0]), 'low': None,
-                                    'high': None, 'raw': m.group(0)}
+                                    'high': None, 'raw': m.group(0),
+                                    'printed': _printed(m, (g[0],), None,
+                                                        pct=True)}
                                    if len(g) == 1 else
                                    {'value': None, 'low': float(g[0]),
-                                    'high': float(g[1]), 'raw': m.group(0)})
+                                    'high': float(g[1]), 'raw': m.group(0),
+                                    'printed': _printed(m, (g[0], g[1]),
+                                                        None, pct=True)})
                             break
                 if row is None:
                     for pat in _POINT_PATS:
@@ -236,7 +265,10 @@ def from_text(text, heading_period='nextQGuidance'):
                             v = _scale(m.group(1), m.group(2))
                             if v is not None:
                                 row = {'value': v, 'low': None, 'high': None,
-                                       'raw': _WS.sub(' ', m.group(0)).strip()}
+                                       'raw': _WS.sub(' ',
+                                                      m.group(0)).strip(),
+                                       'printed': _printed(
+                                           m, (m.group(1),), m.group(2))}
                             break
                 if row is None:
                     continue
