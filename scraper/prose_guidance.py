@@ -210,6 +210,30 @@ def subblocks(body, default):
     return out or [(default, body)]
 
 
+def block_text(text, want, heading_period='nextQGuidance'):
+    """The guidance prose for ONE period, and nothing else.
+
+    ★★★★ THE FENCE IS THE WHOLE POINT. A declared-phrase reader finds
+    its phrase anywhere in the release, which is right for a segment
+    figure in the reported quarter and catastrophic for a guide: the
+    full-year free-cash-flow GUIDE gets answered with the quarter's
+    reported free cash flow, from a highlights bullet, under an FY
+    label. Handing that reader only the sub-block whose period matches
+    means the sentence it finds is a guidance sentence for the right
+    period or there is no sentence at all.
+
+    `want` is the hero's appliesTo -- 'nextQGuidance' or 'fyGuidance'.
+    """
+    out = []
+    for _heading, body in sections(text):
+        for period, block in subblocks(body, heading_period):
+            got = ('fyGuidance' if str(period).startswith('FY')
+                   else str(period))
+            if got == want:
+                out.append(block)
+    return '\n'.join(out)
+
+
 def from_text(text, heading_period='nextQGuidance'):
     """[{metric, period, value, low, high, raw, confidence, ...}].
 

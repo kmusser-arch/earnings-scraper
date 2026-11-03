@@ -377,7 +377,8 @@ class Listener:
                   'parsed out of prose.')
             print('=' * 78)
         try:
-            res = S.select(rows, ticker, prose_rows=PG.from_text(text))
+            res = S.select(rows, ticker, prose_rows=PG.from_text(text),
+                           source_text=text)
             # ★★ THE THREE-SECTION CARD IS WHAT POPS. CURRENT QUARTER /
             # NEXT QUARTER / FULL YEAR, the profile's preset KPIs under
             # each, nothing else. The diagnostics, the universal dump and

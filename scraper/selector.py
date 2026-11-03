@@ -31,6 +31,8 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from earnings_scraper import cells                          # noqa: E402
 from scraper import passthrough                             # noqa: E402
+from scraper import prose_guidance as PROSE                 # noqa: E402
+from scraper import prose_labels                            # noqa: E402
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 
@@ -251,7 +253,13 @@ def _bare(name):
     # guide' reduced to 'q gross margin' and matched nothing -- a stray 'q'
     # from the hyphen, and 'FY+1 capex' left a bare '1'. Both reported NOT
     # FOUND against documents that plainly carry the figure.
-    t = re.sub(r'\b(q|fy|cy|h|yr|\d+)\b', ' ', t)
+    # ★★★ AND A FISCAL-QUARTER TOKEN IS ONE TOKEN. This stripped a lone
+    # 'q' and a lone 'fy' but left 'f4q', 'q3' and 'fy2027' standing, so
+    # 'F4Q Gross Margin (%)' reduced to 'f4q gross margin' -- which is
+    # not 'gross margin', so canonical() refused a hero that is exactly
+    # a metric. The same leftover made _residue count 'q2' as content
+    # and refuse 13 matches that were right.
+    t = re.sub(r'\b(f?\d?q\d?|fy\d*|cy\d*|h[12]|yr|\d+)\b', ' ', t)
     return _WS.sub(' ', t).strip()
 
 
@@ -481,11 +489,44 @@ def raw_class(raw):
 
 
 def _pct_context(row):
-    """Does anything around this cell say the column is a percentage?"""
-    hay = norm('%s %s %s' % (row.get('label') or '', row.get('period') or '',
-                             row.get('section') or ''))
+    """Does anything around this cell say the column is a percentage?
+
+    ★★★★ THE TABLE'S UNIT NOTE IS THE DOCUMENT'S OWN DECLARATION, and it
+    was the one place this did not look. Palantir heads the table
+    '(in thousands, except percentages and per share amounts)' and then
+    prints 'Adjusted operating margin' as a bare 62 -- the % sign lives
+    in a column header that cells.from_html does not attach to the row,
+    so label, period and section all come back clean and the percent
+    guard refused the single row that hero exists for.
+
+    ★★ APPLE'S TABLE SAYS '(In millions, except number of shares ... and
+    per-share amounts)' and says nothing about percentages, so its
+    DOLLAR line called 'Gross margin' is still refused. The difference
+    is not magnitude, inference or ticker knowledge -- it is that one
+    issuer declared percentages in this table and the other did not.
+    """
+    hay = norm('%s %s %s %s' % (row.get('label') or '',
+                                row.get('period') or '',
+                                row.get('section') or '',
+                                row.get('table') or ''))
+    # ★★★ 'GROWTH' AND 'Y/Y' ARE THE DOCUMENT SAYING 'RATE'. Amazon's
+    # supplemental table labels the row 'AWS -- Y/Y growth, excluding
+    # F/X' and prints a bare 17. Nothing in the table note, the section
+    # or the column mentions percentages -- the LABEL is the only place
+    # the unit is stated, and it states it twice. A quantity called a
+    # year-over-year growth is not a dollar amount.
     return ('%' in hay or 'percent' in hay or 'margin %' in hay
-            or 'rate' in hay or ' ppt' in hay or 'basis points' in hay)
+            or 'rate' in hay or ' ppt' in hay or 'basis points' in hay
+            or 'growth' in hay or 'y/y' in hay or 'yoy' in hay
+            # ★★ 'MARGIN' IS A RATIO BY DEFINITION -- and the famous
+            # counter-example is not a counter-example. Apple's 'Gross
+            # margin' row IS a dollar line, 54,820, and what refuses it
+            # is the PLAUSIBILITY check beside this one, not a pretence
+            # that the word means nothing. Leaving 'margin' out here
+            # made that check unreachable and blanked six correct
+            # readings -- 40.2, 49.2, 44.2, 47.4, 16.0, 24.0 -- every
+            # one a bare percentage under a label that says margin.
+            or 'margin' in hay)
 
 
 def _plausible(value, unit):
@@ -502,10 +543,34 @@ def _plausible(value, unit):
     return True
 
 
+#: the unit a hero writes in its own name: 'F4Q Gross Margin (%)'
+_NAMEUNIT = re.compile(r'\((%|\$[BMK]?|bps|pct)\)\s*$')
+
+
+def _unit_of(h, name):
+    """The hero's declared unit -- from the field, else from the NAME.
+
+    ★★★★ THE NAME IS A DECLARATION TOO, AND IT IS THE ONE THAT IS
+    ALWAYS THERE. A hero called 'F4Q FY26 Non-GAAP Gross Margin (%)'
+    with no `unit` field gets unit_class None, which switches OFF the
+    class guard and the plausibility check together -- and that hero
+    resolved to 35,199, a DOLLAR line, displayed as a margin. The
+    profile wrote '(%)' in the name; nothing was being read.
+
+    Reading it is not inference: it is the same declaration in the field
+    the author actually filled in.
+    """
+    if isinstance(h, dict) and h.get('unit'):
+        return h['unit']
+    m = _NAMEUNIT.search(str(name or '').strip())
+    return m.group(1) if m else ''
+
+
 def _hero_fields(h):
     if isinstance(h, dict):
-        return (h.get('name') or '', h.get('priority'),
-                h.get('appliesTo') or '', h.get('unit') or '',
+        name = h.get('name') or ''
+        return (name, h.get('priority'),
+                h.get('appliesTo') or '', _unit_of(h, name),
                 bool(h.get('inverted')))
     return (str(h), None, '', '', False)
 
@@ -707,8 +772,11 @@ def _prose_hit(prose_rows, metric, applies):
                  and _prose_period_class(p.get('period')) == applies), None)
 
 
+_YOYNAME = re.compile(r'(?i)\b(yoy|y/y|year[\s-]over[\s-]year)\b')
+
+
 def select(parser_rows, ticker, profiles=None, aliases=None,
-           prose_rows=None):
+           prose_rows=None, source_text=None):
     """{found, notInRelease, config} -- reported numbers and nothing else.
 
     ★★★ NO THIRD CATEGORY. A hero is in the release or it is not. Earlier
@@ -793,8 +861,95 @@ def select(parser_rows, ticker, profiles=None, aliases=None,
 
         # ── the PROSE channel, where the issuer states it in a sentence ──
         if channel == 'prose' or not labels:
+            # ★★★★ THE RANGE-AWARE READER GOES FIRST, ALWAYS.
+            # prose_guidance parses a guidance bullet into BOTH ENDS and
+            # stamps its period; prose_labels finds one declared phrase
+            # and reads ONE figure near it. Letting the second overrule
+            # the first turned the FY revenue guide from 7,650-7,662
+            # into 7.65 -- the high end gone and the scale word with it,
+            # because 'between $7.650 - $7.662 billion' puts 'billion'
+            # after the far number. Richer reader first; the phrase
+            # reader is what runs when it finds nothing.
             pm = _prose_metric(name, prose_rows)
             hit = _prose_hit(prose_rows, pm, applies)
+
+            # ★★★ A DECLARED PHRASE, WHEN THE VOCABULARY CANNOT HELP.
+            # 'U.S. commercial revenue' and 'revenue' reduce to the same
+            # word, so no metric vocabulary can keep a SEGMENT apart from
+            # the consolidated line. The profile naming the exact phrase
+            # is the only thing that can, and _residue refuses the loose
+            # match precisely so this path is reached instead.
+            # ★★★ A HERO THAT IS EXACTLY A METRIC NAMES ITS OWN PHRASE.
+            # Apple states two of its headline figures only in prose --
+            # 'Company gross margin was 47.9 percent' and 'Diluted
+            # earnings per share was $2.10' -- and declares no
+            # documentLabels for either, because in the TABLE both
+            # collide: 'Gross margin' is a dollar line and a bare
+            # 'Diluted' returns the share count, 14,714,676.
+            #
+            # canonical() already requires the name to reduce EXACTLY to
+            # a metric phrase, residue and all, so using that metric's
+            # own universal vocabulary as the search phrase guesses
+            # nothing. A hero carrying a segment or a transform does not
+            # reduce, gets no phrase here, and stays blank.
+            declared = bool(labels)
+            if (hit is None and channel == 'prose' and not labels
+                    and applies == 'currentQuarter'):
+                exact = canonical(name)
+                if exact:
+                    labels = [n.strip() for n, m in _CANON if m == exact]
+            if hit is None and channel == 'prose' and labels:
+                # ★★ A WIRING FAULT, BUT ONLY WHEN THE PROFILE ASKED FOR
+                # ONE. If the profile DECLARED a phrase and nobody handed
+                # this function the prose to search, that is a caller bug
+                # and 'not in release' would report it as a fact about
+                # the document. Phrases DERIVED from the hero's own name
+                # are a convenience: without source_text they simply do
+                # not apply, and the row falls through to the ordinary
+                # declared absence below.
+                #
+                # ★ AND IT STILL NAMES THE CHANNEL. An absence that does
+                # not say which channel was declared is the one kind of
+                # blank _why exists to prevent.
+                if not source_text and declared:
+                    # ★★ AN UNDECLARED ABSENCE IS A DEFECT. The hero names
+                    # a phrase and nobody handed this function the prose
+                    # to look in: a wiring fault, not a fact about the
+                    # release. 'not in release' here reports a bug as a
+                    # finding.
+                    out['notInRelease'].append(dict(
+                        base, channel=channel,
+                        reason='documentLabels declared, but select() was '
+                        'called without source_text'))
+                    continue
+                if not source_text:
+                    labels = []
+                # ★ AND A GUIDANCE HERO SEES ONLY ITS OWN SUB-BLOCK.
+                # This reader has no notion of period -- over the whole
+                # release it answers the FY free-cash-flow GUIDE with the
+                # quarter's reported $1.216 billion, from a highlights
+                # bullet, under an FY label. Fenced to the sub-block, the
+                # sentence it finds is a guidance sentence for the right
+                # period or there is no sentence at all.
+                hay = source_text or ''
+                if applies in ('nextQGuidance', 'fyGuidance'):
+                    hay = PROSE.block_text(source_text or '', applies)
+                elif applies != 'currentQuarter':
+                    hay = ''
+                lab = prose_labels.find(hay, labels, unit_class(unit),
+                                        yoy=bool(_YOYNAME.search(name)))
+                if lab is not None:
+                    out['found'].append(dict(
+                        base, label=lab.get('phrase') or name,
+                        value=lab.get('value'), low=lab.get('low'),
+                        high=None, raw=None,
+                        printed=lab.get('printed'), period=applies,
+                        basis=None, segment=None, channel='prose',
+                        pinned=('expect' in entry
+                                or 'expectRange' in entry),
+                        needsVerification=unverified,
+                        sourceSentence=lab.get('sentence')))
+                    continue
             # ★★★★ A DECLARED CHANNEL IS A DECLARATION, NOT A
             # PREFERENCE. channel:'prose' on Apple's Gross Margin (%) says
             # the percent exists ONLY in a sentence -- the table label
@@ -875,8 +1030,36 @@ def select(parser_rows, ticker, profiles=None, aliases=None,
             # '%' either -- so raw_class returned None and 54,770 sailed
             # through to a % hero. A percentage is PRINTED as one: with a
             # % sign, or in a column that says so.
-            if hc == 'PERCENT' and rc is None and not _pct_context(row):
-                continue
+            # ★★★★ C2. The guard above refuses an unmarked cell for a
+            # percent hero, and it is right to: Apple prints a DOLLAR
+            # line called 'Gross margin', 54,770, inside a $M table with
+            # no '$' in the cell, and nothing but this stopped it being
+            # read as a 54,770% margin.
+            #
+            # But Palantir prints 'Adjusted operating margin' as a bare
+            # 62 with the % sign in a COLUMN HEADER that cells.from_html
+            # never attaches to the row -- so label, period and section
+            # all come back clean and _pct_context cannot see it. The
+            # guard then refuses the one row the hero was built for.
+            #
+            # MAGNITUDE IS THE DISCRIMINATOR THE CONTEXT CANNOT SUPPLY.
+            # 54,770 is not a percentage at any plausible scale; 62 is.
+            # This does not loosen the guard for a marked cell, does not
+            # apply to any other unit class, and only ever runs on a row
+            # whose LABEL the profile already named.
+            if hc == 'PERCENT' and rc is None:
+                if not _pct_context(row):
+                    continue
+                # ★★ AND THE MAGNITUDE MUST BE CREDIBLE AS A PERCENT.
+                # _pct_context now reads the table's unit note, which is
+                # a statement about the TABLE, not about this cell: a
+                # table headed '(in millions, except percentages)' holds
+                # both kinds of column. _plausible is the second net, and
+                # it is the one that refuses 54,820 whatever the note
+                # says. Defined since the first cut and never called
+                # until now.
+                if not _plausible(cells.to_number(row.get('raw')), '%'):
+                    continue
             found.append((i, row))
 
         if not found:

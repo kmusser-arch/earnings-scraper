@@ -139,8 +139,10 @@ def main():
 
         html = io.open(path, encoding='utf-8', errors='replace').read()
         rows = cells.from_html(html)
-        prose = PG.from_text(sec.to_text(html))
-        res = S.select(rows, ticker, profiles=profiles, prose_rows=prose)
+        text = sec.to_text(html)
+        prose = PG.from_text(text)
+        res = S.select(rows, ticker, profiles=profiles, prose_rows=prose,
+                       source_text=text)
         got = dict((f['hero'], f) for f in (res.get('found') or []))
         missing = set(n['hero'] for n in (res.get('notInRelease') or []))
 

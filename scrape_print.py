@@ -58,7 +58,8 @@ def render(ticker, html, quarter, full=False):
     t0 = time.time()
     text = sec.to_text(html)
     rows = cells.from_html(html)
-    res = S.select(rows, ticker, prose_rows=PG.from_text(text))
+    res = S.select(rows, ticker, prose_rows=PG.from_text(text),
+                   source_text=text)
     if full:
         out = S.report(res, ticker, quarter, parser_rows=rows,
                        source_text=text)
