@@ -72,9 +72,7 @@ def _wire_card(ticker, item):
     for title, lines in blocks:
         if title == 'HEADLINE':
             continue
-        out.append('')
-        out.append('>> %s - VERBATIM FROM THE WIRE, NOT PARSED' % title)
-        out.extend('>> %s' % ln for ln in lines)
+        out.extend(_quoted(title, lines, 'THE WIRE'))
     if not blocks and body:
         out += ['', '>> BODY (no section fence matched) - VERBATIM, FIRST 40 LINES']
         out.extend('>> %s' % ln.strip()
@@ -83,6 +81,52 @@ def _wire_card(ticker, item):
         out += ['', 'NO BODY ON THIS FRAME - headlines mode, or the source '
                 'strips it. Re-run with --mode full.']
     return chr(10).join(out)
+
+
+#: ★★★★ A HEADING WITH NOTHING UNDER IT IS NOT 'NO GUIDANCE GIVEN'.
+#: 'OUTLOOK' followed by silence reads as the company having declined to
+#: guide, which on a guidance-cadence name is a trade-deciding misread --
+#: and the truth was that the frame arrived truncated and the bullets had
+#: not come yet. The block says which it is, because the card can tell:
+#: a quoted body carrying no figure at all is a body that has not
+#: finished arriving, and saying so costs one line.
+#: ★★ A PERIOD IS NOT A FIGURE. 'For Q4 2026, we expect:' is full of
+#: digits and states no value, so a bare isdigit() test called that block
+#: complete and the warning never fired on the case it was written for.
+#: A figure carries a currency sign, a percent, a decimal or a thousands
+#: group; a quarter number and a year carry none of those.
+_FIGURE = re.compile(r'\$\s*\d|\d\s*%|\d[\d,]*\.\d|\d{1,3}(?:,\d{3})+')
+
+
+#: ★★★★ 'PARTIAL FRAME' WAS A DIAGNOSIS THIS CANNOT MAKE, AND MEASURING
+#: IT SAID SO. Marked on every block with no figure, it fired on 98 of
+#: 121 real cards -- a quote or a headline without numbers is normal, not
+#: truncated. Narrowed to OUTLOOK and HIGHLIGHTS and to a body ending in
+#: a colon, it still fired 14 times and ALL 14 WERE WRONG: every one was
+#: a prose lead-in to a guidance TABLE -- "Intel's guidance for the
+#: fourth quarter of 2026 includes both", "The following table presents
+#: Micron's guidance", "Y/Y net sales growth:" -- where the frame had
+#: arrived complete and the figures were simply not in the prose.
+#:
+#: A truncated body and a table lead-in read identically as text. So the
+#: card states the FACT and stops: this heading has no figures under it.
+#: That is enough to keep 'OUTLOOK' followed by silence from being read
+#: as 'no guidance was given' -- which on a guidance-cadence name is a
+#: trade-deciding misread -- without asserting a cause it cannot know.
+_FIGURE_EXPECTED = ('OUTLOOK', 'HIGHLIGHTS')
+
+
+def _quoted(title, lines, where):
+    out = ['', '>> %s - VERBATIM FROM %s, NOT PARSED' % (title, where)]
+    out.extend('>> %s' % ln for ln in lines)
+    # the heading is line 0 only for a fenced block; HEADLINE and the
+    # quote blocks are content from the first line and get no marker.
+    if title in _FIGURE_EXPECTED:
+        body = [ln for ln in lines[1:] if ln.strip()]
+        if not any(_FIGURE.search(ln) for ln in body):
+            out.append('>> (no figures under this heading in this frame - '
+                       'NOT a statement that none was given)')
+    return out
 
 
 class Listener:
@@ -105,6 +149,8 @@ class Listener:
         self.verbose = verbose
         self.log_hits = log_hits
         self._seen_ids = set()
+        #: (ticker, day) -> the weight of the fullest frame emitted so far
+        self._frames = {}
         self._dropped_watched = set()
         self._filing_shape_shown = False
         # ★ Set on shutdown so the wire pump can tell "asked to stop" from
@@ -636,7 +682,63 @@ class Listener:
             self.stats['cards'] += 1
             self._emit(card, item)
 
+    #: how complete a frame is, before its length is consulted. A parsed
+    #: exhibit carries hero rows; a wire body never can.
+    FRAME_RANK = {'SEC-8K': 2}
+
+    @staticmethod
+    def release_key(card):
+        """(ticker, day) -- the RELEASE, not the message.
+
+        ★★★★ THE WIRE ITEM ID CANNOT DO THIS JOB. The same release
+        crosses on two services with two different ids, and the 8-K is a
+        third delivery of the same thing; _seen_ids and revisions.classify
+        both key on the message, so neither can tell that three frames
+        are three views of one print. A company does not publish two
+        different earnings releases for itself on one day, so the day is
+        the honest proxy for the release.
+        """
+        day = (str(card.get('quarter') or '')[:10]
+               or time.strftime('%Y-%m-%d'))
+        return (str(card.get('ticker') or '?').upper(), day)
+
+    def frame_weight(self, card):
+        """How complete this frame is. Higher supersedes lower."""
+        src = str(card.get('documentSource') or '')
+        return (self.FRAME_RANK.get(src, 1),
+                len(str(card.get('rendered') or '')))
+
+    def _supersedes(self, card):
+        """True if this frame should reach the trader.
+
+        ★★★ 'FIRST WINS' IS THE WRONG RULE HERE. On 2026-11-02 the
+        EARLIER frame was the truncated one in BOTH pairs, so keeping the
+        first and dropping the rest keeps the worst of each pair. A
+        partial frame is SUPERSEDED when a fuller one arrives: the card
+        is replaced, never appended to, and a frame that adds nothing is
+        dropped silently rather than stacking a second window on a print
+        already read.
+        """
+        key = self.release_key(card)
+        weight = self.frame_weight(card)
+        prev = self._frames.get(key)
+        if prev is not None and weight <= prev:
+            return False
+        card['releaseKey'] = '%s %s' % key
+        card['supersedes'] = prev is not None
+        if prev is not None:
+            print('   · %s: fuller frame (%s -> %s) - REPLACING the card, '
+                  'not adding one' % (key[0], prev[1], weight[1]))
+        self._frames[key] = weight
+        return True
+
     def _emit(self, card, item):
+        # ★ ONE GATE, NOT THREE. The wire card, the no-card frame and the
+        # 8-K card all arrive here, which is the only place that sees
+        # every frame of a release.
+        if not self._supersedes(card):
+            self.stats['superseded'] = self.stats.get('superseded', 0) + 1
+            return
         path = self._persist(card, item) if self.log_hits else None
         if self.popup is not None:
             self.popup.submit(card)

@@ -56,6 +56,9 @@ class CardPopup:
         self.queue = queue.Queue()
         self.on_quit = on_quit
         self._windows = []
+        #: releaseKey -> the open window for that release, so a fuller
+        #: frame replaces it instead of opening a second one
+        self._by_key = {}
         self._offset = 0
 
         self.mono = tkfont.Font(family='Consolas', size=10)
@@ -119,13 +122,38 @@ class CardPopup:
     # --- rendering ------------------------------------------------------------
 
     def show(self, card):
+        # ★★★★ SUPERSEDE, NEVER APPEND. A second window for a release
+        # already on screen is the failure, not the fix: the trader is
+        # left comparing two cards for one print and deciding which to
+        # believe, under time pressure, which is the decision this whole
+        # pipeline exists to remove. The listener only sends a frame that
+        # is FULLER than what it already sent, so when one arrives the
+        # old window goes and the new one takes its place and its
+        # position -- no second bell, no second stack offset.
+        key = card.get('releaseKey')
+        old = self._by_key.pop(key, None) if key else None
+        geom = None
+        if old is not None:
+            try:
+                geom = old.geometry()
+                old.destroy()
+            except tk.TclError:
+                geom = None
+            if old in self._windows:
+                self._windows.remove(old)
+
         win = tk.Toplevel(self.root)
         self._windows.append(win)
+        if key:
+            self._by_key[key] = win
         win.title('%s  %s' % (card.get('ticker', '?'), card.get('quarter') or ''))
         win.configure(bg=BG)
 
-        self._offset = (self._offset + 26) % 160
-        win.geometry('+%d+%d' % (120 + self._offset, 50 + self._offset))
+        if geom:
+            win.geometry(geom)
+        else:
+            self._offset = (self._offset + 26) % 160
+            win.geometry('+%d+%d' % (120 + self._offset, 50 + self._offset))
         win.attributes('-topmost', True)
         win.lift()
         win.focus_force()

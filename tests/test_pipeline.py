@@ -179,7 +179,14 @@ def main():
             'wire', 'wireCode', 'headline', 'itemId', 'tickerSource',
             'detectConfidence', 'parsedFields', 'receivedAt', 'rendered',
             'rawFigures', 'latencyMs', 'documentSource', 'documentUrl',
-            'renderError', 'diagnostics'}
+            'renderError', 'diagnostics',
+            # ★ ADDED DELIBERATELY 2026-11-03, and the whitelist is why
+            # they had to be. Both are written BY the listener, from the
+            # frame itself -- neither comes from the library, which is
+            # what this set exists to bound. releaseKey identifies the
+            # release so a fuller frame replaces the card instead of
+            # opening a second window; supersedes says it did.
+            'releaseKey', 'supersedes'}
         extra = sorted(set(card) - ALLOWED)
         check('card keys are EXACTLY the allowed set', not extra,
               'UNEXPECTED: %s' % extra if extra else '%d keys' % len(card))

@@ -1406,6 +1406,12 @@ def current_quarter_rows(parser_rows, exclude_labels=()):
     return out
 
 
+#: a figure carries a currency sign, a percent, a decimal or a
+#: thousands group. 'For Q4 2026, we expect:' carries none of
+#: them, which is why a bare digit test cannot find a silent block.
+_FIGURE = re.compile(r'\$\s*\d|\d\s*%|\d[\d,]*\.\d|\d{1,3}(?:,\d{3})+')
+
+
 def _source_lines(source_text):
     """The >> blocks. SOURCE TEXT, QUOTED, NEVER PARSED.
 
@@ -1422,6 +1428,16 @@ def _source_lines(source_text):
         out.append('>> %s - VERBATIM FROM THE RELEASE, NOT PARSED' % title)
         for ln in body:
             out.append('>> %s' % ln)
+        # ★★ A HEADING WITH NOTHING UNDER IT IS NOT 'NONE WAS GIVEN'.
+        # 'OUTLOOK' followed by silence reads as the company declining to
+        # guide; on a guidance-cadence name that is a trade-deciding
+        # misread, and the truth is a body that has not finished
+        # arriving. The card can tell the difference, so it says which.
+        if title in ('OUTLOOK', 'HIGHLIGHTS'):
+            rest = [ln for ln in body[1:] if ln.strip()]
+            if not any(_FIGURE.search(ln) for ln in rest):
+                out.append('>> (no figures under this heading in this frame '
+                           '- NOT a statement that none was given)')
     return out
 
 
