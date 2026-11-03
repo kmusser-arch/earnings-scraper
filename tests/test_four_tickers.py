@@ -35,7 +35,7 @@ FIX = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
 VALUES = {
     'PLTR_2026Q3': {
         'US Commercial Revenue Growth YoY (%)':   '148%',
-        'US Commercial TCV Growth YoY (%)':       '$1.463 billion',
+        'US Commercial TCV ($B)':                 '$1.463 billion',
         'Adj Operating Margin (%)':               '62',
         'Q3 Revenue ($K)':                        '2,313,411',
         'Adj EPS ($)':                            '0.44',
@@ -52,6 +52,7 @@ VALUES = {
         'F4Q Greater China Revenue ($B)': '17,539',
         'F4Q Services Revenue ($B)':      '31,573',
         'F4Q Gross Margin (%)':           '47.9%',
+        'F4Q EPS ($)':                    '$2.10',
     },
     'AMZN_2026Q3': {
         'AWS operating margin (%)':           '38.7',
@@ -74,8 +75,7 @@ ABSENT = {
                     'FY Revenue Guide Raise (% of prior guide)': 'derived'},
     'AAPL_2026Q4': {'F1Q Revenue Guide (% YoY)': 'call',
                     'F1Q Gross Margin Guide (%)': 'call',
-                    'F1Q Services Guide (% YoY)': 'call',
-                    'F4Q EPS ($)': 'unmapped'},
+                    'F1Q Services Guide (% YoY)': 'call'},
     'AMZN_2026Q3': {'FY+1 capex framing ($B)': 'call'},
     'INTC_2026Q3': {'FY+1 capex ($B)': 'call'},
 }
@@ -154,6 +154,50 @@ def main():
                  '' if not loose else ' -- UNACCOUNTED %s' % loose))
 
 
+def units():
+    """★★★★ A DECLARATION MUST NEVER SILENCE THE CHECK IT BELONGS TO.
+
+    Four heroes named '(%)' carried unit 'bps', and one of them carried
+    map unit '$B'. bps has no class, so unit_class returned None and the
+    class guard and the plausibility check switched off together -- the
+    same failure as an EMPTY unit, except it looks declared, so nothing
+    reads as missing. That hero then printed $1.463 billion under a
+    percent label and no guard in selector.py could object.
+    """
+    print('')
+    print('== unit declarations')
+    for field, named, want, conflict in (
+            ('$B', '%', '%', True),      # the live case, exactly
+            ('%', '$M', '$M', True),
+            ('', '%', '%', False),       # absent -> the name
+            ('$M', '$', '$M', False),    # agree -> the more precise
+            ('bps', '%', 'bps', False),  # unclassable -> left alone
+            ('%', '%', '%', False)):
+        got, why = S.declared_unit(field, named)
+        check(got == want and bool(why) == conflict,
+              '  field=%-4r name=%-4r -> %-4r %s'
+              % (field, named, got, 'CONFLICT' if conflict else 'ok'))
+
+    # ★ and the four tickers' own profiles must be free of it
+    profiles, _mt = S.load_profiles()
+    bad = []
+    for stem in sorted(VALUES):
+        tic = stem.split('_')[0]
+        dlm = profiles[tic].get('documentLabelMap') or {}
+        for h in profiles[tic].get('heroKPIs') or []:
+            nu = S.name_unit(h.get('name') or '')
+            e = dlm.get(h.get('name')) or {}
+            for src in (h.get('unit'),
+                        e.get('unit') if isinstance(e, dict) else None):
+                why = S.declared_unit(src, nu)[1]
+                if why:
+                    bad.append((tic, (h.get('name') or '')[:34], why[:48]))
+    check(not bad,
+          '  no hero on the four tickers contradicts its own name%s'
+          % ('' if not bad else ' -- %s' % bad))
+
+
 main()
+units()
 if FAILED:
     sys.exit(1)

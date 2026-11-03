@@ -547,23 +547,61 @@ def _plausible(value, unit):
 _NAMEUNIT = re.compile(r'\((%|\$[BMK]?|bps|pct)\)\s*$')
 
 
-def _unit_of(h, name):
-    """The hero's declared unit -- from the field, else from the NAME.
-
-    ★★★★ THE NAME IS A DECLARATION TOO, AND IT IS THE ONE THAT IS
-    ALWAYS THERE. A hero called 'F4Q FY26 Non-GAAP Gross Margin (%)'
-    with no `unit` field gets unit_class None, which switches OFF the
-    class guard and the plausibility check together -- and that hero
-    resolved to 35,199, a DOLLAR line, displayed as a margin. The
-    profile wrote '(%)' in the name; nothing was being read.
-
-    Reading it is not inference: it is the same declaration in the field
-    the author actually filled in.
-    """
-    if isinstance(h, dict) and h.get('unit'):
-        return h['unit']
+def name_unit(name):
+    """The unit a hero writes in its own name, or ''."""
     m = _NAMEUNIT.search(str(name or '').strip())
     return m.group(1) if m else ''
+
+
+def declared_unit(field, named):
+    """(unit, conflict) -- reconcile a unit FIELD against the hero's NAME.
+
+    ★★★★ A DECLARATION MUST NEVER BE ABLE TO SILENCE THE CHECK IT
+    BELONGS TO. Four heroes named '(%)' carried unit 'bps'. bps has no
+    class at all, so unit_class returned None and the class guard and
+    the plausibility check switched off together -- the same failure as
+    an EMPTY unit, except that it looks declared, so nothing about it
+    reads as missing. One of them was a hero named '(%)' whose map said
+    '$B'; it printed $1.463 billion under a percent label and no guard
+    in this file could object, because the declaration had disabled
+    them.
+
+    So the FIELD is authoritative only while it agrees with the name:
+
+      - field absent, or carrying a unit this module cannot class ->
+        the NAME is the declaration, and it is the one always present.
+      - field and name in different classes -> a DEFECT, reported and
+        refused. Not an override, not a silent pick: the two statements
+        the profile makes about one hero disagree, and resolving a
+        figure against either would be choosing which author to trust.
+      - otherwise -> the field, which is the more precise of the two
+        ('$M' where the name says '$').
+    """
+    f, n = str(field or '').strip(), str(named or '').strip()
+    fc, nc = unit_class(f), unit_class(n)
+    if not f:
+        return n, None
+    if fc and nc and fc != nc:
+        return n, ('unit conflict: the name says %r (%s) and the profile '
+                   'declares %r (%s)' % (n, nc, f, fc))
+    # ★★ A UNIT THIS MODULE CANNOT CLASS IS LEFT ALONE, AND THAT IS A
+    # DELIBERATE STOPPING POINT. 28 heroes declare 'bps', 5 more declare
+    # 'GWh', 'GW', 'KRW tn' or 'qualitative'. Overriding those with the
+    # '(%)' in the name switches the class guard back on for all of them
+    # -- and on the two I checked it swapped one wrong answer for
+    # another: a segment's dollar line, 7,761, became that segment's
+    # GROSS PROFIT MARGIN, 82.6, under a hero asking for revenue GROWTH.
+    # Neither is the growth rate, because the release does not print one.
+    # That is a hero binding to a same-named row of a different quantity,
+    # which is the table-side of the _residue problem and is not fixed
+    # by anything to do with units. Reported, not papered over.
+    return f, None
+
+
+def _unit_of(h, name):
+    """The hero's declared unit -- from the field, else from the NAME."""
+    field = h.get('unit') if isinstance(h, dict) else None
+    return declared_unit(field, name_unit(name))[0]
 
 
 def _hero_fields(h):
@@ -812,6 +850,12 @@ def select(parser_rows, ticker, profiles=None, aliases=None,
 
     for _hero_i, hero in enumerate(heroes):
         name, prio, applies, unit, _inv = _hero_fields(hero)
+        # the unit the hero writes in its own name, kept so the MAP's
+        # override can be reconciled against it too -- the live conflict
+        # was declared there, not in heroKPIs.
+        nunit = name_unit(name)
+        uconflict = (declared_unit(hero.get('unit'), nunit)[1]
+                     if isinstance(hero, dict) else None)
         # ★ appliesTo AND PROFILE ORDER TRAVEL WITH EVERY HERO,
         # including the ones that do not resolve. A hero that is not
         # in the release still belongs to a section, and an FY block
@@ -844,13 +888,24 @@ def select(parser_rows, ticker, profiles=None, aliases=None,
             if entry.get('period'):
                 applies = entry['period']
             if entry.get('unit'):
-                unit = entry['unit']
+                unit, conf = declared_unit(entry['unit'], nunit)
+                uconflict = uconflict or conf
         if not labels:
             for short, sentry in segs.items():
                 if short and norm(short) in norm(name):
                     labels = [str(x) for x in
                               ((sentry or {}).get('documentLabels') or [])]
                     break
+
+        # ★★★ AND IT IS REPORTED, NOT RESOLVED. A hero whose two
+        # declarations disagree about what KIND of quantity it is cannot
+        # be answered safely by either, and an UNRESOLVED says exactly
+        # that: the figure may well be in the release and we are
+        # refusing to guess which one it is. Silently preferring one
+        # side is how a percent label came to carry $1.463 billion.
+        if uconflict:
+            out['notInRelease'].append(dict(base, reason=uconflict))
+            continue
 
         low = norm(name)
         if not want_basis:
