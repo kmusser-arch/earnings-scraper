@@ -238,7 +238,11 @@ def main():
         return out
 
     v1 = _tally_at(0.50, -0.50)
-    check('v1 history: DECISIVE_BULLISH n=29', v1['DECISIVE_BULLISH']['n'] == 29,
+    # ★ RE-PINNED 2026-11-03, 29 -> 30. PLTR-2026Q3 scored +1.45 and was
+    # written to the library on 2026-11-02, so the POPULATION moved by
+    # exactly one record. No existing score moved -- the re-pin policy's
+    # allowed case, same as the 1 -> 2 below.
+    check('v1 history: DECISIVE_BULLISH n=30', v1['DECISIVE_BULLISH']['n'] == 30,
           v1['DECISIVE_BULLISH']['n'])
     # ★★★ RE-PINNED 2026-10-29, 1 -> 2. NKE-2027Q1 entered the band
     # when it was scored; TSLA-2026Q2 was the original. NO EXISTING SCORE

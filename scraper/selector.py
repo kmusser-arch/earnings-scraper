@@ -53,6 +53,14 @@ _CANON = (
     ('gross margin', 'grossMargin'), (' gm', 'grossMargin'),
     ('earnings per share', 'eps'), ('eps', 'eps'),
     ('operating income', 'operatingIncome'), ('ebit', 'operatingIncome'),
+    # ★★★ THE SAME LINE UNDER THE NAME HALF THE MARKET USES. Added to
+    # prose_guidance._SUBJECT and NOT here, which left the reader able
+    # to parse 'Adjusted income from operations of between $1.640 -
+    # $1.644 billion' and the selector unable to ask for it: both of
+    # PLTR's income-from-operations heroes read 'not in release' against
+    # a document that plainly carries them. TWO VOCABULARIES, ONE GAP
+    # CLOSED IN ONE -- map-vs-reader disagreement, in a single edit.
+    ('income from operations', 'operatingIncome'),
     ('operating margin', 'operatingMargin'),
     ('capital expenditure', 'capex'), ('capex', 'capex'),
     ('free cash flow', 'freeCashFlow'), ('fcf', 'freeCashFlow'),
@@ -745,8 +753,21 @@ def select(parser_rows, ticker, profiles=None, aliases=None,
                 'appliesTo': applies or '', 'order': _hero_i}
         labels, seg_ctx, channel, unverified = [], None, None, False
         want_basis = None
+        # ★★★★ A HERO WITH NO MAP ENTRY IS THE COMMON CASE, NOT AN EDGE
+        # CASE. 59 of 66 profiles carry no documentLabelMap at all, so
+        # dlm.get(name) returns None for most heroes in the library --
+        # and `'expect' in entry` on that None took select() down with a
+        # TypeError for 24 tickers, several of them megacaps: 47 of 121
+        # corpus documents, no card at all, on a print night it would
+        # have been the whole read. Shipped in a34c723 and never seen,
+        # because validate_maps
+        # walks only the 7 tickers that HAVE a map and every fixture is
+        # one of those 7. The gate covered 10% of the library and said
+        # PASS. Normalised here so no later reader has to remember.
         entry = dlm.get(name)
-        if isinstance(entry, dict):
+        if not isinstance(entry, dict):
+            entry = {}
+        if entry:
             labels = [str(x) for x in (entry.get('documentLabels') or [])]
             want_basis = basis_of(entry.get('basis'))
             seg_ctx = entry.get('segmentContext')
