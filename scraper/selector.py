@@ -553,8 +553,19 @@ def name_unit(name):
     return m.group(1) if m else ''
 
 
+#: does this currency unit STATE a scale? '$' does not; '$K/$M/$B' do.
+_SCALED = frozenset(('$K', '$M', '$B'))
+
+
+def _scale_rank(u):
+    return 1 if str(u or '').strip() in _SCALED else 0
+
+
 def declared_unit(field, named):
-    """(unit, conflict) -- reconcile a unit FIELD against the hero's NAME.
+    """(unit, problem) -- reconcile a unit FIELD against the hero's NAME.
+
+    `problem` is None, or (severity, message) with severity 'defect' or
+    'warn'.
 
     ★★★★ A DECLARATION MUST NEVER BE ABLE TO SILENCE THE CHECK IT
     BELONGS TO. Four heroes named '(%)' carried unit 'bps'. bps has no
@@ -582,8 +593,36 @@ def declared_unit(field, named):
     if not f:
         return n, None
     if fc and nc and fc != nc:
-        return n, ('unit conflict: the name says %r (%s) and the profile '
+        return n, ('defect',
+                   'unit conflict: the name says %r (%s) and the profile '
                    'declares %r (%s)' % (n, nc, f, fc))
+
+    # ★★★★ SAME CLASS, DIFFERENT SCALE. $B and $M are both CURRENCY, so
+    # the arm above cannot see a THOUSANDFOLD disagreement -- and that is
+    # the error that keeps recurring, because a scale is easy to write
+    # wrong and nothing on screen contradicts it: the card renders the
+    # document's own words, so the unit field never reaches the display.
+    #
+    # ★★★ THE HARM IS A DEAD GUARD, NOT A WRONG NUMBER. _plausible bounds
+    # a '$B' hero at 10,000 and a '$M' hero at 10,000,000 -- so a scale
+    # mismatch widens the guard a thousandfold and it reports clean
+    # forever after. Same family as a unit the module cannot class at
+    # all.
+    #
+    # ★★ BUT '$' IS NOT A DIFFERENT SCALE, IT IS NO SCALE. Three heroes
+    # name ($M) and declare '$', which does not contradict anything --
+    # it simply says less. Taking the SPECIFIED one is the whole of the
+    # 'more precise wins' rule, and it was written backwards: it always
+    # took the field, which on those three is the vaguer of the two and
+    # leaves _plausible with no bound at all.
+    if fc == 'CURRENCY' and nc == 'CURRENCY' and f.strip() != n.strip():
+        rf, rn = _scale_rank(f), _scale_rank(n)
+        if rf != rn:
+            return (f if rf > rn else n), None
+        return f, ('warn',
+                   'unit scale: the name says %r and the profile declares '
+                   '%r -- a 1000x gap, and _plausible is bounded by the '
+                   'declared one' % (n, f))
     # ★★ A UNIT THIS MODULE CANNOT CLASS IS LEFT ALONE, AND THAT IS A
     # DELIBERATE STOPPING POINT. 28 heroes declare 'bps', 5 more declare
     # 'GWh', 'GW', 'KRW tn' or 'qualitative'. Overriding those with the
@@ -854,8 +893,8 @@ def select(parser_rows, ticker, profiles=None, aliases=None,
         # override can be reconciled against it too -- the live conflict
         # was declared there, not in heroKPIs.
         nunit = name_unit(name)
-        uconflict = (declared_unit(hero.get('unit'), nunit)[1]
-                     if isinstance(hero, dict) else None)
+        uprob = (declared_unit(hero.get('unit'), nunit)[1]
+                 if isinstance(hero, dict) else None)
         # ★ appliesTo AND PROFILE ORDER TRAVEL WITH EVERY HERO,
         # including the ones that do not resolve. A hero that is not
         # in the release still belongs to a section, and an FY block
@@ -888,8 +927,8 @@ def select(parser_rows, ticker, profiles=None, aliases=None,
             if entry.get('period'):
                 applies = entry['period']
             if entry.get('unit'):
-                unit, conf = declared_unit(entry['unit'], nunit)
-                uconflict = uconflict or conf
+                unit, prob = declared_unit(entry['unit'], nunit)
+                uprob = uprob or prob
         if not labels:
             for short, sentry in segs.items():
                 if short and norm(short) in norm(name):
@@ -903,9 +942,20 @@ def select(parser_rows, ticker, profiles=None, aliases=None,
         # that: the figure may well be in the release and we are
         # refusing to guess which one it is. Silently preferring one
         # side is how a percent label came to carry $1.463 billion.
-        if uconflict:
-            out['notInRelease'].append(dict(base, reason=uconflict))
-            continue
+        # ★★ A DEFECT REFUSES; A WARNING RESOLVES AND SAYS SO. Refusing a
+        # scale mismatch today would blank six of one watchlist ticker's
+        # eleven resolved rows over a profile bookkeeping error -- a card
+        # going empty is a regression the trader sees, while the mismatch
+        # itself is invisible to him. So the row still renders and
+        # carries the flag, and the flag is what gets cleared.
+        uwarn = None
+        if uprob:
+            severity, umsg = uprob
+            if severity == 'defect':
+                out['notInRelease'].append(dict(base, reason=umsg))
+                continue
+            uwarn = umsg
+        base['unitWarning'] = uwarn
 
         low = norm(name)
         if not want_basis:
@@ -1290,6 +1340,12 @@ def card(result, ticker, heading='', source_text=None, clock=''):
             got = _card_period(h)
             flag = '' if got in (key, '', None) else '  <- document says %s' \
                 % _short(h.get('period'))[:22]
+            # ★ A UNIT SCALE WARNING RIDES ON ITS OWN ROW. The value
+            # is the document's own words and is not in doubt; what
+            # is in doubt is the bound _plausible applied while
+            # choosing it, which a 1000x gap widens or narrows.
+            if h.get('unitWarning'):
+                flag += '  <- UNIT SCALE: name and profile disagree'
             lines.append('  %-42s %26s%s'
                          % (_card_label(h.get('hero'))[:42],
                             _printed(h)[:26], flag))
@@ -1320,7 +1376,11 @@ def card(result, ticker, heading='', source_text=None, clock=''):
     # against the profile and the arithmetic has to close, or the card
     # is quietly showing fewer KPIs than the ticker was built with.
     if offcard:
-        tail += ' - %d off-card (no period)' % offcard
+        # ★ NAME IT. 'off-card (no period)' reads like a silent drop;
+        # it is the narrative hero, which belongs to no period section
+        # and is still counted against the profile.
+        tail += (' - %d narrative row%s, no period section'
+                 % (offcard, '' if offcard == 1 else 's'))
     lines.append('')
     lines.append(tail)
     for m in unres:

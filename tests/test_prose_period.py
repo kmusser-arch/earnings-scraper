@@ -47,11 +47,11 @@ CORPUS = os.path.join(ROOT, 'earnings_scraper', 'state', 'html')
 #: PLTR Q3 2026, read off the Outlook block of the filed 8-K exhibit.
 #: Both ends, never a midpoint; $M, the unit the scaler emits.
 PLTR_Q3 = {
-    'Next-Q Revenue Guide ($B)':              (2649.0, 2653.0),
-    'Next-Q Adj Income from Operations ($B)': (1640.0, 1644.0),
-    'FY Revenue Guide ($B)':                  (8530.0, 8534.0),
-    'FY Adj Income from Operations ($B)':     (5245.0, 5249.0),
-    'FY Adj Free Cash Flow ($B)':             (4800.0, 5000.0),
+    'Next-Q Revenue Guide ($M)':              (2649.0, 2653.0),
+    'Next-Q Adj Income from Operations ($M)': (1640.0, 1644.0),
+    'FY Revenue Guide ($M)':                  (8530.0, 8534.0),
+    'FY Adj Income from Operations ($M)':     (5245.0, 5249.0),
+    'FY Adj Free Cash Flow ($M)':             (4800.0, 5000.0),
 }
 
 #: hero names whose loose match MUST be refused: what is left after the
@@ -61,18 +61,18 @@ PLTR_Q3 = {
 REFUSE = ('AWS revenue growth y/y (%)',
           'North America revenue ($B)',
           'US Commercial Revenue Growth YoY (%)',
-          'FY US Commercial Revenue Guide ($B)',
+          'FY US Commercial Revenue Guide ($M)',
           'FY Revenue Guide Raise (% of prior guide)',
           'FY Revenue Guide CC Action (%)',
           'FY+1 capex framing ($B)')
 
 #: and the ones that MUST still resolve: the metric word is the whole
 #: name once period and unit decoration is stripped.
-ALLOW = ('Next-Q Revenue Guide ($B)', 'Q2 Revenue Guide ($M)',
-         'F4Q Revenue Guide ($M)', 'FY Revenue Guide ($B)',
-         'Next-Q Adj Income from Operations ($B)',
-         'FY Adj Income from Operations ($B)',
-         'FY Adj Free Cash Flow ($B)')
+ALLOW = ('Next-Q Revenue Guide ($M)', 'Q2 Revenue Guide ($M)',
+         'F4Q Revenue Guide ($M)', 'FY Revenue Guide ($M)',
+         'Next-Q Adj Income from Operations ($M)',
+         'FY Adj Income from Operations ($M)',
+         'FY Adj Free Cash Flow ($M)')
 
 FAILED = []
 
@@ -126,8 +126,8 @@ def main():
     # ★ THE INVERTED ONE. If the splitter stops splitting, the FY hero
     # takes the QUARTER's number and every assertion above still passes
     # except this pair -- which is why both ends are named explicitly.
-    check(got.get('FY Adj Income from Operations ($B)')
-          != got.get('Next-Q Adj Income from Operations ($B)'),
+    check(got.get('FY Adj Income from Operations ($M)')
+          != got.get('Next-Q Adj Income from Operations ($M)'),
           'and the FY row is NOT the next-Q row wearing an FY label')
 
     # ── 2. the residue separator, 34 for 34 ─────────────────────────────

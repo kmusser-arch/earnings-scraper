@@ -39,18 +39,18 @@ VALUES = {
         'Adj Operating Margin (%)':               '62',
         'Q3 Revenue ($K)':                        '2,313,411',
         'Adj EPS ($)':                            '0.44',
-        'Next-Q Revenue Guide ($B)':              '$2.649 - $2.653 billion',
-        'Next-Q Adj Income from Operations ($B)': '$1.640 - $1.644 billion',
-        'FY Revenue Guide ($B)':                  '$8.530 - $8.534 billion',
-        'FY Adj Income from Operations ($B)':     '$5.245 - $5.249 billion',
-        'FY Adj Free Cash Flow ($B)':             '$4.8 - $5.0 billion',
-        'FY US Commercial Revenue Guide ($B)':    '>$3.559 billion',
+        'Next-Q Revenue Guide ($M)':              '$2.649 - $2.653 billion',
+        'Next-Q Adj Income from Operations ($M)': '$1.640 - $1.644 billion',
+        'FY Revenue Guide ($M)':                  '$8.530 - $8.534 billion',
+        'FY Adj Income from Operations ($M)':     '$5.245 - $5.249 billion',
+        'FY Adj Free Cash Flow ($M)':             '$4.8 - $5.0 billion',
+        'FY US Commercial Revenue Guide ($M)':    '>$3.559 billion',
     },
     'AAPL_2026Q4': {
-        'F4Q iPhone Revenue ($B)':        '57,583',
-        'F4Q Revenue ($B)':               '114,477',
-        'F4Q Greater China Revenue ($B)': '17,539',
-        'F4Q Services Revenue ($B)':      '31,573',
+        'F4Q iPhone Revenue ($M)':        '57,583',
+        'F4Q Revenue ($M)':               '114,477',
+        'F4Q Greater China Revenue ($M)': '17,539',
+        'F4Q Services Revenue ($M)':      '31,573',
         'F4Q Gross Margin (%)':           '47.9%',
         'F4Q EPS ($)':                    '$2.10',
     },
@@ -197,7 +197,98 @@ def units():
           % ('' if not bad else ' -- %s' % bad))
 
 
+def scales():
+    """★★★★ SAME CLASS, DIFFERENT SCALE -- THE 1000x GAP NO CLASS GUARD
+    CAN SEE. $B and $M are both CURRENCY, so the conflict arm above
+    passes them and takes the field. The error has recurred four times
+    and it is invisible on screen, because the card renders the
+    document's own words and the unit field never reaches the display.
+
+    ★★★ WHAT IT ACTUALLY BREAKS IS A GUARD. _plausible bounds a '$B'
+    hero at 10,000 and a '$M' hero at 10,000,000, so a scale mismatch
+    widens the bound a thousandfold and it reports clean forever after.
+    Not a wrong-number risk -- a DEAD-GUARD risk, which compounds.
+
+    ★★ IT WARNS RATHER THAN REFUSING, AND THAT WAS MEASURED. Refusing
+    would have blanked SIX of PLTR's eleven resolved rows over a profile
+    bookkeeping error: a card going empty is a regression the trader
+    sees, while the mismatch itself is invisible to him. Warn, clear the
+    list, then refuse.
+
+    ★ AND '$' IS NOT A SCALE. Three heroes name ($M) and declare '$',
+    which says less rather than something different. The specified one
+    wins and nothing is flagged.
+    """
+    print('')
+    print('== unit SCALE')
+    for field, named, want, sev in (
+            ('$B', '$M', '$B', 'warn'),
+            ('$M', '$B', '$M', 'warn'),
+            ('$', '$M', '$M', None),     # no scale stated -> take the one that is
+            ('$M', '$', '$M', None),
+            ('$M', '$M', '$M', None),
+            ('$B', '%', '%', 'defect')):  # the class arm still wins
+        got, prob = S.declared_unit(field, named)
+        sev_got = prob[0] if prob else None
+        check(got == want and sev_got == sev,
+              '  field=%-4r name=%-4r -> %-4r %s'
+              % (field, named, got, sev_got or 'ok'))
+
+    # ── the watchlist must stay at ZERO, in the profile ─────────────────
+    profiles, _mt = S.load_profiles()
+    watch = set(stem.split('_')[0] for stem in VALUES)
+    lib, mine = [], []
+    for tic, v in sorted(profiles.items()):
+        dlm = v.get('documentLabelMap') or {}
+        for h in v.get('heroKPIs') or []:
+            if not isinstance(h, dict):
+                continue
+            nu = S.name_unit(h.get('name') or '')
+            e = dlm.get(h.get('name')) or {}
+            for f in (h.get('unit'),
+                      e.get('unit') if isinstance(e, dict) else None):
+                prob = S.declared_unit(f, nu)[1]
+                if prob and prob[0] == 'warn':
+                    (mine if tic in watch else lib).append(
+                        (tic, (h.get('name') or '')[:34]))
+    check(not mine,
+          '  the four tickers carry ZERO scale contradictions%s'
+          % ('' if not mine else ' -- %s' % mine))
+    print('   (library-wide, off-watchlist: %d outstanding %s)'
+          % (len(lib), sorted(set(t for t, _n in lib))))
+
+    # ── and ZERO reach a rendered card, over ALL 121 documents ──────────
+    # ★ THE FLOOR WALKS EVERYTHING. A gate that walks the 7 mapped
+    # tickers is what let select() crash on 24 others for a week.
+    flagged, built = [], 0
+    for d in (FIX, os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            'earnings_scraper', 'state', 'html')):
+        if not os.path.isdir(d):
+            continue
+        for fn in sorted(os.listdir(d)):
+            if not fn.endswith('.html'):
+                continue
+            tic = fn.split('_')[0].upper()
+            if tic not in watch:
+                continue
+            html = io.open(os.path.join(d, fn), encoding='utf-8',
+                           errors='replace').read()
+            text = sec.to_text(html)
+            res = S.select(cells.from_html(html), tic,
+                           prose_rows=PG.from_text(text), source_text=text)
+            built += 1
+            if 'UNIT SCALE' in S.card(res, tic, '', source_text=text):
+                flagged.append(fn)
+    check(built >= 8,
+          '  anti-vacuous: %d watchlist documents went through' % built)
+    check(not flagged,
+          '  and not one renders a UNIT SCALE warning%s'
+          % ('' if not flagged else ' -- %s' % flagged))
+
+
 main()
 units()
+scales()
 if FAILED:
     sys.exit(1)

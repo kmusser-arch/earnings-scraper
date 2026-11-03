@@ -47,11 +47,11 @@ DIAGNOSTIC = ('SCRAPER DIAGNOSTICS', 'UNCLASSIFIED', 'OVERFLOW',
 #: PLTR Q3 2026 -- the figure AS PRINTED, with the document's own scale
 #: word. Sourced from the Outlook block of the filed exhibit, not from
 #: what the card happened to emit.
-PRINTED = (('Next-Q Revenue Guide ($B)',              '$2.649 - $2.653 billion'),
-           ('Next-Q Adj Income from Operations ($B)', '$1.640 - $1.644 billion'),
-           ('FY Revenue Guide ($B)',                  '$8.530 - $8.534 billion'),
-           ('FY Adj Income from Operations ($B)',     '$5.245 - $5.249 billion'),
-           ('FY Adj Free Cash Flow ($B)',             '$4.8 - $5.0 billion'),
+PRINTED = (('Next-Q Revenue Guide ($M)',              '$2.649 - $2.653 billion'),
+           ('Next-Q Adj Income from Operations ($M)', '$1.640 - $1.644 billion'),
+           ('FY Revenue Guide ($M)',                  '$8.530 - $8.534 billion'),
+           ('FY Adj Income from Operations ($M)',     '$5.245 - $5.249 billion'),
+           ('FY Adj Free Cash Flow ($M)',             '$4.8 - $5.0 billion'),
            ('Q3 Revenue ($K)',                        '2,313,411'),
            ('Adj EPS ($)',                            '0.44'))
 
@@ -129,9 +129,10 @@ def main():
           'period, so the check above is not comparing a list to itself'
           % (len(heroes), len(periodic)))
     # the ones with no period are OFF the card but still COUNTED
-    check(re.search(r'\d+ off-card \(no period\)', card),
-          'and a hero on no period is declared off-card in the status '
-          'line, not silently dropped from the count')
+    check(re.search(r'\d+ narrative rows?, no period section', card),
+          'and a hero on no period is NAMED in the status line - '
+          '"off-card (no period)" read like a silent drop; it is the '
+          'narrative hero, and it still counts against the profile')
 
     # ── 4. no judgment, no diagnostics, on ANY card in the corpus ───────
     print('')

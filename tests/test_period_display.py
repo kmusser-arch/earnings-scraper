@@ -50,7 +50,7 @@ PRIOR = {'Income before provision for income tax': '29,610',
 CURRENT = {'Net income': '27,466', 'Provision for income taxes': '5,338'}
 
 #: and the promotion itself is now asserted, rather than assumed away
-PROMOTED = ('F4Q Revenue ($B)', '102,466')
+PROMOTED = ('F4Q Revenue ($M)', '102,466')
 
 
 def check(ok, msg):
